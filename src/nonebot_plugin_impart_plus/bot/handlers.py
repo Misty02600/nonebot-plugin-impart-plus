@@ -5,13 +5,13 @@ import random
 import time
 from random import choice
 
-from nonebot import get_plugin_config
+from httpx import AsyncClient
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg, RegexGroup
 
-from .config import Config
-from .data_sheet import (
+from ..infra.chart_renderer import draw_bar_chart
+from ..infra.data_manager import (
     add_new_user,
     check_group_allow,
     get_ejaculation_data,
@@ -28,14 +28,46 @@ from .data_sheet import (
     update_activity,
     update_challenge_status,
 )
-from .draw_img import draw_bar_chart
-
-plugin_config = get_plugin_config(Config)
+from .dependencies import cooldown, plugin_config
 
 ban_id_set: set[str] = (
     set(plugin_config.ban_id_list.split(",")) if plugin_config.ban_id_list else set()
 )
 botname: str = next(iter(plugin_config.nickname), "BOT")
+
+
+async def has_at(event: GroupMessageEvent) -> bool:
+    msg = event.get_message()
+    return next(
+        (msg_seg.data["qq"] != "all" for msg_seg in msg if msg_seg.type == "at"),
+        False,
+    )
+
+
+async def get_at(event: GroupMessageEvent) -> str:
+    msg = event.get_message()
+    return next(
+        (
+            "寄" if msg_seg.data["qq"] == "all" else str(msg_seg.data["qq"])
+            for msg_seg in msg
+            if msg_seg.type == "at"
+        ),
+        "寄",
+    )
+
+
+def get_random_num() -> float:
+    rand_num = random.random()
+    rand_num = random.uniform(0, 1) if rand_num > 0.1 else random.uniform(1, 2)
+    return round(rand_num, 3)
+
+
+async def get_stranger_info(client: AsyncClient, uid: int) -> str:
+    try:
+        resp = (await client.get(f"https://api.usuuu.com/qq/{uid}")).json()
+        return resp["data"]["name"]
+    except Exception:
+        return "获取用户id失败"
 
 
 class Impart:
@@ -55,15 +87,15 @@ class Impart:
             await matcher.finish(plugin_config.not_allow, at_sender=True)
 
         uid: str = event.get_user_id()
-        allow: bool = await plugin_config.pkcd_check(uid)  # CD是否允许pk
+        allow: bool = await cooldown.pkcd_check(uid)  # CD是否允许pk
         if not allow:  # 如果不允许pk, 则返回
             await matcher.finish(
-                f"你已经pk不动了喵, 请等待{round(plugin_config.pk_cd_time - (time.time() - plugin_config.pk_cd_data[uid]), 3)}秒后再pk喵",
+                f"你已经pk不动了喵, 请等待{round(cooldown.pk_cd_time - (time.time() - cooldown.pk_cd_data[uid]), 3)}秒后再pk喵",
                 at_sender=True,
             )
 
-        plugin_config.pk_cd_data.update({uid: time.time()})  # 更新CD时间
-        at: str = await plugin_config.get_at(event)  # 获取at的id
+        cooldown.pk_cd_data.update({uid: time.time()})  # 更新CD时间
+        at: str = await get_at(event)  # 获取at的id
         if at == uid:  # 如果at的id和uid相同, 则返回
             await matcher.finish("你不能pk自己喵", at_sender=True)
 
@@ -71,7 +103,7 @@ class Impart:
         if await is_in_table(userid=int(uid)) and await is_in_table(int(at)):
             random_num = random.random()
             win = random_num < await get_win_probability(userid=int(uid))
-            random_num: float = plugin_config.get_random_num()  # 重新生成一个随机数
+            random_num: float = get_random_num()  # 重新生成一个随机数
             length_increase = round(random_num / 2, 3)
             length_decrease = random_num
             if win:
@@ -96,7 +128,7 @@ class Impart:
                 await add_new_user(int(uid))
             if not await is_in_table(userid=int(at)):
                 await add_new_user(int(at))
-            del plugin_config.pk_cd_data[uid]  # 删除CD时间
+            del cooldown.pk_cd_data[uid]  # 删除CD时间
             await matcher.finish(
                 f"你或对面还没有创建{choice(plugin_config.jj_variable)}喵, 咱全帮你创建了喵, 你们的{choice(plugin_config.jj_variable)}长度都是10cm喵",
                 at_sender=True,
@@ -211,17 +243,17 @@ class Impart:
         # 获取用户ID
         uid: str = event.get_user_id()
         # 检查CD时间是否允许
-        allow = await plugin_config.cd_check(uid)
+        allow = await cooldown.cd_check(uid)
         if not allow:
             remaining_time = round(
-                plugin_config.dj_cd_time - (time.time() - plugin_config.cd_data[uid]), 3
+                cooldown.dj_cd_time - (time.time() - cooldown.cd_data[uid]), 3
             )
             await matcher.finish(
                 f"你已经打不动了喵, 请等待{remaining_time}秒后再打喵",
                 at_sender=True,
             )
         # 更新CD时间
-        plugin_config.cd_data[uid] = time.time()
+        cooldown.cd_data[uid] = time.time()
 
         # 检查用户数据
         if not await is_in_table(userid=int(uid)):
@@ -234,7 +266,7 @@ class Impart:
 
         # 获取当前长度和随机数
         uid_length = await get_jj_length(int(uid))
-        random_num = plugin_config.get_random_num()
+        random_num = get_random_num()
         uid_status = await update_challenge_status(int(uid))
 
         # 牛子长度范围限制
@@ -271,11 +303,10 @@ class Impart:
 
         uid: str = event.get_user_id()
 
-        allow = await plugin_config.suo_cd_check(uid)
+        allow = await cooldown.suo_cd_check(uid)
         if not allow:
             remaining_time = round(
-                plugin_config.suo_cd_time
-                - (time.time() - plugin_config.suo_cd_data[uid]),
+                cooldown.suo_cd_time - (time.time() - cooldown.suo_cd_data[uid]),
                 3,
             )
             await matcher.finish(
@@ -283,22 +314,22 @@ class Impart:
                 at_sender=True,
             )
 
-        plugin_config.suo_cd_data[uid] = time.time()
+        cooldown.suo_cd_data[uid] = time.time()
         # 获取at的用户ID
-        at: str = await plugin_config.get_at(event)
+        at: str = await get_at(event)
         target_id = int(uid if at == "寄" else at)  # 如果没有at，则使用自己的uid
         pronoun = "你" if at == "寄" else "TA"  # 判断是自己还是被@用户
 
         if not await is_in_table(userid=target_id):
             await add_new_user(target_id)
-            del plugin_config.suo_cd_data[uid]  # 删除CD时间
+            del cooldown.suo_cd_data[uid]  # 删除CD时间
             msg = f"{pronoun}还没有创建{choice(plugin_config.jj_variable)}喵, 咱帮{pronoun}创建了喵, 目前长度是10cm喵"
             await matcher.finish(msg, at_sender=True)
             return
 
         # 获取当前长度和随机数
         current_length = await get_jj_length(target_id)
-        random_num = plugin_config.get_random_num()
+        random_num = get_random_num()
         target_status = await update_challenge_status(target_id)
 
         if "is_challenging" in target_status:
@@ -329,7 +360,7 @@ class Impart:
             await matcher.finish(plugin_config.not_allow, at_sender=True)
 
         uid: str = event.get_user_id()
-        at = await plugin_config.get_at(event)
+        at = await get_at(event)
         target_id = int(at if at != "寄" else uid)
         pronoun = "你" if at == "寄" else "TA"
 
@@ -406,13 +437,13 @@ class Impart:
         gid, uid = event.group_id, event.user_id
         if not await check_group_allow(event.group_id):
             await matcher.finish(plugin_config.not_allow, at_sender=True)
-        allow = await plugin_config.fuck_cd_check(event)  # CD检查是否允许
+        allow = await cooldown.fuck_cd_check(str(uid))  # CD检查是否允许
         if not allow:
             await matcher.finish(
-                f"你已经榨不出来任何东西了, 请先休息{round(plugin_config.fuck_cd_time - (time.time() - plugin_config.ejaculation_cd[str(uid)]), 3)}秒",
+                f"你已经榨不出来任何东西了, 请先休息{round(cooldown.fuck_cd_time - (time.time() - cooldown.ejaculation_cd[str(uid)]), 3)}秒",
                 at_sender=True,
             )
-        plugin_config.ejaculation_cd.update({str(uid): time.time()})  # 记录时间
+        cooldown.ejaculation_cd.update({str(uid): time.time()})  # 记录时间
         req_user_card: str = str(event.sender.card or event.sender.nickname)
         prep_list = await bot.get_group_member_list(group_id=gid)
         return uid, req_user_card, args[0], prep_list
@@ -426,7 +457,7 @@ class Impart:
         random_nn: float,  # 添加 random_nn 参数
     ) -> str:
         prep_list = [prep.get("user_id", 123456) for prep in prep_list]  # 群友列表
-        target = await plugin_config.get_at(event)  # 获取消息有没有at
+        target = await get_at(event)  # 获取消息有没有at
         uid = event.user_id  # 获取当前用户ID
 
         if target == "寄":  # 没有@对象
@@ -480,7 +511,7 @@ class Impart:
             str(uid),
         )
         if int(lucky_user) == uid:  # 如果群主是自己
-            del plugin_config.ejaculation_cd[str(uid)]
+            del cooldown.ejaculation_cd[str(uid)]
             await matcher.finish("你透你自己?")
 
         jj_length = await get_jj_length(uid)
@@ -520,7 +551,7 @@ class Impart:
         if uid in admin_id:  # 如果自己是管理的话， 移除自己
             admin_id.remove(uid)
         if not admin_id:  # 如果没有管理的话, del cd信息， 然后finish
-            del plugin_config.ejaculation_cd[str(uid)]
+            del cooldown.ejaculation_cd[str(uid)]
             await matcher.finish("喵喵喵? 找不到群管理!")
 
         lucky_user: str = choice(admin_id)  # random抽取一个管理
@@ -646,8 +677,8 @@ class Impart:
         user_id: str = event.get_user_id()
         # 判断带不带at
         [object_id, replay1] = (
-            [await plugin_config.get_at(event), "该用户"]
-            if await plugin_config.get_at(event) != "寄"
+            [await get_at(event), "该用户"]
+            if await get_at(event) != "寄"
             else [user_id, "您"]
         )
         #  获取用户的所有注入数据
@@ -678,7 +709,7 @@ class Impart:
     @staticmethod
     async def yinpa_introduce(matcher: Matcher) -> None:
         """输出用法"""
-        usage_text = plugin_config.plugin_usage()
+        usage_text = plugin_config.usage
         await matcher.send(MessageSegment.text(usage_text))
 
 

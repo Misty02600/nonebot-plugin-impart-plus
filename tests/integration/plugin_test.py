@@ -6,8 +6,8 @@ from nonebug import App
 def test_plugin_metadata(app: App):
     import nonebot_plugin_impart_plus
     from nonebot_plugin_impart_plus import __plugin_meta__
+    from nonebot_plugin_impart_plus.bot.handlers import impart, plugin_config
     from nonebot_plugin_impart_plus.config import Config
-    from nonebot_plugin_impart_plus.handle import impart, plugin_config
 
     assert __plugin_meta__.name == "nonebot_plugin_impart_plus"
     assert __plugin_meta__.description == "NoneBot2 银趴插件 Plus"

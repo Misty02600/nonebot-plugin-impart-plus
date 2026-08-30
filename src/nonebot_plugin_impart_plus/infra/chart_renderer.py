@@ -22,7 +22,7 @@ class DrawBarChart:
             (255, 215, 0),  # 金色
         ]
         self.module_path: Path = Path(__file__).parent
-        self.font = str(self.module_path / "fonts" / "SIMYOU.TTF")
+        self.font = str(self.module_path / "assets" / "SIMYOU.TTF")
 
     async def draw_bar_chart(self, data: dict[str, float]) -> bytes:
         """画柱状图, 传入一个字典, key是str类型的用户名字, value是对应用户的注入量"""
