@@ -22,9 +22,6 @@ from ..core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
 from .dependencies import game_app, plugin_config
 
-ban_id_set: set[str] = (
-    set(plugin_config.ban_id_list.split(",")) if plugin_config.ban_id_list else set()
-)
 botname: str = next(iter(plugin_config.nickname), "BOT")
 NOT_ALLOWED_TEXT = (
     '当前未开启impart游戏, 请管理员发送"开始银趴", "禁止银趴"以开启/关闭该功能'
@@ -303,9 +300,6 @@ class Impart:
         target = await get_at(event)
         uid = event.user_id
         if target == "寄":
-            prep_list = [user for user in prep_list if str(user) not in ban_id_set]
-            if not prep_list:
-                prep_list = [user for user in prep_list if str(user) in ban_id_set]
             if uid in prep_list:
                 prep_list.remove(uid)
             lucky_user = choice(prep_list)
@@ -367,17 +361,7 @@ class Impart:
         matcher: Matcher,
         random_nn: float,
     ) -> str:
-        admin_id = [
-            prep["user_id"]
-            for prep in prep_list
-            if prep["role"] == "admin" and str(prep["user_id"]) not in ban_id_set
-        ]
-        if not admin_id:
-            admin_id = [
-                prep["user_id"]
-                for prep in prep_list
-                if prep["role"] == "admin" and str(prep["user_id"]) in ban_id_set
-            ]
+        admin_id = [prep["user_id"] for prep in prep_list if prep["role"] == "admin"]
         if uid in admin_id:
             admin_id.remove(uid)
         if not admin_id:
