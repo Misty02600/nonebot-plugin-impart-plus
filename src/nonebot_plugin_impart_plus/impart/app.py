@@ -6,23 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from ..infra.cooldown import CooldownManager
-from ..infra.data_manager import (
-    add_new_user,
-    check_group_allow,
-    get_ejaculation_data,
-    get_jj_length,
-    get_sorted,
-    get_today_ejaculation_data,
-    get_win_probability,
-    insert_ejaculation,
-    is_in_table,
-    punish_all_inactive_users,
-    set_group_allow,
-    set_jj_length,
-    set_win_probability,
-    update_activity,
-    update_challenge_status,
-)
+from ..infra.data_manager import DataManager
 from .core import (
     LengthState,
     PkResolution,
@@ -138,16 +122,18 @@ def get_random_num() -> float:
 class GameApplication:
     def __init__(
         self,
+        data_manager: DataManager,
         cooldown: CooldownManager,
         *,
         penalties_enabled: bool,
     ) -> None:
+        self._data = data_manager
         self._cooldown = cooldown
         self._penalties_enabled = penalties_enabled
 
     async def penalties_and_resets(self) -> None:
         if self._penalties_enabled:
-            await punish_all_inactive_users()
+            await self._data.punish_all_inactive_users()
 
     async def execute_pk(
         self,
@@ -156,7 +142,7 @@ class GameApplication:
         defender_id: str,
     ) -> PkOutcome:
         await self.penalties_and_resets()
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return PkOutcome(PkOutcomeType.DISABLED)
 
         if not await self._cooldown.pkcd_check(attacker_id):
@@ -173,28 +159,30 @@ class GameApplication:
 
         attacker = int(attacker_id)
         defender = int(defender_id)
-        if await is_in_table(attacker) and await is_in_table(defender):
+        if await self._data.is_in_table(attacker) and await self._data.is_in_table(
+            defender
+        ):
             win_roll = random.random()
-            win_probability = await get_win_probability(attacker)
+            win_probability = await self._data.get_win_probability(attacker)
             resolution = resolve_pk(
                 win_probability,
                 win_roll=win_roll,
                 random_num=get_random_num(),
             )
             if resolution.won:
-                await set_win_probability(attacker, -0.01)
-                await set_win_probability(defender, 0.01)
-                await set_jj_length(attacker, resolution.random_num / 2)
-                await set_jj_length(defender, -resolution.random_num)
+                await self._data.set_win_probability(attacker, -0.01)
+                await self._data.set_win_probability(defender, 0.01)
+                await self._data.set_jj_length(attacker, resolution.random_num / 2)
+                await self._data.set_jj_length(defender, -resolution.random_num)
             else:
-                await set_win_probability(attacker, 0.01)
-                await set_win_probability(defender, -0.01)
-                await set_jj_length(attacker, -resolution.random_num)
-                await set_jj_length(defender, resolution.random_num / 2)
+                await self._data.set_win_probability(attacker, 0.01)
+                await self._data.set_win_probability(defender, -0.01)
+                await self._data.set_jj_length(attacker, -resolution.random_num)
+                await self._data.set_jj_length(defender, resolution.random_num / 2)
 
-            attacker_status = await update_challenge_status(attacker)
-            defender_status = await update_challenge_status(defender)
-            probability = await get_win_probability(attacker)
+            attacker_status = await self._data.update_challenge_status(attacker)
+            defender_status = await self._data.update_challenge_status(defender)
+            probability = await self._data.get_win_probability(attacker)
             return PkOutcome(
                 PkOutcomeType.COMPLETED,
                 resolution=resolution,
@@ -203,16 +191,16 @@ class GameApplication:
                 attacker_probability=probability,
             )
 
-        if not await is_in_table(attacker):
-            await add_new_user(attacker)
-        if not await is_in_table(defender):
-            await add_new_user(defender)
+        if not await self._data.is_in_table(attacker):
+            await self._data.add_new_user(attacker)
+        if not await self._data.is_in_table(defender):
+            await self._data.add_new_user(defender)
         del self._cooldown.pk_cd_data[attacker_id]
         return PkOutcome(PkOutcomeType.USERS_CREATED)
 
     async def grow_self(self, group_id: int, user_id: str) -> GrowthOutcome:
         await self.penalties_and_resets()
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return GrowthOutcome(GrowthOutcomeType.DISABLED)
 
         if not await self._cooldown.cd_check(user_id):
@@ -225,26 +213,26 @@ class GameApplication:
 
         self._cooldown.cd_data[user_id] = time.time()
         uid = int(user_id)
-        if not await is_in_table(uid):
-            await add_new_user(uid)
+        if not await self._data.is_in_table(uid):
+            await self._data.add_new_user(uid)
             return GrowthOutcome(GrowthOutcomeType.USER_CREATED)
 
-        current_length = await get_jj_length(uid)
+        current_length = await self._data.get_jj_length(uid)
         random_num = get_random_num()
-        status = await update_challenge_status(uid)
+        status = await self._data.update_challenge_status(uid)
         if "is_challenging" in status:
             return GrowthOutcome(
                 GrowthOutcomeType.CHALLENGING,
                 random_num=random_num,
             )
 
-        await set_jj_length(uid, random_num)
-        new_length = await get_jj_length(uid)
+        await self._data.set_jj_length(uid, random_num)
+        new_length = await self._data.get_jj_length(uid)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
         if challenge_started:
-            await update_challenge_status(uid)
+            await self._data.update_challenge_status(uid)
         else:
-            new_length = await get_jj_length(uid)
+            new_length = await self._data.get_jj_length(uid)
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
             random_num=random_num,
@@ -259,7 +247,7 @@ class GameApplication:
         target_id: int,
     ) -> GrowthOutcome:
         await self.penalties_and_resets()
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return GrowthOutcome(GrowthOutcomeType.DISABLED)
 
         if not await self._cooldown.suo_cd_check(user_id):
@@ -271,25 +259,25 @@ class GameApplication:
             return GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=remaining)
 
         self._cooldown.suo_cd_data[user_id] = time.time()
-        if not await is_in_table(target_id):
-            await add_new_user(target_id)
+        if not await self._data.is_in_table(target_id):
+            await self._data.add_new_user(target_id)
             del self._cooldown.suo_cd_data[user_id]
             return GrowthOutcome(GrowthOutcomeType.USER_CREATED)
 
-        current_length = await get_jj_length(target_id)
+        current_length = await self._data.get_jj_length(target_id)
         random_num = get_random_num()
-        status = await update_challenge_status(target_id)
+        status = await self._data.update_challenge_status(target_id)
         if "is_challenging" in status:
             return GrowthOutcome(
                 GrowthOutcomeType.CHALLENGING,
                 random_num=random_num,
             )
 
-        await set_jj_length(target_id, random_num)
-        new_length = await get_jj_length(target_id)
+        await self._data.set_jj_length(target_id, random_num)
+        new_length = await self._data.get_jj_length(target_id)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
         if challenge_started:
-            await update_challenge_status(target_id)
+            await self._data.update_challenge_status(target_id)
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
             random_num=random_num,
@@ -299,12 +287,12 @@ class GameApplication:
 
     async def query_user(self, group_id: int, user_id: int) -> QueryOutcome:
         await self.penalties_and_resets()
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return QueryOutcome(QueryOutcomeType.DISABLED)
-        if not await is_in_table(user_id):
-            await add_new_user(user_id)
+        if not await self._data.is_in_table(user_id):
+            await self._data.add_new_user(user_id)
             return QueryOutcome(QueryOutcomeType.USER_CREATED)
-        length = await get_jj_length(user_id)
+        length = await self._data.get_jj_length(user_id)
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=length,
@@ -312,16 +300,16 @@ class GameApplication:
         )
 
     async def query_ranking(self, group_id: int, user_id: int) -> RankingOutcome:
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return RankingOutcome(RankingOutcomeType.DISABLED)
-        ranking = await get_sorted()
+        ranking = await self._data.get_sorted()
         if len(ranking) < 5:
             return RankingOutcome(RankingOutcomeType.TOO_FEW)
         indexes = [
             index for index, item in enumerate(ranking) if item["userid"] == user_id
         ]
         if not indexes:
-            await add_new_user(user_id)
+            await self._data.add_new_user(user_id)
             return RankingOutcome(RankingOutcomeType.USER_CREATED)
         return RankingOutcome(
             RankingOutcomeType.COMPLETED,
@@ -334,10 +322,10 @@ class GameApplication:
         group_id: int,
         user_id: int,
     ) -> InteractionGuard:
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return InteractionGuard(InteractionGuardType.DISABLED)
         await self.penalties_and_resets()
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return InteractionGuard(InteractionGuardType.DISABLED)
         uid = str(user_id)
         if not await self._cooldown.fuck_cd_check(uid):
@@ -360,9 +348,8 @@ class GameApplication:
     def roll_interaction() -> float:
         return random.uniform(0, 1)
 
-    @staticmethod
-    async def get_length(user_id: int) -> float:
-        return await get_jj_length(user_id)
+    async def get_length(self, user_id: int) -> float:
+        return await self._data.get_jj_length(user_id)
 
     async def complete_interaction(
         self,
@@ -370,15 +357,15 @@ class GameApplication:
         lucky_user: int,
         random_nn: float,
     ) -> InteractionResult:
-        await update_activity(lucky_user)
-        await update_activity(user_id)
-        length = await get_jj_length(user_id)
+        await self._data.update_activity(lucky_user)
+        await self._data.update_activity(user_id)
+        length = await self._data.get_jj_length(user_id)
         reversed_interaction = should_reverse_injection(length, random_nn)
         ejaculation = round(random.uniform(1, 100), 3)
         recipient = user_id if reversed_interaction else lucky_user
-        await insert_ejaculation(recipient, ejaculation)
+        await self._data.insert_ejaculation(recipient, ejaculation)
         seconds = random.randint(1, 20)
-        today_total = await get_today_ejaculation_data(recipient)
+        today_total = await self._data.get_today_ejaculation_data(recipient)
         return InteractionResult(
             reversed=reversed_interaction,
             ejaculation=ejaculation,
@@ -386,9 +373,8 @@ class GameApplication:
             seconds=seconds,
         )
 
-    @staticmethod
-    async def set_group_enabled(group_id: int, enabled: bool) -> None:
-        await set_group_allow(group_id, enabled)
+    async def set_group_enabled(self, group_id: int, enabled: bool) -> None:
+        await self._data.set_group_allow(group_id, enabled)
 
     async def query_injection(
         self,
@@ -398,9 +384,9 @@ class GameApplication:
         history: bool,
     ) -> InjectionQueryResult:
         await self.penalties_and_resets()
-        if not await check_group_allow(group_id):
+        if not await self._data.check_group_allow(group_id):
             return InjectionQueryResult(InjectionQueryType.DISABLED)
-        data = await get_ejaculation_data(user_id)
+        data = await self._data.get_ejaculation_data(user_id)
         if history:
             if not data:
                 return InjectionQueryResult(InjectionQueryType.HISTORY_TEXT)
@@ -420,5 +406,5 @@ class GameApplication:
                 total=total,
                 history=values,
             )
-        total = await get_today_ejaculation_data(user_id)
+        total = await self._data.get_today_ejaculation_data(user_id)
         return InjectionQueryResult(InjectionQueryType.DAILY, total=total)

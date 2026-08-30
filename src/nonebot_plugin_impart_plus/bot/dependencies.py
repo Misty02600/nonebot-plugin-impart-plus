@@ -5,6 +5,8 @@ from nonebot import get_driver, get_plugin_config
 from ..config import Config
 from ..impart.app import GameApplication
 from ..infra.cooldown import CooldownManager
+from ..infra.data_manager import DataManager
+from ..infra.database import async_session
 
 plugin_config = get_plugin_config(Config)
 driver = get_driver()
@@ -18,7 +20,10 @@ cooldown = CooldownManager(
     superusers=frozenset(driver.config.superusers),
 )
 
+data_manager = DataManager(async_session)
+
 game_app = GameApplication(
+    data_manager,
     cooldown,
     penalties_enabled=plugin_config.isalive,
 )
