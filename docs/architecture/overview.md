@@ -26,7 +26,7 @@
 | 插件入口与 bot 接入 | 声明元数据、注册 matcher 和定时任务、解析 OneBot 事件、选择群成员、组合并发送文案 | 通过组装模块取得 `GameApplication`；不直接调用数据库和冷却 | 单次事件上下文；模块级机器人昵称 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/`](../../src/nonebot_plugin_impart_plus/bot) |
 | 应用用例 | 按原有顺序执行群开关、冷却、随机、数据读取、core 计算和持久化，返回语义化 outcome | 当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 核心规则 | 分类长度状态、判断挑战阈值、计算 PK 结果和反透条件 | 只依赖标准库；不导入 NoneBot、SQLAlchemy 或 Pillow | 不持有运行状态 | [`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
-| 数据库与数据访问 | 定义 ORM、初始化和兼容旧字段，执行 CRUD 与当前挑战状态更新 | `database.py` 拥有 engine/session，`data_manager.py` 中每个 helper 自行提交 | 用户、群开关和注入记录 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
+| 数据库与数据访问 | 定义 ORM、初始化和兼容旧字段，执行 CRUD 与当前挑战状态更新 | `database.py` 拥有 engine/session factory，composition root 创建单个 `DataManager`；每个方法保持独立提交 | 用户、群开关和注入记录 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
 | 运行时与媒体基础设施 | 保存四类冷却时间戳；使用 Pillow 和内置字体绘制图片 | 由 `bot/dependencies.py` 组装并提供给应用或 bot | 进程内冷却字典；renderer 实例的调色板和字体路径 | [`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 
 主要代码依赖方向是 `bot → impart.app → impart.core/infra`，同时 bot 为呈现排行榜和历史记录而直接调用 `infra.chart_renderer`。`bot/dependencies.py` 是 composition root，可以同时引用配置、应用和具体基础设施。
@@ -34,9 +34,9 @@
 ## 运行时数据流
 
 1. `bot` 从 OneBot 事件提取群号、用户号、`@` 目标和群成员资料。
-2. `GameApplication` 按原实现顺序检查群开关和冷却，调用数据 helper 读取状态。
+2. `GameApplication` 按原实现顺序检查群开关和冷却，通过注入的 `DataManager` 读取状态。
 3. 需要纯计算时，application 将普通数值传给 `impart/core.py`，取得状态分类、PK 增量或反透结果。
-4. application 调用 data manager helper 保存变化，并返回不包含 NoneBot 对象的 outcome。
+4. application 调用 `DataManager` 方法保存变化，并返回不包含 NoneBot 对象的 outcome。
 5. bot 根据 outcome 选择原有文案；需要图片时再调用 `ChartRenderer`，最后通过 matcher 发送。
 
 ## 数据和状态放在哪里
@@ -62,7 +62,7 @@
 - 现有仓库测试只验证插件可加载、配置默认值和测试事件构造；本轮另做了不入库的确定性 application/core 自检，但尚未形成长期回归测试。
 - `bot/handlers.py` 仍集中全部 matcher 文案和群成员选择逻辑，后续只有在实际维护收益明确时再按能力拆分。
 - 挑战状态更新仍同时包含 SQLAlchemy 访问和业务判断，尚未完全迁入 core。
-- PK 和挑战结算继续由多个 helper 分别提交；中途异常可能留下双方状态只更新一部分的结果。
+- PK 和挑战结算继续由多个 `DataManager` 方法分别提交；中途异常可能留下双方状态只更新一部分的结果。
 - `get_jj_length()` 和 `get_win_probability()` 使用真假值回退默认值，持久化的精确 `0` 与“没有查询结果”不能被区分。
 - 用户文案已使用“战力”，内部字段和计算仍沿用 `win_probability`；后续设计需要明确战力是展示名称还是新的数值语义。
 - 当前数据库已有兼容旧表的启动逻辑。任何模型或状态语义调整都应先明确已有 `impart.db` 的兼容边界。
