@@ -11,10 +11,13 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from jinja2 import Environment, FileSystemLoader
 from nonebot import logger
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
 
 # region 路径常量
 _PKG_DIR = Path(__file__).resolve().parent
@@ -183,7 +186,8 @@ class ChartRenderer:
         # 延迟导入 htmlrender，避免在不需要图表渲染的测试中触发 Playwright 启动。
         from nonebot_plugin_htmlrender.browser import get_new_page
 
-        async with get_new_page(device_scale_factor=2) as page:
+        async with get_new_page(device_scale_factor=2) as raw_page:
+            page = cast("Page", raw_page)
             await page.goto(file_url, wait_until="networkidle")
             await page.wait_for_timeout(500)
 

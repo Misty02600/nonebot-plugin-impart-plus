@@ -5,10 +5,10 @@
 
 import random
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 
-class ChallengeStatus(str, Enum):
+class ChallengeStatus(StrEnum):
     """挑战状态枚举"""
 
     NONE = ""
