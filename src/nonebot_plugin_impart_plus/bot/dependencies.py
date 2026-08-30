@@ -2,8 +2,8 @@
 
 from nonebot import get_driver, get_plugin_config
 
-from ..app import GameApplication
 from ..config import Config
+from ..impart.app import GameApplication
 from ..infra.cooldown import CooldownManager
 
 plugin_config = get_plugin_config(Config)

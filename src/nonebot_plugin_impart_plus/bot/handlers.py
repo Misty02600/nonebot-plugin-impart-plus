@@ -9,7 +9,7 @@ from nonebot.matcher import Matcher
 from nonebot.params import CommandArg, RegexGroup
 
 from .. import __plugin_meta__
-from ..app import (
+from ..impart.app import (
     GrowthOutcomeType,
     InjectionQueryType,
     InteractionGuardType,
@@ -18,7 +18,7 @@ from ..app import (
     QueryOutcomeType,
     RankingOutcomeType,
 )
-from ..core import LengthState
+from ..impart.core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
 from .dependencies import botname, game_app, plugin_config
 
