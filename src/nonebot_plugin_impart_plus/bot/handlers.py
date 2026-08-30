@@ -20,9 +20,8 @@ from ..app import (
 )
 from ..core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
-from .dependencies import game_app, plugin_config
+from .dependencies import botname, game_app, plugin_config
 
-botname: str = next(iter(plugin_config.nickname), "BOT")
 NOT_ALLOWED_TEXT = (
     '当前未开启impart游戏, 请管理员发送"开始银趴", "禁止银趴"以开启/关闭该功能'
 )

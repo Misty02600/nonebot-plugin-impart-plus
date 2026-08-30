@@ -10,4 +10,3 @@ class Config(BaseModel):
     suo_cd_time: int = 300  # 嗦冷却时间
     fuck_cd_time: int = 3600  # 透群友冷却时间
     isalive: bool = False  # 不活跃惩罚
-    nickname: set[str] = {""}
