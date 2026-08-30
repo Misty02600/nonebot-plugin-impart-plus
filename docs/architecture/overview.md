@@ -4,7 +4,7 @@
 
 `nonebot_plugin_impart_plus` 是面向 NoneBot2 与 OneBot V11 群聊的互动游戏插件。管理员先为群聊开启功能，群成员再通过命令创建和改变长度、进行 PK、与群友互动，以及查询排行榜和注入记录。
 
-当前 `feature` 使用粗粒度传统分层：bot 接收入站事件并生成回复，`app.py` 编排完整游戏用例，`core.py` 保存框架无关的纯规则，infra 封装数据库、冷却和图表等具体技术。这里记录当前代码事实，不把 `main` 分支的新增玩法视为既定目标。
+当前 `feature` 使用粗粒度传统分层：bot 接收入站事件并生成回复，`impart/app.py` 编排完整游戏用例，`impart/core.py` 保存框架无关的纯规则，infra 封装数据库、冷却和图表等具体技术。这里记录当前代码事实，不把 `main` 分支的新增玩法视为既定目标。
 
 ## 核心能力与公开入口
 
@@ -13,10 +13,10 @@
 | 核心能力或公开入口 | 对外含义 | 关键状态或副作用 | 主要实现位置 |
 |---|---|---|---|
 | 群开关与帮助 | 管理员、群主或超级用户开启和关闭群内玩法；成员查看命令说明 | 持久化群级 `allow` 状态；完整帮助文本由插件元数据 `PluginMetadata.usage` 提供 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/__init__.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py) |
-| 长度成长与查询 | `打胶/开导` 增加本人长度，`嗦牛子/嗦/suo` 增加本人或被 `@` 用户长度，`查询` 显示长度状态 | 应用层处理冷却、创建用户、状态读取和保存，bot 只生成原有回复 | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py) |
-| PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者战力判定胜负，并调整双方长度和内部胜率值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py)、[`core.py`](../../src/nonebot_plugin_impart_plus/core.py) |
-| 群友互动 | `日/透群友`、`日/透群主`、`日/透管理` 选择目标并记录注入量 | bot 读取群成员角色，应用层处理冷却、活动记录、反透判定和注入写入 | [`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py)、[`app.py`](../../src/nonebot_plugin_impart_plus/app.py) |
-| 排行榜与注入查询 | 显示长度前五、后五和本人排名；查询当天或历史注入量 | 应用层返回普通数据，bot 调用 Pillow renderer 生成 PNG | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
+| 长度成长与查询 | `打胶/开导` 增加本人长度，`嗦牛子/嗦/suo` 增加本人或被 `@` 用户长度，`查询` 显示长度状态 | 应用层处理冷却、创建用户、状态读取和保存，bot 只生成原有回复 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py) |
+| PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者战力判定胜负，并调整双方长度和内部胜率值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
+| 群友互动 | `日/透群友`、`日/透群主`、`日/透管理` 选择目标并记录注入量 | bot 读取群成员角色，应用层处理冷却、活动记录、反透判定和注入写入 | [`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
+| 排行榜与注入查询 | 显示长度前五、后五和本人排名；查询当天或历史注入量 | 应用层返回普通数据，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 | `Config` | 配置四类冷却时长、不活跃惩罚和长度别名 | 只描述插件启动配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
 
 ## 逻辑组件与实现映射
@@ -24,18 +24,18 @@
 | 逻辑组件 | 当前职责 | 主要协作与边界 | 拥有的数据或状态 | 主要实现位置 |
 |---|---|---|---|---|
 | 插件入口与 bot 接入 | 声明元数据、注册 matcher 和定时任务、解析 OneBot 事件、选择群成员、组合并发送文案 | 通过组装模块取得 `GameApplication`；不直接调用数据库和冷却 | 单次事件上下文；模块级机器人昵称 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/`](../../src/nonebot_plugin_impart_plus/bot) |
-| 应用用例 | 按原有顺序执行群开关、冷却、随机、数据读取、core 计算和持久化，返回语义化 outcome | 当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py) |
-| 核心规则 | 分类长度状态、判断挑战阈值、计算 PK 结果和反透条件 | 只依赖标准库；不导入 NoneBot、SQLAlchemy 或 Pillow | 不持有运行状态 | [`core.py`](../../src/nonebot_plugin_impart_plus/core.py) |
+| 应用用例 | 按原有顺序执行群开关、冷却、随机、数据读取、core 计算和持久化，返回语义化 outcome | 当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
+| 核心规则 | 分类长度状态、判断挑战阈值、计算 PK 结果和反透条件 | 只依赖标准库；不导入 NoneBot、SQLAlchemy 或 Pillow | 不持有运行状态 | [`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
 | 数据库与数据访问 | 定义 ORM、初始化和兼容旧字段，执行 CRUD 与当前挑战状态更新 | `database.py` 拥有 engine/session，`data_manager.py` 中每个 helper 自行提交 | 用户、群开关和注入记录 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
 | 运行时与媒体基础设施 | 保存四类冷却时间戳；使用 Pillow 和内置字体绘制图片 | 由 `bot/dependencies.py` 组装并提供给应用或 bot | 进程内冷却字典；renderer 实例的调色板和字体路径 | [`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 
-主要代码依赖方向是 `bot → app → core/infra`，同时 bot 为呈现排行榜和历史记录而直接调用 `infra.chart_renderer`。`bot/dependencies.py` 是 composition root，可以同时引用配置、应用和具体基础设施。
+主要代码依赖方向是 `bot → impart.app → impart.core/infra`，同时 bot 为呈现排行榜和历史记录而直接调用 `infra.chart_renderer`。`bot/dependencies.py` 是 composition root，可以同时引用配置、应用和具体基础设施。
 
 ## 运行时数据流
 
 1. `bot` 从 OneBot 事件提取群号、用户号、`@` 目标和群成员资料。
 2. `GameApplication` 按原实现顺序检查群开关和冷却，调用数据 helper 读取状态。
-3. 需要纯计算时，application 将普通数值传给 `core.py`，取得状态分类、PK 增量或反透结果。
+3. 需要纯计算时，application 将普通数值传给 `impart/core.py`，取得状态分类、PK 增量或反透结果。
 4. application 调用 data manager helper 保存变化，并返回不包含 NoneBot 对象的 outcome。
 5. bot 根据 outcome 选择原有文案；需要图片时再调用 `ChartRenderer`，最后通过 matcher 发送。
 
