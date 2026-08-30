@@ -26,6 +26,9 @@ ban_id_set: set[str] = (
     set(plugin_config.ban_id_list.split(",")) if plugin_config.ban_id_list else set()
 )
 botname: str = next(iter(plugin_config.nickname), "BOT")
+NOT_ALLOWED_TEXT = (
+    '当前未开启impart游戏, 请管理员发送"开始银趴", "禁止银趴"以开启/关闭该功能'
+)
 
 
 async def has_at(event: GroupMessageEvent) -> bool:
@@ -68,7 +71,7 @@ class Impart:
         outcome = await game_app.execute_pk(event.group_id, uid, at)
 
         if outcome.type is PkOutcomeType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is PkOutcomeType.COOLING_DOWN:
             await matcher.finish(
                 f"你已经pk不动了喵, 请等待{outcome.remaining}秒后再pk喵",
@@ -165,7 +168,7 @@ class Impart:
     async def dajiao(matcher: Matcher, event: GroupMessageEvent) -> None:
         outcome = await game_app.grow_self(event.group_id, event.get_user_id())
         if outcome.type is GrowthOutcomeType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is GrowthOutcomeType.COOLING_DOWN:
             await matcher.finish(
                 f"你已经打不动了喵, 请等待{outcome.remaining}秒后再打喵",
@@ -202,7 +205,7 @@ class Impart:
         outcome = await game_app.grow_target(event.group_id, uid, target_id)
 
         if outcome.type is GrowthOutcomeType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is GrowthOutcomeType.COOLING_DOWN:
             await matcher.finish(
                 f"你已经嗦不动了喵, 请等待{outcome.remaining}秒后再嗦喵",
@@ -239,7 +242,7 @@ class Impart:
         outcome = await game_app.query_user(event.group_id, target_id)
 
         if outcome.type is QueryOutcomeType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is QueryOutcomeType.USER_CREATED:
             await matcher.finish(
                 f"{pronoun}还没有创建{choice(plugin_config.jj_variable)}喵, 咱帮{pronoun}创建了喵, 目前长度是10cm喵",
@@ -262,7 +265,7 @@ class Impart:
     async def jjrank(bot: Bot, matcher: Matcher, event: GroupMessageEvent) -> None:
         outcome = await game_app.query_ranking(event.group_id, event.user_id)
         if outcome.type is RankingOutcomeType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is RankingOutcomeType.TOO_FEW:
             await matcher.finish("目前记录的数据量小于5, 无法显示rank喵")
         if outcome.type is RankingOutcomeType.USER_CREATED:
@@ -427,7 +430,7 @@ class Impart:
     ) -> None:
         guard = await game_app.prepare_interaction(event.group_id, event.user_id)
         if guard.type is InteractionGuardType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if guard.type is InteractionGuardType.COOLING_DOWN:
             await matcher.finish(
                 f"你已经榨不出来任何东西了, 请先休息{guard.remaining}秒",
@@ -503,7 +506,7 @@ class Impart:
             history="历史" in target or "全部" in target,
         )
         if result.type is InjectionQueryType.DISABLED:
-            await matcher.finish(plugin_config.not_allow, at_sender=True)
+            await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if result.type is InjectionQueryType.DAILY:
             await matcher.finish(f"{replay}当日总被注射量为{result.total}ml")
         if result.type is InjectionQueryType.HISTORY_TEXT:
