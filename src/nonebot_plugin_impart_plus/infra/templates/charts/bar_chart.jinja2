@@ -1,0 +1,88 @@
+{# Impart 排行榜模板
+ #
+ # 数据结构:
+ #   top5: list[dict] - 前5名数据，每项包含 {rank, nickname, avatar_url, jj_length, is_self, bar_width}
+ #   middle: list[dict] - 查询者周围的数据（仅当不在前5/后5时有内容），包含上下各1位
+ #   bottom5: list[dict] - 倒数5名数据
+ #   total: int - 总人数
+ #   max_length: float - 最大长度（用于计算柱状条宽度）
+ #}
+<div class="wrapper">
+    <div class="header">
+        <div class="header-top">
+            <span class="header-title">Impart 排行</span>
+            <span class="header-tag">共 {{ total }} 人</span>
+        </div>
+    </div>
+
+    {# 前 5 名 #}
+    <div class="list-area">
+        <div class="list-label">前 5 名</div>
+        {% for entry in top5 %}
+        <div class="list-row {% if entry.rank == 1 %}gold{% elif entry.rank == 2 %}silver{% elif entry.rank == 3 %}bronze{% endif %}{% if entry.is_self %} self{% endif %}">
+            <div class="l-rank">{{ entry.rank }}</div>
+            <img class="l-avatar" src="{{ entry.avatar_url }}" alt="">
+            <div class="l-name">{{ entry.nickname }}</div>
+            <div class="l-bar-wrap">
+                {% if entry.jj_length < 0 %}
+                <div class="l-bar red" style="width:{{ entry.bar_width }}%"></div>
+                {% else %}
+                <div class="l-bar warm" style="width:{{ entry.bar_width }}%"></div>
+                {% endif %}
+            </div>
+            <div class="l-val{% if entry.jj_length < 0 %} neg{% endif %}">{{ "%.1f"|format(entry.jj_length) }} cm</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# 你的位置（仅当用户不在前5/后5时显示） #}
+    {% if middle %}
+    <div class="list-sep"></div>
+    <div class="list-area" style="padding-top:4px;">
+        <div class="list-label">你的位置</div>
+        <div class="list-ellipsis">···</div>
+        {% for entry in middle %}
+        <div class="list-row{% if entry.is_self %} self{% endif %}">
+            <div class="l-rank">{{ entry.rank }}</div>
+            <img class="l-avatar" src="{{ entry.avatar_url }}" alt="">
+            <div class="l-name">{{ entry.nickname }}</div>
+            <div class="l-bar-wrap">
+                {% if entry.jj_length < 0 %}
+                <div class="l-bar red" style="width:{{ entry.bar_width }}%"></div>
+                {% else %}
+                <div class="l-bar warm" style="width:{{ entry.bar_width }}%"></div>
+                {% endif %}
+            </div>
+            <div class="l-val{% if entry.jj_length < 0 %} neg{% endif %}">{{ "%.1f"|format(entry.jj_length) }} cm</div>
+        </div>
+        {% endfor %}
+        <div class="list-ellipsis">···</div>
+    </div>
+    {% endif %}
+
+    {% if bottom5 %}
+    <div class="list-sep"></div>
+
+    {# 倒数 5 名 #}
+    <div class="list-area" style="padding-top:4px;">
+        <div class="list-label" style="color:#6A9CC0;">倒数 5 名</div>
+        {% for entry in bottom5 %}
+        <div class="list-row bottom-group{% if entry.is_self %} self{% endif %}">
+            <div class="l-rank">{{ entry.rank }}</div>
+            <img class="l-avatar" src="{{ entry.avatar_url }}" alt="">
+            <div class="l-name">{{ entry.nickname }}</div>
+            <div class="l-bar-wrap">
+                {% if entry.jj_length < 0 %}
+                <div class="l-bar red" style="width:{{ entry.bar_width }}%"></div>
+                {% else %}
+                <div class="l-bar cool" style="width:{{ entry.bar_width }}%"></div>
+                {% endif %}
+            </div>
+            <div class="l-val{% if entry.jj_length < 0 %} neg{% endif %}">{{ "%.1f"|format(entry.jj_length) }} cm</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="wrapper-bottom"></div>
+</div>

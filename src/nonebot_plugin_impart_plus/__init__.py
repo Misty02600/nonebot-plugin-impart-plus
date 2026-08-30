@@ -1,24 +1,35 @@
-# from nonebot import logger, require
-from nonebot.plugin import PluginMetadata  # , inherit_supported_adapters
+"""NoneBot2 银趴插件 Plus
 
-# require("nonebot_plugin_uninfo")
-# require("nonebot_plugin_alconna")
-# require("nonebot_plugin_localstore")
-# require("nonebot_plugin_apscheduler")
-from .config import Config
+银趴游戏插件，支持 PK、打胶、嗦牛子、透群友等玩法。
+"""
 
-__all__ = ["__plugin_meta__", "handlers"]
+from nonebot.plugin import PluginMetadata
+
+from .config import PluginConfig
 
 __plugin_meta__ = PluginMetadata(
-    name="名称",
-    description="描述",
-    usage="模板测试 [文本]",
-    type="application",  # application: 功能性插件 | library: 库插件
+    name="nonebot_plugin_impart_plus",
+    usage="使用<银趴帮助/impart help>指令获取使用说明",
+    description="NoneBot2 银趴插件 Plus",
+    type="application",
     homepage="https://github.com/Misty02600/nonebot_plugin_impart_plus",
-    config=Config,
-    # supported_adapters=inherit_supported_adapters("nonebot_plugin_alconna"),
+    config=PluginConfig,
     supported_adapters={"~onebot.v11"},
-    extra={"author": "Misty02600"},
+    extra={
+        "priority": 20,
+    },
 )
 
-from . import handlers
+# 导入命令模块以注册所有命令处理器
+from .bot.handlers import (  # noqa: F401
+    control,
+    dajiao,
+    help,
+    injection,
+    pk,
+    query,
+    rank,
+    scheduled,
+    suo,
+    yinpa,
+)

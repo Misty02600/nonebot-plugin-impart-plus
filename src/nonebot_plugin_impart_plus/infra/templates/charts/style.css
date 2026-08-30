@@ -1,0 +1,330 @@
+/* Impart 图表 - 可爱蜜桃粉主题
+ * 用于排行榜和注入历史折线图
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html {
+    background-color: #FFF3EE;
+    min-height: 100vh;
+}
+
+body {
+    font-family: 'Quicksand', 'Noto Sans SC', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: 15px;
+}
+
+.wrapper {
+    width: 480px;
+    margin: 0 auto;
+    background: rgba(255, 255, 255, 0.8);
+    border-radius: 16px;
+    box-shadow: 0 6px 24px rgba(255, 140, 160, 0.1);
+    border: 1px solid rgba(255, 180, 190, 0.25);
+    overflow: hidden;
+}
+
+/* ====== Header ====== */
+.header {
+    background: #FFA7B6;
+    padding: 20px 24px;
+}
+
+.header-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 6px rgba(200, 80, 100, 0.25);
+}
+
+.header-tag {
+    margin-left: auto;
+    font-size: 12px;
+    font-weight: 700;
+    color: #D46B7A;
+    background: rgba(255, 255, 255, 0.8);
+    padding: 3px 12px;
+    border-radius: 10px;
+}
+
+/* ====== 列表通用 ====== */
+.list-area {
+    padding: 14px 18px 4px;
+}
+
+.list-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #D46B7A;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+    padding-left: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.list-label::before {
+    content: "";
+    width: 4px;
+    height: 12px;
+    background: #FFA7B6;
+    border-radius: 2px;
+}
+
+.list-row {
+    display: flex;
+    align-items: center;
+    padding: 6px 10px;
+    gap: 8px;
+    background: rgba(255, 240, 238, 0.4);
+    border: 1px solid #FFE0E4;
+    border-left: 3px solid #FFCDD6;
+    border-radius: 6px;
+    margin-bottom: 5px;
+}
+
+.l-rank {
+    width: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #D46B7A;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* 前三名序号特殊色 */
+.list-row.gold .l-rank {
+    color: #C49030;
+}
+
+.list-row.silver .l-rank {
+    color: #A0A0A0;
+}
+
+.list-row.bronze .l-rank {
+    color: #B88456;
+}
+
+.l-avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 1.5px solid #FFD6DE;
+}
+
+.list-row.gold .l-avatar {
+    border-color: #E8C878;
+}
+
+.list-row.silver .l-avatar {
+    border-color: #C8C8C8;
+}
+
+.list-row.bronze .l-avatar {
+    border-color: #DDB892;
+}
+
+.l-name {
+    font-size: 12px;
+    color: #6B5058;
+    font-weight: 600;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.l-bar-wrap {
+    width: 70px;
+    height: 6px;
+    background: #FFF0EE;
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.l-bar {
+    height: 100%;
+    border-radius: 3px;
+}
+
+.l-bar.warm {
+    background: #FFA7B6;
+}
+
+.l-bar.cool {
+    background: #A8C8E8;
+}
+
+.l-bar.red {
+    background: #E8A0A0;
+}
+
+.l-val {
+    width: 58px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 700;
+    color: #6B5058;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+}
+
+.l-val.neg {
+    color: #D07878;
+}
+
+/* ====== 查询者高亮行 ====== */
+.list-row.self {
+    background: rgba(255, 167, 182, 0.15);
+    border-color: #FFA7B6;
+    border-left: 3px solid #FFA7B6;
+}
+
+.list-row.self .l-rank {
+    color: #D46B7A;
+    font-weight: 900;
+}
+
+.list-row.self .l-name {
+    color: #D46B7A;
+    font-weight: 700;
+}
+
+.list-row.self .l-val {
+    color: #D46B7A;
+}
+
+.list-row.self .l-avatar {
+    border-color: #FFA7B6;
+    border-width: 2px;
+}
+
+/* ====== 倒数区 ====== */
+.list-row.bottom-group {
+    border-color: #D4E4F0;
+    border-left-color: #A8C8E8;
+    background: rgba(200, 220, 240, 0.15);
+}
+
+.bottom-group .l-rank {
+    color: #6A9CC0;
+}
+
+/* 倒数区内的高亮 */
+.list-row.bottom-group.self {
+    background: rgba(255, 167, 182, 0.15);
+    border-color: #FFA7B6;
+    border-left-color: #FFA7B6;
+}
+
+.list-row.bottom-group.self .l-rank {
+    color: #D46B7A;
+}
+
+/* 分割线 */
+.list-sep {
+    height: 1px;
+    margin: 8px 18px;
+    background: #FFE0E4;
+}
+
+/* 省略号 */
+.list-ellipsis {
+    text-align: center;
+    color: #F0C0C8;
+    font-size: 14px;
+    letter-spacing: 6px;
+    padding: 2px 0 6px;
+}
+
+/* 底部 padding */
+.wrapper-bottom {
+    height: 12px;
+}
+
+/* ====== 折线图专用样式 ====== */
+.chart-user-info {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(255, 240, 238, 0.5);
+    border-bottom: 1px solid #FFE0E4;
+}
+
+.chart-user-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #FFA7B6;
+    flex-shrink: 0;
+}
+
+.chart-user-details {
+    flex: 1;
+}
+
+.chart-user-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: #6B5058;
+    margin-bottom: 4px;
+}
+
+.chart-user-total {
+    font-size: 13px;
+    color: #D46B7A;
+    font-weight: 600;
+}
+
+.chart-svg-wrap {
+    padding: 20px;
+    background: #fff;
+}
+
+.chart-data-table {
+    padding: 16px 20px;
+    background: rgba(255, 240, 238, 0.3);
+}
+
+.data-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid #FFE0E4;
+    border-radius: 6px;
+    margin-bottom: 6px;
+}
+
+.data-date {
+    font-size: 12px;
+    color: #6B5058;
+    font-weight: 600;
+}
+
+.data-value {
+    font-size: 12px;
+    color: #D46B7A;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,93 @@
+{# Impart 注入历史折线图模板
+ #
+ # 数据结构:
+ #   user_name: str - 用户昵称
+ #   user_avatar: str - 用户头像URL
+ #   total_volume: float - 累计总注入量
+ #   data_points: list[dict] - 数据点列表，每项包含 {date, volume}
+ #   max_volume: float - 最大单次注入量（用于归一化）
+ #}
+<div class="wrapper">
+    <div class="header">
+        <div class="header-top">
+            <span class="header-title">注入历史</span>
+        </div>
+    </div>
+
+    {# 用户信息条 #}
+    <div class="chart-user-info">
+        <img class="chart-user-avatar" src="{{ user_avatar }}" alt="">
+        <div class="chart-user-details">
+            <div class="chart-user-name">{{ user_name }}</div>
+            <div class="chart-user-total">累计注入: {{ "%.2f"|format(total_volume) }} mL</div>
+        </div>
+    </div>
+
+    {# SVG 折线图 #}
+    <div class="chart-svg-wrap">
+        <svg width="440" height="200" viewBox="0 0 440 200" xmlns="http://www.w3.org/2000/svg">
+            {# 背景网格线 #}
+            {% for i in range(5) %}
+            <line x1="40" y1="{{ 20 + i * 40 }}" x2="420" y2="{{ 20 + i * 40 }}"
+                  stroke="#FFE0E4" stroke-width="1" stroke-dasharray="3,3"/>
+            {% endfor %}
+
+            {# Y轴标签 #}
+            {% set y_step = max_volume / 4 if max_volume > 0 else 1 %}
+            {% for i in range(5) %}
+            <text x="5" y="{{ 180 - i * 40 + 5 }}" font-size="10" fill="#D46B7A" text-anchor="start">
+                {{ "%.1f"|format(y_step * i) }}
+            </text>
+            {% endfor %}
+
+            {# 计算折线路径 #}
+            {% set x_step = 380 / (data_points|length - 1) if data_points|length > 1 else 0 %}
+            {% set path_data = [] %}
+            {% for point in data_points %}
+                {% set x = 40 + loop.index0 * x_step %}
+                {% set y = 180 - (point.volume / max_volume * 160) if max_volume > 0 else 180 %}
+                {% if loop.first %}
+                    {% set _ = path_data.append("M %d %d"|format(x|int, y|int)) %}
+                {% else %}
+                    {% set _ = path_data.append("L %d %d"|format(x|int, y|int)) %}
+                {% endif %}
+            {% endfor %}
+
+            {# 绘制折线 #}
+            <path d="{{ path_data|join(' ') }}"
+                  stroke="#FFA7B6" stroke-width="2.5" fill="none"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+
+            {# 绘制数据点 #}
+            {% for point in data_points %}
+                {% set x = 40 + loop.index0 * x_step %}
+                {% set y = 180 - (point.volume / max_volume * 160) if max_volume > 0 else 180 %}
+                <circle cx="{{ x|int }}" cy="{{ y|int }}" r="3.5" fill="#FFA7B6"/>
+                <circle cx="{{ x|int }}" cy="{{ y|int }}" r="2" fill="#fff"/>
+            {% endfor %}
+
+            {# X轴标签（简化显示，最多显示5个） #}
+            {% set label_step = (data_points|length // 5) if data_points|length > 5 else 1 %}
+            {% for point in data_points %}
+                {% if loop.index0 % label_step == 0 or loop.last %}
+                    {% set x = 40 + loop.index0 * x_step %}
+                    <text x="{{ x|int }}" y="195" font-size="9" fill="#D46B7A" text-anchor="middle">
+                        {{ point.date[-5:] }}  {# 显示 MM-DD #}
+                    </text>
+                {% endif %}
+            {% endfor %}
+        </svg>
+    </div>
+
+    {# 数据明细表格 #}
+    <div class="chart-data-table">
+        {% for point in data_points %}
+        <div class="data-row">
+            <div class="data-date">{{ point.date }}</div>
+            <div class="data-value">{{ "%.2f"|format(point.volume) }} mL</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="wrapper-bottom"></div>
+</div>
