@@ -109,7 +109,7 @@ class QueryCopy(_JJBase, frozen=True):
     prob: float = 0.5
 
     def _prob_text(self) -> str:
-        return f"\n{self.pronoun}的当前胜率为{self.prob * 100:.0f}%"
+        return f"\n{self.pronoun}的当前战力为{self.prob * 100:.0f}%"
 
     def create(self) -> str:
         return f"{self.pronoun}还没有创建{self.jj_name}喵, 咱帮{self.pronoun}创建了喵, 目前长度是10cm喵"
@@ -192,7 +192,7 @@ class NegQueryCopy(_HoleBase, frozen=True):
     prob: float = 0.5
 
     def _prob_text(self) -> str:
-        return f"\n{self.pronoun}的当前胜率为{self.prob * 100:.0f}%"
+        return f"\n{self.pronoun}的当前战力为{self.prob * 100:.0f}%"
 
     def abyss_lord(self) -> str:
         """深渊之主称号。"""

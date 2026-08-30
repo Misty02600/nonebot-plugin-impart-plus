@@ -17,7 +17,7 @@ class PluginConfig(BaseModel):
 榨取目标的精华,群友支持@用户
 [pk|对决|击剑]
 通过random实现pk,胜方获取败方随机数/2的牛牛长度;
-初始胜率为50%,pk后胜方胜率-1%,败方胜率+1%
+初始战力为50%,pk后胜方战力-1%,败方战力+1%
 <牛牛长度超过25时会触发神秘任务>
 [磨豆腐|磨]
 深度较量PK
@@ -30,7 +30,7 @@ class PluginConfig(BaseModel):
 [舔小学|舔]
 增加@用户深度(若未@则为自己)
 [查询]
-查询@用户长度/深度与胜率(若未@则为自己)
+查询@用户长度/深度与战力(若未@则为自己)
 [银趴排行榜|impart排行榜|银趴排名|impart排名]
 输出倒数五位/前五位/自己的排名
 [注入查询|摄入查询|射入查询]
@@ -56,7 +56,7 @@ class PluginConfig(BaseModel):
         default=0.5, description="PK赢家收益系数 r (赢家获得 num×r×bonus)"
     )
     pk_win_rate_k: float = Field(
-        default=0.02, description="PK胜率变化基础量 K (中心处有效变化 ±K)"
+        default=0.02, description="PK战力变化基础量 K (中心处有效变化 ±K)"
     )
     jj_aliases: list[str] = Field(
         default=["牛子", "牛牛", "newnew"], description="正值世界别名列表（随机选取）"

@@ -58,7 +58,7 @@ class PkCopy(_JJBotBase, frozen=True):
         )
 
     def probability(self) -> str:
-        return f"\n你的胜率现在为{self.prob:.0%}喵"
+        return f"\n你的战力现在为{self.prob:.0%}喵"
 
     # region 自己的状态
 
@@ -171,7 +171,7 @@ class NegPkCopy(_HoleBotBase, frozen=True):
         return f"对决失败喵, 在对面的侵蚀下你的{self.hole_name}变浅了{self.dec}cm喵, 对面加深了{self.inc}cm喵"
 
     def probability(self) -> str:
-        return f"\n你的pk胜率现在为{self.prob:.0%}喵"
+        return f"\n你的pk战力现在为{self.prob:.0%}喵"
 
     # region 自己的状态
 
