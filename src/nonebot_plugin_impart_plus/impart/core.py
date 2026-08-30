@@ -1,6 +1,6 @@
 """框架无关的游戏规则。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 
@@ -10,6 +10,22 @@ class LengthState(StrEnum):
     XNN = "xnn"
     NEAR_GIRL = "near_girl"
     GIRL = "girl"
+
+
+@dataclass(frozen=True, slots=True)
+class UserGameState:
+    length: float
+    win_probability: float
+    is_challenging: bool
+    challenge_completed: bool
+    is_near_zero: bool
+    is_zero_or_negative: bool
+
+
+@dataclass(frozen=True, slots=True)
+class StateEvaluation:
+    status: str
+    state: UserGameState
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +46,79 @@ def classify_length(length: float) -> LengthState:
     if length > 0:
         return LengthState.NEAR_GIRL
     return LengthState.GIRL
+
+
+def evaluate_user_state(state: UserGameState) -> StateEvaluation:
+    if (
+        not state.is_challenging
+        and not state.challenge_completed
+        and 25 <= state.length < 30
+    ):
+        return StateEvaluation(
+            "challenge_started_low_win",
+            replace(
+                state,
+                is_challenging=True,
+                win_probability=state.win_probability * 0.8,
+            ),
+        )
+    if (
+        not state.is_challenging
+        and not state.challenge_completed
+        and state.length >= 30
+    ):
+        return StateEvaluation(
+            "challenge_completed",
+            replace(state, challenge_completed=True),
+        )
+    if state.is_challenging and not state.challenge_completed and state.length < 25:
+        return StateEvaluation(
+            "challenge_failed_high_win",
+            replace(
+                state,
+                length=state.length - 5,
+                win_probability=state.win_probability * 1.25,
+                is_challenging=False,
+            ),
+        )
+    if state.is_challenging and not state.challenge_completed and state.length >= 30:
+        return StateEvaluation(
+            "challenge_success_high_win",
+            replace(
+                state,
+                win_probability=state.win_probability * 1.25,
+                is_challenging=False,
+                challenge_completed=True,
+            ),
+        )
+    if state.is_challenging and 25 <= state.length < 30:
+        return StateEvaluation("is_challenging", state)
+    if state.challenge_completed and 25 <= state.length < 30:
+        return StateEvaluation("challenge_completed", state)
+    if state.challenge_completed and state.length < 25:
+        return StateEvaluation(
+            "challenge_completed_reduce",
+            replace(
+                state,
+                length=state.length - 5,
+                challenge_completed=False,
+            ),
+        )
+    if not state.is_near_zero and 0 < state.length <= 5:
+        return StateEvaluation(
+            "length_near_zero",
+            replace(state, is_near_zero=True),
+        )
+    if state.is_near_zero and (state.length <= 0 or state.length > 5):
+        return StateEvaluation("", replace(state, is_near_zero=False))
+    if not state.is_zero_or_negative and state.length <= 0:
+        return StateEvaluation(
+            "length_zero_or_negative",
+            replace(state, is_zero_or_negative=True),
+        )
+    if state.is_zero_or_negative and state.length > 0:
+        return StateEvaluation("", replace(state, is_zero_or_negative=False))
+    return StateEvaluation("", state)
 
 
 def crossed_challenge_threshold(current_length: float, new_length: float) -> bool:

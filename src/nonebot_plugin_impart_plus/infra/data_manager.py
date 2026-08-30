@@ -6,6 +6,7 @@ import time
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from ..impart.core import UserGameState, evaluate_user_state
 from .database import EjaculationData, GroupData, UserData
 
 
@@ -26,51 +27,26 @@ class DataManager:
             if not user:
                 return "user_not_found"
 
-            jj_length = user.jj_length
-            is_challenging = user.is_challenging
-            challenge_completed = user.challenge_completed
-            is_near_zero = user.is_near_zero
-            is_zero_or_neg = user.is_zero_or_neg
-            response = ""
-
-            if not is_challenging and not challenge_completed and 25 <= jj_length < 30:
-                user.is_challenging = True
-                user.win_probability *= 0.8
-                response = "challenge_started_low_win"
-            elif not is_challenging and not challenge_completed and jj_length >= 30:
-                user.challenge_completed = True
-                response = "challenge_completed"
-            elif is_challenging and not challenge_completed and jj_length < 25:
-                user.win_probability *= 1.25
-                user.jj_length -= 5
-                user.is_challenging = False
-                response = "challenge_failed_high_win"
-            elif is_challenging and not challenge_completed and jj_length >= 30:
-                user.win_probability *= 1.25
-                user.is_challenging = False
-                user.challenge_completed = True
-                response = "challenge_success_high_win"
-            elif is_challenging and 25 <= jj_length < 30:
-                response = "is_challenging"
-            elif challenge_completed and 25 <= jj_length < 30:
-                response = "challenge_completed"
-            elif challenge_completed and jj_length < 25:
-                user.jj_length -= 5
-                user.challenge_completed = False
-                response = "challenge_completed_reduce"
-            elif not is_near_zero and 0 < jj_length <= 5:
-                user.is_near_zero = True
-                response = "length_near_zero"
-            elif is_near_zero and (jj_length <= 0 or jj_length > 5):
-                user.is_near_zero = False
-            elif not is_zero_or_neg and jj_length <= 0:
-                user.is_zero_or_neg = True
-                response = "length_zero_or_negative"
-            elif is_zero_or_neg and jj_length > 0:
-                user.is_zero_or_neg = False
+            evaluation = evaluate_user_state(
+                UserGameState(
+                    length=user.jj_length,
+                    win_probability=user.win_probability,
+                    is_challenging=user.is_challenging,
+                    challenge_completed=user.challenge_completed,
+                    is_near_zero=user.is_near_zero,
+                    is_zero_or_negative=user.is_zero_or_neg,
+                )
+            )
+            state = evaluation.state
+            user.jj_length = state.length
+            user.win_probability = state.win_probability
+            user.is_challenging = state.is_challenging
+            user.challenge_completed = state.challenge_completed
+            user.is_near_zero = state.is_near_zero
+            user.is_zero_or_neg = state.is_zero_or_negative
 
             await session.commit()
-            return response
+            return evaluation.status
 
     async def is_in_table(self, userid: int) -> bool:
         async with self._session_factory() as session:
