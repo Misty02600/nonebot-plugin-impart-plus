@@ -149,7 +149,7 @@ class Impart:
             uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成女孩子了喵！"
 
         probability_msg = (
-            f"\n你的胜率现在为{await get_win_probability(userid=int(uid)):.0%}喵"
+            f"\n你的战力现在为{await get_win_probability(userid=int(uid)):.0%}喵"
         )
 
         await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
@@ -196,7 +196,7 @@ class Impart:
             )
 
         probability_msg = (
-            f"\n你的胜率现在为{await get_win_probability(userid=int(uid)):.0%}喵"
+            f"\n你的战力现在为{await get_win_probability(userid=int(uid)):.0%}喵"
         )
 
         await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
