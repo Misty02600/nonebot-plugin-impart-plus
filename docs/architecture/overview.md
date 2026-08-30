@@ -12,12 +12,12 @@
 
 | 核心能力或公开入口 | 对外含义 | 关键状态或副作用 | 主要实现位置 |
 |---|---|---|---|
-| 群开关与帮助 | 管理员、群主或超级用户开启和关闭群内玩法；成员查看命令说明 | 持久化群级 `allow` 状态；完整帮助文本仍由 `Config.usage` 提供 | [`bot/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/__init__.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py)、[`config.py`](../../src/nonebot_plugin_impart_plus/config.py) |
+| 群开关与帮助 | 管理员、群主或超级用户开启和关闭群内玩法；成员查看命令说明 | 持久化群级 `allow` 状态；完整帮助文本由插件元数据 `PluginMetadata.usage` 提供 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/__init__.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py) |
 | 长度成长与查询 | `打胶/开导` 增加本人长度，`嗦牛子/嗦/suo` 增加本人或被 `@` 用户长度，`查询` 显示长度状态 | 应用层处理冷却、创建用户、状态读取和保存，bot 只生成原有回复 | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py) |
 | PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者战力判定胜负，并调整双方长度和内部胜率值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py)、[`core.py`](../../src/nonebot_plugin_impart_plus/core.py) |
 | 群友互动 | `日/透群友`、`日/透群主`、`日/透管理` 选择目标并记录注入量 | bot 读取群成员角色，应用层处理冷却、活动记录、反透判定和注入写入 | [`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py)、[`app.py`](../../src/nonebot_plugin_impart_plus/app.py) |
 | 排行榜与注入查询 | 显示长度前五、后五和本人排名；查询当天或历史注入量 | 应用层返回普通数据，bot 调用 Pillow renderer 生成 PNG | [`app.py`](../../src/nonebot_plugin_impart_plus/app.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
-| `Config` | 配置帮助文案、四类冷却时长、白名单、不活跃惩罚和长度别名 | 只描述启动配置；可变冷却状态已移入 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
+| `Config` | 配置四类冷却时长、白名单、不活跃惩罚和长度别名 | 只描述启动配置；帮助文案属于插件元数据，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
 
 ## 逻辑组件与实现映射
 
