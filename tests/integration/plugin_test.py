@@ -11,6 +11,7 @@ def test_plugin_metadata(app: App):
 
     assert __plugin_meta__.name == "nonebot_plugin_impart_plus"
     assert __plugin_meta__.description == "NoneBot2 银趴插件 Plus"
+    assert "初始战力为50%" in __plugin_meta__.usage
     assert __plugin_meta__.type == "application"
     assert nonebot_plugin_impart_plus.__file__ is not None
     expected_package = (

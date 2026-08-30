@@ -8,6 +8,7 @@ from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, Message
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg, RegexGroup
 
+from .. import __plugin_meta__
 from ..app import (
     GrowthOutcomeType,
     InjectionQueryType,
@@ -514,7 +515,7 @@ class Impart:
 
     @staticmethod
     async def yinpa_introduce(matcher: Matcher) -> None:
-        await matcher.send(MessageSegment.text(plugin_config.usage))
+        await matcher.send(MessageSegment.text(__plugin_meta__.usage))
 
 
 impart = Impart()
