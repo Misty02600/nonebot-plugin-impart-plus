@@ -3,12 +3,10 @@
 import asyncio
 from random import choice
 
-from httpx import AsyncClient
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
+from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.matcher import Matcher
-from nonebot.params import RegexGroup
 from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
-from nonebot_plugin_uninfo import Uninfo
+from nonebot_plugin_uninfo import Interface, Member, QryItrface, Uninfo, User
 
 from .. import __plugin_meta__
 from ..impart.app import (
@@ -22,7 +20,7 @@ from ..impart.app import (
 )
 from ..impart.core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
-from .context import legacy_scene_id, mentioned_user_id
+from .context import legacy_scene_id, member_parent_scene_id, mentioned_user_id
 from .dependencies import botname, game_app, plugin_config
 
 NOT_ALLOWED_TEXT = (
@@ -30,32 +28,55 @@ NOT_ALLOWED_TEXT = (
 )
 
 
-async def has_at(event: GroupMessageEvent) -> bool:
-    msg = event.get_message()
-    return next(
-        (msg_seg.data["qq"] != "all" for msg_seg in msg if msg_seg.type == "at"),
-        False,
-    )
+def user_display_name(user: User | None, fallback: str) -> str:
+    if user is None:
+        return fallback
+    return str(user.nick or user.name or fallback)
 
 
-async def get_at(event: GroupMessageEvent) -> str:
-    msg = event.get_message()
-    return next(
-        (
-            "寄" if msg_seg.data["qq"] == "all" else str(msg_seg.data["qq"])
-            for msg_seg in msg
-            if msg_seg.type == "at"
-        ),
-        "寄",
-    )
+def member_display_name(member: Member | None, fallback: str) -> str:
+    if member is None:
+        return fallback
+    return str(member.nick or member.user.nick or member.user.name or fallback)
 
 
-async def get_stranger_info(client: AsyncClient, uid: int) -> str:
+def member_has_role(member: Member, role_id: str) -> bool:
+    return any(role.id == role_id for role in member.roles)
+
+
+async def get_user_or_none(interface: Interface, user_id: str) -> User | None:
     try:
-        resp = (await client.get(f"https://api.usuuu.com/qq/{uid}")).json()
-        return resp["data"]["name"]
+        return await interface.get_user(user_id)
     except Exception:
-        return "获取用户id失败"
+        return None
+
+
+async def get_member_or_none(
+    interface: Interface,
+    session: Uninfo,
+    user_id: str,
+) -> Member | None:
+    try:
+        return await interface.get_member(
+            session.scene.type,
+            member_parent_scene_id(session),
+            user_id,
+        )
+    except Exception:
+        return None
+
+
+async def get_members_or_empty(
+    interface: Interface,
+    session: Uninfo,
+) -> list[Member]:
+    try:
+        return await interface.get_members(
+            session.scene.type,
+            member_parent_scene_id(session),
+        )
+    except Exception:
+        return []
 
 
 class Impart:
@@ -289,8 +310,15 @@ class Impart:
         await matcher.finish(msg, at_sender=True)
 
     @staticmethod
-    async def jjrank(bot: Bot, matcher: Matcher, event: GroupMessageEvent) -> None:
-        outcome = await game_app.query_ranking(event.group_id, event.user_id)
+    async def jjrank(
+        matcher: Matcher,
+        session: Uninfo,
+        interface: QryItrface,
+    ) -> None:
+        outcome = await game_app.query_ranking(
+            legacy_scene_id(session),
+            int(session.user.id),
+        )
         if outcome.type is RankingOutcomeType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is RankingOutcomeType.TOO_FEW:
@@ -303,14 +331,20 @@ class Impart:
 
         top5 = outcome.ranking[:5]
         last5 = outcome.ranking[-5:]
-        top5info = [
-            await bot.get_stranger_info(user_id=item["userid"]) for item in top5
+        top5users = [
+            await get_user_or_none(interface, str(item["userid"])) for item in top5
         ]
-        last5info = [
-            await bot.get_stranger_info(user_id=item["userid"]) for item in last5
+        last5users = [
+            await get_user_or_none(interface, str(item["userid"])) for item in last5
         ]
-        top5names = [item["nickname"] for item in top5info]
-        last5names = [item["nickname"] for item in last5info]
+        top5names = [
+            user_display_name(user, str(item["userid"]))
+            for user, item in zip(top5users, top5, strict=True)
+        ]
+        last5names = [
+            user_display_name(user, str(item["userid"]))
+            for user, item in zip(last5users, last5, strict=True)
+        ]
         data = {top5names[i]: top5[i]["jj_length"] for i in range(len(top5))}
         for i in range(len(last5)):
             data[last5names[i]] = last5[i]["jj_length"]
@@ -320,51 +354,49 @@ class Impart:
 
     @staticmethod
     async def yinpa_member_handle(
-        prep_list: list,
+        members: list[Member],
         req_user_card: str,
         matcher: Matcher,
-        event: GroupMessageEvent,
+        uid: int,
         random_nn: float,
     ) -> str:
-        prep_list = [prep.get("user_id", 123456) for prep in prep_list]
-        target = await get_at(event)
-        uid = event.user_id
-        if target == "寄":
-            if uid in prep_list:
-                prep_list.remove(uid)
-            lucky_user = choice(prep_list)
-            jj_length = await game_app.get_length(uid)
-            if jj_length > 5:
+        member_ids = [int(member.user.id) for member in members]
+        if uid in member_ids:
+            member_ids.remove(uid)
+        if not member_ids:
+            game_app.release_interaction_cooldown(uid)
+            await matcher.finish("喵喵喵? 找不到群友!")
+        lucky_user = choice(member_ids)
+        jj_length = await game_app.get_length(uid)
+        if jj_length > 5:
+            await matcher.send(
+                f"现在咱将随机抽取一位幸运群友\n送给{req_user_card}色色！"
+            )
+        elif 5 >= jj_length > 0:
+            if random_nn < 0.5:
+                await matcher.send(
+                    f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给随机一位幸运群友色色！"
+                )
+            else:
                 await matcher.send(
                     f"现在咱将随机抽取一位幸运群友\n送给{req_user_card}色色！"
                 )
-            elif 5 >= jj_length > 0:
-                if random_nn < 0.5:
-                    await matcher.send(
-                        f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给随机一位幸运群友色色！"
-                    )
-                else:
-                    await matcher.send(
-                        f"现在咱将随机抽取一位幸运群友\n送给{req_user_card}色色！"
-                    )
-            else:
-                await matcher.send(
-                    f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给随机一位幸运群友色色！"
-                )
         else:
-            lucky_user = target
-        return lucky_user
+            await matcher.send(
+                f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给随机一位幸运群友色色！"
+            )
+        return str(lucky_user)
 
     @staticmethod
     async def yinpa_owner_handle(
         uid: int,
-        prep_list: list,
+        members: list[Member],
         req_user_card: str,
         matcher: Matcher,
         random_nn: float,
     ) -> str:
         lucky_user = next(
-            (prep["user_id"] for prep in prep_list if prep["role"] == "owner"),
+            (member.user.id for member in members if member_has_role(member, "OWNER")),
             str(uid),
         )
         if int(lucky_user) == uid:
@@ -386,12 +418,16 @@ class Impart:
     @staticmethod
     async def yinpa_admin_handle(
         uid: int,
-        prep_list: list,
+        members: list[Member],
         req_user_card: str,
         matcher: Matcher,
         random_nn: float,
     ) -> str:
-        admin_id = [prep["user_id"] for prep in prep_list if prep["role"] == "admin"]
+        admin_id = [
+            int(member.user.id)
+            for member in members
+            if member_has_role(member, "ADMINISTRATOR")
+        ]
         if uid in admin_id:
             admin_id.remove(uid)
         if not admin_id:
@@ -416,33 +452,36 @@ class Impart:
     async def yinpa_identity_handle(
         self,
         command: str,
-        prep_list: list,
+        members: list[Member],
         req_user_card: str,
         matcher: Matcher,
-        event: GroupMessageEvent,
+        uid: int,
         random_nn: float,
     ) -> str:
-        uid = event.user_id
         if "群主" in command:
             return await self.yinpa_owner_handle(
-                uid, prep_list, req_user_card, matcher, random_nn
+                uid, members, req_user_card, matcher, random_nn
             )
         if "管理" in command:
             return await self.yinpa_admin_handle(
-                uid, prep_list, req_user_card, matcher, random_nn
+                uid, members, req_user_card, matcher, random_nn
             )
         return await self.yinpa_member_handle(
-            prep_list, req_user_card, matcher, event, random_nn
+            members, req_user_card, matcher, uid, random_nn
         )
 
     async def yinpa(
         self,
-        bot: Bot,
         matcher: Matcher,
-        event: GroupMessageEvent,
-        args: tuple = RegexGroup(),
+        session: Uninfo,
+        interface: QryItrface,
+        result: CommandResult,
+        target: Match[At],
+        tail: Match[UniMessage],
     ) -> None:
-        guard = await game_app.prepare_interaction(event.group_id, event.user_id)
+        scene_id = legacy_scene_id(session)
+        uid = int(session.user.id)
+        guard = await game_app.prepare_interaction(scene_id, uid)
         if guard.type is InteractionGuardType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if guard.type is InteractionGuardType.COOLING_DOWN:
@@ -451,41 +490,54 @@ class Impart:
                 at_sender=True,
             )
 
-        uid = event.user_id
-        req_user_card = str(event.sender.card or event.sender.nickname)
-        command = args[0]
-        prep_list = await bot.get_group_member_list(group_id=event.group_id)
-        random_nn = game_app.roll_interaction()
-        lucky_user = await self.yinpa_identity_handle(
-            command,
-            prep_list,
-            req_user_card,
-            matcher,
-            event,
-            random_nn,
+        req_user_card = member_display_name(
+            session.member,
+            user_display_name(session.user, session.user.id),
         )
-        lucky_user_card = next(
-            (
-                prep["card"] or prep["nickname"]
-                for prep in prep_list
-                if prep["user_id"] == int(lucky_user)
-            ),
-            "群友",
+        command = str(result.result.header_match.result)
+        mentioned = mentioned_user_id(target, tail)
+        members: list[Member] = []
+        if mentioned is None:
+            members = await get_members_or_empty(interface, session)
+            if not members:
+                game_app.release_interaction_cooldown(uid)
+                await matcher.finish(
+                    "当前平台无法获取群成员列表，请明确@目标",
+                )
+        random_nn = game_app.roll_interaction()
+        lucky_user = mentioned or await self.yinpa_identity_handle(
+            command, members, req_user_card, matcher, uid, random_nn
+        )
+        lucky_member = next(
+            (member for member in members if member.user.id == lucky_user),
+            None,
+        ) or await get_member_or_none(interface, session, lucky_user)
+        lucky_user_info = (
+            lucky_member.user
+            if lucky_member
+            else await get_user_or_none(interface, lucky_user)
+        )
+        lucky_user_card = member_display_name(
+            lucky_member,
+            user_display_name(lucky_user_info, "群友"),
+        )
+        lucky_user_avatar = (lucky_member.user.avatar if lucky_member else None) or (
+            lucky_user_info.avatar if lucky_user_info else None
         )
         await asyncio.sleep(2)
-        result = await game_app.complete_interaction(
+        interaction_result = await game_app.complete_interaction(
             uid,
             int(lucky_user),
             random_nn,
         )
-        if result.reversed:
-            report = f"好欸！{lucky_user_card}({lucky_user})用时{result.seconds}秒 \n给 {req_user_card}({uid}) 注入了{result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{result.today_total}毫升\n"
+        if interaction_result.reversed:
+            report = f"好欸！{lucky_user_card}({lucky_user})用时{interaction_result.seconds}秒 \n给 {req_user_card}({uid}) 注入了{interaction_result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{interaction_result.today_total}毫升\n"
         else:
-            report = f"好欸！{req_user_card}({uid})用时{result.seconds}秒 \n给 {lucky_user_card}({lucky_user}) 注入了{result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{result.today_total}毫升\n"
-        await matcher.send(
-            report
-            + MessageSegment.image(f"https://q1.qlogo.cn/g?b=qq&nk={lucky_user}&s=640")
-        )
+            report = f"好欸！{req_user_card}({uid})用时{interaction_result.seconds}秒 \n给 {lucky_user_card}({lucky_user}) 注入了{interaction_result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{interaction_result.today_total}毫升\n"
+        if lucky_user_avatar:
+            await matcher.send(report + MessageSegment.image(lucky_user_avatar))
+        else:
+            await matcher.send(report)
 
     @staticmethod
     async def open_module(

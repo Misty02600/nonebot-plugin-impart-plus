@@ -13,6 +13,10 @@ def legacy_scene_id(session: Session) -> int:
     return int(session.scene.id)
 
 
+def member_parent_scene_id(session: Session) -> str:
+    return session.scene.parent.id if session.scene.parent else session.scene.id
+
+
 def mentioned_user_id(
     target: Match[At],
     tail: Match[UniMessage],

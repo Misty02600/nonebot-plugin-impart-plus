@@ -1,8 +1,6 @@
 """Matcher 注册与插件生命周期。"""
 
-from re import I
-
-from nonebot import get_driver, on_regex, require
+from nonebot import get_driver, require
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import on_alconna
 from nonebot_plugin_uninfo import ADMIN
@@ -12,8 +10,10 @@ from .commands import (
     GROW_COMMAND,
     HELP_COMMAND,
     INJECTION_QUERY_COMMAND,
+    INTERACTION_COMMAND,
     PK_COMMAND,
     QUERY_COMMAND,
+    RANK_COMMAND,
     SUO_COMMAND,
     TOGGLE_COMMAND,
 )
@@ -80,17 +80,21 @@ on_alconna(
     handlers=[impart.queryjj],
 )
 
-on_regex(
-    r"^(jj|牛牛)(排行榜|排名|榜单|rank)",
-    flags=I,
+on_alconna(
+    RANK_COMMAND,
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=False,
     priority=20,
     block=True,
     handlers=[impart.jjrank],
 )
 
-on_regex(
-    r"^(日群友|日群主|日管理|透群友|透群主|透管理)",
-    flags=I,
+on_alconna(
+    INTERACTION_COMMAND,
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=False,
     priority=20,
     block=True,
     handlers=[impart.yinpa],
