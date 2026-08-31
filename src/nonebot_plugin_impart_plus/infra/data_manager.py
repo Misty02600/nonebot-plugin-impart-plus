@@ -18,7 +18,7 @@ class DataManager:
         self._session_factory = session_factory
 
     async def update_challenge_status(self, userid: int) -> str:
-        """根据用户的jj_length、is_challenging和challenge_completed状态更新用户的挑战状态和胜率"""
+        """根据用户的jj_length、is_challenging和challenge_completed状态更新用户的挑战状态和战力"""
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData).where(UserData.userid == userid)
@@ -103,7 +103,7 @@ class DataManager:
             await session.commit()
 
     async def get_win_probability(self, userid: int) -> float:
-        """传入用户id, 返还数据库中对应的获胜概率"""
+        """传入用户id, 返还数据库中对应的战力"""
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData.win_probability).filter(UserData.userid == userid)
@@ -115,7 +115,7 @@ class DataManager:
         userid: int,
         probability_change: float,
     ) -> None:
-        """传入一个用户id以及需要增加的获胜率, 在数据库内累加, 用这个函数前一定要先判断用户是否在表中"""
+        """传入一个用户id以及需要增加的战力, 在数据库内累加, 用这个函数前一定要先判断用户是否在表中"""
         async with self._session_factory() as session:
             current_probability = await self.get_win_probability(userid)
             await session.execute(
