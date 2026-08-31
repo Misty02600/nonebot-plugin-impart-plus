@@ -2,7 +2,7 @@
 
 | 状态 | 优先级 | 最后更新 | 基准 |
 |---|---|---|---|
-| 进行中 | 阻塞 | 2026-08-31 | `feature@6d02776` |
+| 进行中 | 阻塞 | 2026-08-31 | `feature@cc6f800` |
 
 ## 背景
 
@@ -15,7 +15,7 @@
 ### 现有接入
 
 - [`bot/__init__.py`](../../../src/nonebot_plugin_impart_plus/bot/__init__.py) 注册 9 个 matcher，混用 `on_command` 与 `on_regex`。
-- [`bot/handlers.py`](../../../src/nonebot_plugin_impart_plus/bot/handlers.py) 直接依赖 OneBot V11 的 `GroupMessageEvent`、`MessageSegment`、群成员列表、群成员资料、sender card 和 QQ 头像地址。
+- 迁移前的 `bot/handlers.py` 直接依赖 OneBot V11 的 `GroupMessageEvent`、`MessageSegment`、群成员列表、群成员资料、sender card 和 QQ 头像地址。
 - PK、嗦、查询和注入查询通过扫描 OneBot `at` 消息段得到目标；`@全体` 被视为没有合法目标。
 - 群开关权限直接使用 OneBot V11 `GROUP_ADMIN`、`GROUP_OWNER` 与 NoneBot `SUPERUSER`。
 - `.env.test` 的 `COMMAND_START` 是 `["", "/"]`。`on_command` 入口遵循 command start，而现有正则入口直接从消息开头匹配；把所有命令统一改成 `use_cmd_start=True` 会改变部分部署中的无前缀行为。
@@ -113,14 +113,20 @@ Adapter event
     - 根命令使用 compact，同时接受有空格和无空格形式；不注册旧版动作前置 shortcut。
 13. `test: 验证分组命令语法`
     - 覆盖根命令 alias、子命令 alias、dispatch path、权限边界、有/无空格，并验证旧格式不再匹配。
-14. `feat: 声明三插件适配器交集`
+14. `refactor: 按功能组织模块级Handler`
+    - 删除无状态 `Impart` 类和单例；command grammar 与 matcher 策略共同归属 `matchers.py`，handler 按 `game`、`interaction`、`records`、`control` 归入 `handlers/`，生命周期归属 `bot/__init__.py`。
+    - 只把跨功能复用的未开启文案与用户目录辅助函数放进 `handlers/shared.py`；定时任务直接调用 application service，不创建无业务价值的 Handler 包装。
+    - 普通命令使用 `@matcher.handle()`，银趴子命令直接装饰各自 dispatch matcher，不再通过 `handlers=[...]` 间接注册。
+15. `test: 验证装饰器注册结构`
+    - 按功能拆分 Handler 测试，验证全部 matcher 已绑定 handler，且包不再导出 `Impart`/`impart`。
+16. `feat: 声明三插件适配器交集`
     - PLAN-0002 完成后，在插件入口依次 `require("nonebot_plugin_alconna")`、`require("nonebot_plugin_uninfo")`、`require("nonebot_plugin_uniref")`。
     - 把 `PluginMetadata.supported_adapters` 设置为 `inherit_supported_adapters("nonebot_plugin_alconna", "nonebot_plugin_uninfo", "nonebot_plugin_uniref")`。
     - 不手写 Adapter 集合。
-15. `test: 验证适配器支持交集`
+17. `test: 验证适配器支持交集`
     - 在测试依赖组加入当前交集对应的 OneBot V11、Telegram、Discord Adapter；交集随依赖升级变化时，同步测试依赖和 fixture。
     - 验证依赖加载顺序、动态交集、锁定版本的支持矩阵，以及交集内各 Adapter 的最小命令与消息行为。
-16. `docs: 更新命令与适配器边界`
+18. `docs: 更新命令与适配器边界`
     - 同步 README、architecture 和平台支持矩阵。
 
 ### 命令迁移映射
@@ -131,7 +137,7 @@ Adapter event
 | `打胶/开导` | 无前缀命令加 alias | `use_cmd_start=False`，保持完整消息匹配 |
 | `嗦牛子/嗦/suo` | `use_cmd_start=True`；可选 `At` | 无目标默认本人，`AtAll` 与额外参数不匹配 |
 | `查询` | `use_cmd_start=True`；可选 `At` | 无目标默认本人，不接收额外参数 |
-| 排行榜别名 | `re:(?i:...)` 精确命令头 | 无前缀、大小写不敏感，不接收尾随内容 |
+| 排行榜别名 | `银趴/impart` + `排行榜/排名/榜单/rank` 精确命令头 | 无前缀、英文大小写不敏感，不接收尾随内容 |
 | 日/透系列 | `透` 根命令 + `日` alias + `Literal["群友", "管理", "群主"]` | compact 支持 `透群友`/`透 群友`；显式 At 优先；不再接受任意黏连尾巴 |
 | 银趴开关与帮助 | `银趴` 根命令 + 开启/禁止/帮助子命令 | compact 支持有/无空格，dispatch 分离管理员权限，不兼容动作前置旧格式 |
 | 注入查询系列 | `use_cmd_start=True`；可选 `At` + 历史 Option | “历史/全部”是正式选项，不再按任意文本子串判断 |
@@ -147,12 +153,14 @@ Adapter event
 - 2026-08-31 · D-004：UniMessage 发送统一采用 `fallback="auto"`，尽量导出为当前 Adapter 可发送的表现。
 - 2026-08-31：同平台多 Bot 共享同一用户和场景游戏状态；身份来源不受支持时静默跳过事件处理，不向用户发送拒绝文案。
 - 2026-08-31：`银趴` 使用子命令，是因为开关与帮助有独立权限/处理路径；`透/日` 的群友、管理、群主使用 Literal 参数，因为它们共享同一互动用例与参数结构。
+- 2026-08-31：`Impart` 类没有实例状态，不承担应用服务职责；迁移稳定后删除该命名空间类，改用模块级装饰器 handler。当前命令数量较少，grammar 与 matcher 一一对应，因此合并保存在 `matchers.py`，不再单设 `commands.py`。
+- 2026-08-31：业务 Handler 当前都只服务一个 matcher，不建立跨 matcher 的 Handler 复用层；接入代码按 `game`、`interaction`、`records`、`control` 功能拆分，共享模块只容纳跨功能辅助函数和文案。
 
 ## 实施进度
 
 | 状态 | 当前工作项 | 结果或下一步 |
 |---|---|---|
-| 进行中 | 等待 UniRef 身份切片 | 分组命令严格语法、dispatch、历史 Option、matcher 注册、README 与当前架构已同步；动态 Adapter 声明留待 PLAN-0002 后 |
+| 进行中 | 等待 UniRef 身份切片 | grammar/matcher、按功能拆分的模块级装饰器 handler、生命周期和架构文档边界已完成整理；动态 Adapter 声明留待 PLAN-0002 后 |
 
 ## 完成标准与验证
 

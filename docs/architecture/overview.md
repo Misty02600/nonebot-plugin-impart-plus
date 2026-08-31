@@ -12,18 +12,18 @@
 
 | 核心能力或公开入口 | 对外含义 | 关键状态或副作用 | 主要实现位置 |
 |---|---|---|---|
-| 群开关与帮助 | `银趴` 根命令以开启、禁止、帮助为子命令，compact 允许有/无空格；开关限管理员、群主或超级用户 | dispatch 为开关和帮助保留独立权限与优先级；持久化场景级 `allow` 状态；完整帮助文本来自 `PluginMetadata.usage` | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/commands.py`](../../src/nonebot_plugin_impart_plus/bot/commands.py)、[`bot/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/__init__.py) |
-| 长度成长与查询 | `打胶/开导` 增加本人长度，`嗦牛子/嗦/suo` 增加本人或被 `@` 用户长度，`查询` 显示长度状态 | 应用层处理冷却、创建用户、状态读取和保存，bot 只生成原有回复 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py) |
-| PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者战力判定胜负，并调整双方长度和内部战力值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
-| 群友互动 | `透` 为根命令、`日` 为 alias，群友/管理/群主是类型化目标类别；compact 允许有/无空格 | Uninfo 提供成员、角色、昵称与头像；显式 At 优先，无成员枚举能力时要求明确目标；应用层处理冷却、反透和注入写入 | [`bot/commands.py`](../../src/nonebot_plugin_impart_plus/bot/commands.py)、[`bot/handlers.py`](../../src/nonebot_plugin_impart_plus/bot/handlers.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
-| 排行榜与注入查询 | 显示长度前五、后五和本人排名；查询当天或历史注入量 | 应用层返回普通数据，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
+| 群开关与帮助 | `银趴` 根命令以开启、禁止、帮助为子命令，compact 允许有/无空格；开关限管理员、群主或超级用户 | dispatch 为开关和帮助保留独立权限与优先级；持久化场景级 `allow` 状态；完整帮助文本来自 `PluginMetadata.usage` | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/control.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/control.py) |
+| 长度成长与查询 | `打胶/开导` 增加本人长度，`嗦牛子/嗦/suo` 增加本人或被 `@` 用户长度，`查询` 显示长度状态 | 应用层处理冷却、创建用户、状态读取和保存，bot 只生成原有回复 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
+| PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者战力判定胜负，并调整双方长度和内部战力值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
+| 群友互动 | `透` 为根命令、`日` 为 alias，群友/管理/群主是类型化目标类别；compact 允许有/无空格 | Uninfo 提供成员、角色、昵称与头像；显式 At 优先，无成员枚举能力时要求明确目标；应用层处理冷却、反透和注入写入 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
+| 排行榜与注入查询 | 显示长度前五、后五和本人排名；查询当天或历史注入量 | 应用层返回普通数据，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 | `Config` | 配置四类冷却时长、不活跃惩罚和长度别名 | 只描述插件启动配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
 
 ## 逻辑组件与实现映射
 
 | 逻辑组件 | 当前职责 | 主要协作与边界 | 拥有的数据或状态 | 主要实现位置 |
 |---|---|---|---|---|
-| 插件入口与 bot 接入 | 声明元数据、注册 Alconna matcher/dispatch 和定时任务，通过 Uninfo 解析场景、身份、成员与权限，通过 UniMessage 发送回复 | 通过组装模块取得 `GameApplication`；不直接调用数据库和冷却；UniRef 接入前临时把数值场景 ID 转为现有整数键 | 单次事件上下文；模块级机器人昵称 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/`](../../src/nonebot_plugin_impart_plus/bot) |
+| 插件入口与 bot 接入 | `matchers.py` 共同定义 grammar、matcher 与 dispatch；`handlers/` 用模块级装饰器按游戏、互动、记录、控制拆分事件处理；`bot/__init__.py` 只管理启动和定时任务 | 通过组装模块取得 `GameApplication`；不直接调用数据库和冷却；Uninfo 解析场景、身份、成员与权限，UniMessage 发送回复；UniRef 接入前临时把数值场景 ID 转为现有整数键 | 单次事件上下文；模块级机器人昵称 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/__init__.py) |
 | 应用用例 | 按原有顺序执行群开关、冷却、随机、数据读取、core 计算和持久化，返回语义化 outcome | 当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 核心规则 | 分类长度状态，计算挑战、xnn、非正长度状态转换，以及 PK 结果和反透条件 | 只依赖标准库；不导入 NoneBot、SQLAlchemy 或 Pillow | 不持有运行状态 | [`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
 | 数据库与数据访问 | 定义 ORM、初始化和兼容旧字段，执行 CRUD，并把 ORM 用户状态映射给 core 后写回转换结果 | `database.py` 拥有 engine/session factory，composition root 创建单个 `DataManager`；每个方法保持独立提交 | 用户、群开关和注入记录 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
@@ -60,7 +60,7 @@
 ## 当前质量边界与维护风险
 
 - 当前测试覆盖插件与 11 个 Alconna matcher 注册、根命令 dispatch、严格 grammar、Uninfo 场景/成员/角色、application 参数、能力降级和 UniMessage 文本/图片结构；跨 Adapter 实际事件 fixture 仍等待 UniRef 身份切片后补齐。
-- `bot/handlers.py` 仍集中全部 matcher 文案和群成员选择逻辑，后续只有在实际维护收益明确时再按能力拆分。
+- `bot/handlers/` 已按 `game`、`interaction`、`records`、`control` 拆分；当前没有被多个 matcher 复用的业务 Handler，跨功能共享只保留未开启文案与用户目录辅助函数。`game.py` 因 PK 分支文案仍是其中最大的模块。
 - PK 和挑战结算继续由多个 `DataManager` 方法分别提交；中途异常可能留下双方状态只更新一部分的结果。
 - `get_jj_length()` 和 `get_win_probability()` 使用真假值回退默认值，持久化的精确 `0` 与“没有查询结果”不能被区分。
 - 用户文案已使用“战力”，内部字段和计算仍沿用 `win_probability`；后续设计需要明确战力是展示名称还是新的数值语义。
