@@ -2,7 +2,7 @@
 
 | 状态 | 优先级 | 最后更新 | 基准 |
 |---|---|---|---|
-| 讨论中 | 阻塞 | 2026-08-31 | `feature@c2ec0cd` |
+| 讨论中 | 阻塞 | 2026-08-31 | `feature@6d02776` |
 
 ## 背景
 
@@ -67,6 +67,7 @@ Adapter event
 - `impart/app.py`、`impart/core.py` 和 `infra` 不接收 `Event`、`Session`、`UniMessage` 或 Alconna 解析对象。
 - 当前事件回复不构造 `Target`；只有未来出现事件外主动发送时才使用。
 - Alconna matcher 切片本身不改变 SQLite 主键类型；完成这些切片后按 PLAN-0002 使用 UniRef 重构 v1 身份 schema，完成身份隔离后才把 metadata 改为三插件支持交集。
+- PLAN-0002 将消费 UniRef 上游提供的事件依赖注入契约：无法形成已验证 Ref 的事件静默跳过，不回复、不写库；对 `block=True` matcher 必须在运行 handler 前完成身份能力判断，避免跳过 handler 后仍阻止低优先级 matcher。
 - 插件发布到 NoneBot 插件市场前，数据库始终按全新 v1 处理，不编写迁移兼容代码。
 - 第一轮不修改玩法、提示语、随机调用次序、冷却时机和数据提交边界。
 
@@ -139,6 +140,7 @@ Adapter event
 - 2026-08-31 · D-003：严格保留 command start、无前缀正则、大小写不敏感和尾随内容范围；目标优先使用类型化 `At`，仅从 Alconna 的可选 tail 恢复旧 At 位置，不扫描原始 Adapter 消息。
 - 2026-08-31 · D-001：不把支持范围限制为 OneBot V11；完成 UniRef v1 身份重构后，使用 NoneBot `inherit_supported_adapters()` 直接继承 Alconna、Uninfo、UniRef 三插件支持集合的交集，不手写 Adapter 名单。
 - 2026-08-31 · D-004：UniMessage 发送统一采用 `fallback="auto"`，尽量导出为当前 Adapter 可发送的表现。
+- 2026-08-31：同平台多 Bot 共享同一用户和场景游戏状态；身份来源不受支持时静默跳过事件处理，不向用户发送拒绝文案。
 
 ## 完成标准与验证
 
@@ -155,6 +157,7 @@ Adapter event
 | 文本、at sender、PNG | UniMessage 可导出并发送；无法原样导出时使用 `auto` fallback | segment 单测与各支持 Adapter 行为测试 |
 | 依赖加载顺序 | Alconna、Uninfo、UniRef 均在继承支持集合前完成 `require()` | 插件加载测试 |
 | 适配器声明 | metadata 等于 `inherit_supported_adapters()` 对三插件计算出的交集，不存在手写名单 | metadata 测试与平台支持矩阵审查 |
+| 无法形成已验证 Ref 的事件 | matcher 不回复、不写数据库，也不因 `block=True` 阻止低优先级 matcher | 身份能力 rule/after-rule 测试 + 低优先级 sentinel matcher |
 | 质量门 | Ruff、BasedPyright、pytest、sdist/wheel 构建全部通过 | `just lint`、`just check`、`just test`、`uv build` |
 
 ## 相关文档

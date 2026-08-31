@@ -40,6 +40,8 @@
 - 自动提取只验证 OneBot V11 × QQClient、原生 Telegram 和原生 Discord；相同 scope 的其他 Adapter 默认拒绝。
 - Telegram topic 当前因 ID 仅在父 chat 内唯一而显式拒绝。
 
+以上两项描述审查基准 `0.2.0` 的直接解析行为。计划实施时改用用户将在 UniRef 上游完成的事件依赖注入接口：无法形成已验证 Ref 属于“不适用事件”，在依赖或 matcher 规则层静默跳过；直接调用纯解析函数时仍允许用明确异常表达失败。
+
 因此，UniRef 对“跨平台持久化身份”价值高，对“只把 matcher 换成 Alconna”价值低。
 
 ## 当前数据设计与重构边界
@@ -53,12 +55,15 @@
 
 本计划不在 PLAN-0001 的 matcher 迁移中顺带修改数据库。先完成 Alconna 接入切片，再单独实施本计划并直接修改 v1 schema：
 
-1. 直接调整 `userdata`、`groupdata`、`ejaculation_data` 的用户和场景键，使用 `encode_ref()` 结果；不创建 v2 或 legacy 表。
-2. 删除旧列探测、回填和兼容分支；开发环境中的旧 `impart.db` 由维护者删除后按新 schema 重建。
-3. `DataManager` API 接收 `UserRef`/`SceneRef`，在 infra 内编码，不让 wire string 扩散到 core。
-4. `GameApplication` 接收 Ref 或更窄的稳定身份对象；core 的纯数值规则不感知身份。
-5. 冷却键改为 `encode_ref(user_ref)`；群开关以场景 Ref 为键。
-6. 只有需要事件外发送时才调用 `to_target()`，不把 Target 持久化进业务表。
+1. 引入依赖前重新核对 UniRef 已包含约定的事件注入语义，并记录实际版本或提交；不在本插件复制上游来源判断表。
+2. 直接调整 `userdata`、`groupdata`、`ejaculation_data` 的用户和场景键，使用 `encode_ref()` 结果；不创建 v2 或 legacy 表。
+3. 删除旧列探测、回填和兼容分支；开发环境中的旧 `impart.db` 由维护者删除后按新 schema 重建。
+4. `DataManager` API 接收 `UserRef`/`SceneRef`，在 infra 内编码，不让 wire string 扩散到 core。
+5. `GameApplication` 接收 Ref 或更窄的稳定身份对象；core 的纯数值规则不感知身份。
+6. 冷却键改为 `encode_ref(user_ref)`；群开关以场景 Ref 为键。
+7. 同平台不同 Bot 不进入业务键，继续共享用户和场景状态。
+8. 无法形成已验证 Ref 时不调用 application：不回复、不写库；对 `block=True` matcher 使用 UniRef 提供的 matcher 级能力检查或等价的 Alconna `after_rule`，确保低优先级 matcher 仍可继续。
+9. 只有需要事件外发送时才调用 `to_target()`，不把 Target 持久化进业务表。
 
 该规则持续到插件首次发布到 NoneBot 插件市场；发布后若再修改持久化 schema，届时重新建立迁移与兼容策略，不能把本阶段的“直接重建”惯例延伸到已发布版本。
 
@@ -73,22 +78,6 @@
 
 测试仍遵循用户确认的顺序：先完成对应 schema 或身份切片，再立即增加该切片的行为测试；不增加旧数据库升级、回填或幂等迁移测试。
 
-## 待确认事项
-
-### D-103 · P1：是否按 Bot 隔离用户状态
-
-UniRef 的 Ref 默认不含 Bot，同一平台的两个 Bot 会看到相同用户 Ref。
-
-- **A：同平台 Bot 共享状态。** 与当前 QQ 用户按裸账号共享状态的语义一致。
-- **B：按 Bot 隔离。** 业务键额外加入 `self_id`，但 Ref 本身保持不变。
-- **建议：A。** 保持现有语义；只有明确需要多 Bot 独立游戏世界时再增加 Bot 维度。
-
-### D-104 · P1：遇到 UniRef 未验证来源如何处理
-
-- **A：显式拒绝该命令并提示平台暂未支持。**
-- **B：回退到裸 ID。** 会破坏持久化唯一性保证。
-- **建议：A。** 持久化身份应失败安全，不写入来源不明确、无法稳定复现的键。
-
 ## 完成标准与验证
 
 | 覆盖条件或输入 | 预期结果 | 验证方式 |
@@ -96,9 +85,12 @@ UniRef 的 Ref 默认不含 Bot，同一平台的两个 Bot 会看到相同用�
 | 空数据库首次启动 | 直接创建采用 Ref 键的 v1 表，不出现 v2 或 legacy 表 | schema 集成测试 |
 | 旧开发数据库 | 不执行探测、回填或兼容；删除后可按当前 v1 schema 重建 | 源码审查与干净数据库启动测试 |
 | 同值用户 ID、不同 scope | 生成不同主键且互不读取 | DataManager 集成测试 |
-| 两个 OneBot Bot 观察同一 QQ 用户 | 按 D-103 得到相同或隔离状态 | 身份键参数化测试 |
-| 未验证 Adapter/scope | 按 D-104 显式失败，不写入数据库 | 依赖与数据层测试 |
-| Telegram topic | 保持 UniRef 明确拒绝，不生成碰撞 SceneRef | 错误路径测试 |
+| 同平台两个 Bot 观察同一用户或场景 | 生成同一业务键并共享游戏状态 | 身份键参数化测试 |
+| Uninfo 不认识 Adapter 或事件 | 非可选 Session 注入类型不匹配，当前 handler 被跳过；不回复、不写库 | 依赖注入行为测试 |
+| 已取得 Session，但 UniRef 未验证 Adapter/scope | 事件依赖或 matcher 能力规则静默跳过，不回退裸 ID | UniRef 上游契约测试 + 本插件集成测试 |
+| Telegram topic | 不生成碰撞 SceneRef，事件处理静默跳过 | 错误路径与 matcher 行为测试 |
+| `block=True` matcher 身份不适用 | 本 matcher 不运行 handler，低优先级 sentinel matcher 仍收到事件 | Alconna after-rule/上游能力 rule 集成测试 |
+| 受支持来源中的损坏 Session | 不被“不适用来源”分支吞掉，错误保持可诊断且不写库 | 异常路径测试 |
 | 冷却和群开关 | 使用 Ref 后不发生跨平台碰撞 | 应用层与冷却测试 |
 | 发布前 schema 代码 | 不包含 migration runner、旧列兼容或 legacy 表分支 | 静态审查与定向测试 |
 | 质量门 | Ruff、BasedPyright、pytest、构建全部通过 | 项目标准命令 |
@@ -107,10 +99,14 @@ UniRef 的 Ref 默认不含 Bot，同一平台的两个 Bot 会看到相同用�
 
 - 2026-08-31 · D-101：先迁移 Alconna 接入，再单独采用 UniRef 重构持久化身份；PLAN-0001 只有在本计划完成后才扩大 Adapter 声明。
 - 2026-08-31 · D-102：插件首次进入 NoneBot 插件市场前始终按全新 v1 开发；schema 直接修改，旧开发数据库直接重建，不编写迁移、回填、v2 表或 legacy 兼容逻辑。
+- 2026-08-31 · D-103：UniRef 不含 Bot 维度；同平台多 Bot 共享同一用户和场景游戏状态。
+- 2026-08-31 · D-104：无法形成已验证持久化 Ref 时，事件处理静默跳过，不发送拒绝文案、不回退裸 ID、不写数据库；该预期分支不得因 matcher 的 `block=True` 阻止其他 matcher，受支持来源的数据错误仍正常暴露。
 
 ## 相关文档
 
 - [当前项目架构](../../architecture/overview.md)
+- [NoneBot 依赖注入](https://nonebot.dev/docs/advanced/dependency)
+- [NoneBot Rule](https://nonebot.dev/docs/api/rule)
 - [UniRef 仓库 main@ec2ee8f](https://github.com/Misty02600/nonebot-plugin-uniref/tree/ec2ee8f0b070c20293cd57ac5459a87d43afc50b)
 - [UniRef v0.2.0](https://github.com/Misty02600/nonebot-plugin-uniref/releases/tag/v0.2.0)
 - [PLAN-0001：迁移 Alconna 跨平台接入层](PLAN-0001-alconna-multiplatform-migration.md)
