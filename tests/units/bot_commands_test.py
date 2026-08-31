@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
 import pytest
+from nonebot.exception import FinishedException
 from nonebot.matcher import Matcher
 
 if TYPE_CHECKING:
@@ -26,6 +27,12 @@ class MatcherStub:
 
     async def finish(self, message: str, **_: object) -> None:
         self.messages.append(message)
+
+
+class FinishingMatcherStub(MatcherStub):
+    async def finish(self, message: str, **_: object) -> None:
+        self.messages.append(message)
+        raise FinishedException
 
 
 @pytest.mark.parametrize(
@@ -219,3 +226,169 @@ def test_mention_can_be_recovered_from_tail():
         )
         == "67890"
     )
+
+
+@pytest.mark.parametrize(
+    ("command_name", "message", "matched"),
+    [
+        ("pk", "pk", True),
+        ("pk", "/对决", True),
+        ("pk", "pk尾巴", False),
+        ("suo", "嗦牛子", True),
+        ("suo", "/suo", True),
+        ("injection", "注入查询", True),
+        ("injection", "/摄入查询 历史", True),
+    ],
+)
+def test_target_command_trigger_ranges(
+    command_name: str,
+    message: str,
+    matched: bool,
+):
+    from nonebot_plugin_impart_plus.bot.commands import (
+        INJECTION_QUERY_COMMAND,
+        PK_COMMAND,
+        SUO_COMMAND,
+    )
+
+    commands = {
+        "pk": PK_COMMAND,
+        "suo": SUO_COMMAND,
+        "injection": INJECTION_QUERY_COMMAND,
+    }
+    assert commands[command_name].parse(message).matched is matched
+
+
+def test_at_all_stops_legacy_mention_fallback():
+    from nonebot_plugin_alconna import At, AtAll, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.context import first_mentioned_user_id
+
+    message = UniMessage(
+        [Text("前置文字 "), AtAll(), At("user", "67890")],
+    )
+
+    assert first_mentioned_user_id(message) is None
+
+
+async def test_pk_handler_requires_and_uses_mention(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import At, Match, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
+
+    calls: list[tuple[int, str, str]] = []
+
+    async def execute_pk(
+        scene_id: int,
+        attacker_id: str,
+        defender_id: str,
+    ) -> PkOutcome:
+        calls.append((scene_id, attacker_id, defender_id))
+        return PkOutcome(PkOutcomeType.USERS_CREATED)
+
+    monkeypatch.setattr(game_app, "execute_pk", execute_pk)
+    missing_matcher = MatcherStub()
+    unavailable_target = Match(At("user", "unused"), False)
+    unavailable_tail = Match(UniMessage(), False)
+
+    await impart.pk(
+        cast(Matcher, missing_matcher),
+        make_session(1, "12345"),
+        unavailable_target,
+        unavailable_tail,
+    )
+
+    assert calls == []
+    assert missing_matcher.messages == []
+
+    matcher = FinishingMatcherStub()
+    with pytest.raises(FinishedException):
+        await impart.pk(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            Match(At("user", "67890"), True),
+            unavailable_tail,
+        )
+
+    assert calls == [(12345, "10001", "67890")]
+    assert len(matcher.messages) == 1
+
+
+async def test_suo_handler_defaults_to_self(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import At, Match, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import GrowthOutcome, GrowthOutcomeType
+
+    calls: list[tuple[int, str, int]] = []
+
+    async def grow_target(
+        scene_id: int,
+        user_id: str,
+        target_id: int,
+    ) -> GrowthOutcome:
+        calls.append((scene_id, user_id, target_id))
+        return GrowthOutcome(
+            GrowthOutcomeType.COMPLETED,
+            random_num=1.5,
+            new_length=11.5,
+        )
+
+    monkeypatch.setattr(game_app, "grow_target", grow_target)
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await impart.suo(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            Match(At("user", "unused"), False),
+            Match(UniMessage(), False),
+        )
+
+    assert calls == [(12345, "10001", 10001)]
+    assert "你的" in matcher.messages[0]
+
+
+async def test_injection_query_reads_target_and_history_from_tail(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import At, Match, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import (
+        InjectionQueryResult,
+        InjectionQueryType,
+    )
+
+    calls: list[tuple[int, int, bool]] = []
+
+    async def query_injection(
+        scene_id: int,
+        user_id: int,
+        *,
+        history: bool,
+    ) -> InjectionQueryResult:
+        calls.append((scene_id, user_id, history))
+        return InjectionQueryResult(InjectionQueryType.HISTORY_TEXT, total=8.5)
+
+    monkeypatch.setattr(game_app, "query_injection", query_injection)
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await impart.query_injection(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            Match(At("user", "unused"), False),
+            Match(
+                UniMessage([Text("历史 "), At("user", "67890")]),
+                True,
+            ),
+        )
+
+    assert calls == [(12345, 67890, True)]
+    assert matcher.messages == ["该用户历史总被注射量为8.5ml"]
