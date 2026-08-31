@@ -47,34 +47,30 @@ class FinishingMatcherStub(MatcherStub):
 
 
 @pytest.mark.parametrize(
-    ("message", "matched"),
+    ("message", "subcommand", "matched"),
     [
-        ("银趴帮助", True),
-        ("IMPART介绍", True),
-        ("银趴帮助尾巴", False),
-        ("/银趴帮助", False),
+        ("银趴帮助", "help", True),
+        ("银趴 帮助", "help", True),
+        ("impart介绍", "help", True),
+        ("银趴开启", "enable", True),
+        ("银趴 禁止", "disable", True),
+        ("开始银趴", "", False),
+        ("关闭impart", "", False),
+        ("银趴帮助尾巴", "", False),
+        ("/银趴帮助", "", False),
     ],
 )
-def test_help_command_preserves_regex_range(message: str, matched: bool):
-    from nonebot_plugin_impart_plus.bot.commands import HELP_COMMAND
+def test_impart_command_group(
+    message: str,
+    subcommand: str,
+    matched: bool,
+):
+    from nonebot_plugin_impart_plus.bot.commands import IMPART_COMMAND
 
-    assert HELP_COMMAND.parse(message).matched is matched
-
-
-@pytest.mark.parametrize(
-    ("message", "matched"),
-    [
-        ("开始银趴", True),
-        ("关闭IMPART", True),
-        ("开启impart尾巴", True),
-        ("/开始银趴", False),
-        ("请开始银趴", False),
-    ],
-)
-def test_toggle_command_preserves_regex_range(message: str, matched: bool):
-    from nonebot_plugin_impart_plus.bot.commands import TOGGLE_COMMAND
-
-    assert TOGGLE_COMMAND.parse(message).matched is matched
+    result = IMPART_COMMAND.parse(message)
+    assert result.matched is matched
+    if matched:
+        assert subcommand in result.subcommands
 
 
 @pytest.mark.parametrize(
@@ -98,7 +94,7 @@ def test_growth_command_preserves_full_match(message: str, matched: bool):
         ("查询", True),
         ("/查询", True),
         ("查询尾巴", False),
-        ("/查询 尾巴", True),
+        ("/查询 尾巴", False),
     ],
 )
 def test_query_command_uses_command_start(message: str, matched: bool):
@@ -125,8 +121,8 @@ def test_public_scene_scope(scene_type: int, expected: bool):
 @pytest.mark.parametrize(
     ("message", "enabled", "reply"),
     [
-        ("开始银趴", True, "功能已开启喵"),
-        ("禁止impart", False, "功能已禁用喵"),
+        ("银趴开启", True, "功能已开启喵"),
+        ("impart禁止", False, "功能已禁用喵"),
     ],
 )
 async def test_toggle_handler_uses_uninfo_scene(
@@ -138,7 +134,7 @@ async def test_toggle_handler_uses_uninfo_scene(
     from nonebot_plugin_alconna import CommandResult
     from nonebot_plugin_uninfo import SceneType
 
-    from nonebot_plugin_impart_plus.bot.commands import TOGGLE_COMMAND
+    from nonebot_plugin_impart_plus.bot.commands import IMPART_COMMAND
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
 
     calls: list[tuple[int, bool]] = []
@@ -148,7 +144,7 @@ async def test_toggle_handler_uses_uninfo_scene(
 
     monkeypatch.setattr(game_app, "set_group_enabled", set_group_enabled)
     matcher = MatcherStub()
-    result = CommandResult(result=TOGGLE_COMMAND.parse(message))
+    result = CommandResult(result=IMPART_COMMAND.parse(message))
 
     await impart.open_module(
         cast(Matcher, matcher),
@@ -193,7 +189,7 @@ async def test_growth_handler_uses_uninfo_identity(
 async def test_query_handler_prefers_typed_mention(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, Match, UniMessage
+    from nonebot_plugin_alconna import At, Match
 
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
     from nonebot_plugin_impart_plus.impart.app import QueryOutcome, QueryOutcomeType
@@ -216,7 +212,6 @@ async def test_query_handler_prefers_typed_mention(
         cast(Matcher, matcher),
         make_session(1, "12345"),
         Match(At("user", "67890"), True),
-        Match(UniMessage(), False),
     )
 
     assert calls == [(12345, 67890)]
@@ -225,25 +220,11 @@ async def test_query_handler_prefers_typed_mention(
     assert "12.5cm" in matcher.messages[0]
 
 
-def test_mention_can_be_recovered_from_tail():
-    from nonebot_plugin_alconna import At, Match, Text, UniMessage
-
-    from nonebot_plugin_impart_plus.bot.context import mentioned_user_id
-
-    assert (
-        mentioned_user_id(
-            Match(At("user", "unused"), False),
-            Match(UniMessage([Text("前置文字 "), At("user", "67890")]), True),
-        )
-        == "67890"
-    )
-
-
 @pytest.mark.parametrize(
     ("command_name", "message", "matched"),
     [
-        ("pk", "pk", True),
-        ("pk", "/对决", True),
+        ("pk", "pk", False),
+        ("pk", "/对决", False),
         ("pk", "pk尾巴", False),
         ("suo", "嗦牛子", True),
         ("suo", "/suo", True),
@@ -270,22 +251,22 @@ def test_target_command_trigger_ranges(
     assert commands[command_name].parse(message).matched is matched
 
 
-def test_at_all_stops_legacy_mention_fallback():
-    from nonebot_plugin_alconna import At, AtAll, Text, UniMessage
+def test_pk_rejects_at_all():
+    from nonebot_plugin_alconna import AtAll, Text, UniMessage
 
-    from nonebot_plugin_impart_plus.bot.context import first_mentioned_user_id
+    from nonebot_plugin_impart_plus.bot.commands import PK_COMMAND
 
     message = UniMessage(
-        [Text("前置文字 "), AtAll(), At("user", "67890")],
+        [Text("pk "), AtAll()],
     )
 
-    assert first_mentioned_user_id(message) is None
+    assert PK_COMMAND.parse(message).matched is False
 
 
 async def test_pk_handler_requires_and_uses_mention(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, Match, UniMessage
+    from nonebot_plugin_alconna import At
 
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
     from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
@@ -301,27 +282,12 @@ async def test_pk_handler_requires_and_uses_mention(
         return PkOutcome(PkOutcomeType.USERS_CREATED)
 
     monkeypatch.setattr(game_app, "execute_pk", execute_pk)
-    missing_matcher = MatcherStub()
-    unavailable_target = Match(At("user", "unused"), False)
-    unavailable_tail = Match(UniMessage(), False)
-
-    await impart.pk(
-        cast(Matcher, missing_matcher),
-        make_session(1, "12345"),
-        unavailable_target,
-        unavailable_tail,
-    )
-
-    assert calls == []
-    assert missing_matcher.messages == []
-
     matcher = FinishingMatcherStub()
     with pytest.raises(FinishedException):
         await impart.pk(
             cast(Matcher, matcher),
             make_session(1, "12345"),
-            Match(At("user", "67890"), True),
-            unavailable_tail,
+            At("user", "67890"),
         )
 
     assert calls == [(12345, "10001", "67890")]
@@ -331,7 +297,7 @@ async def test_pk_handler_requires_and_uses_mention(
 async def test_suo_handler_defaults_to_self(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, Match, UniMessage
+    from nonebot_plugin_alconna import At, Match
 
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
     from nonebot_plugin_impart_plus.impart.app import GrowthOutcome, GrowthOutcomeType
@@ -358,18 +324,18 @@ async def test_suo_handler_defaults_to_self(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             Match(At("user", "unused"), False),
-            Match(UniMessage(), False),
         )
 
     assert calls == [(12345, "10001", 10001)]
     assert "你的" in matcher.messages[0]
 
 
-async def test_injection_query_reads_target_and_history_from_tail(
+async def test_injection_query_reads_typed_target_and_history_option(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, Match, Text, UniMessage
+    from nonebot_plugin_alconna import At, CommandResult, Match
 
+    from nonebot_plugin_impart_plus.bot.commands import INJECTION_QUERY_COMMAND
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
     from nonebot_plugin_impart_plus.impart.app import (
         InjectionQueryResult,
@@ -394,9 +360,9 @@ async def test_injection_query_reads_target_and_history_from_tail(
         await impart.query_injection(
             cast(Matcher, matcher),
             make_session(1, "12345"),
-            Match(At("user", "unused"), False),
+            CommandResult(result=INJECTION_QUERY_COMMAND.parse("注入查询 历史")),
             Match(
-                UniMessage([Text("历史 "), At("user", "67890")]),
+                At("user", "67890"),
                 True,
             ),
         )
@@ -409,10 +375,11 @@ async def test_injection_query_reads_target_and_history_from_tail(
     ("command_name", "message", "matched"),
     [
         ("rank", "jj排行榜", True),
-        ("rank", "JJRank尾巴", True),
+        ("rank", "JJRank尾巴", False),
         ("rank", "/jj排行榜", False),
         ("interaction", "日群友", True),
-        ("interaction", "透群主尾巴", True),
+        ("interaction", "透 群主", True),
+        ("interaction", "透群主尾巴", False),
         ("interaction", "/日群友", False),
     ],
 )
@@ -499,10 +466,9 @@ async def test_rank_uses_uninfo_user_directory(
 async def test_interaction_with_mention_skips_member_enumeration(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member, User
 
-    from nonebot_plugin_impart_plus.bot.commands import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
@@ -561,9 +527,8 @@ async def test_interaction_with_mention_skips_member_enumeration(
         cast(Matcher, matcher),
         make_session(1, "12345"),
         cast(Interface, InterfaceStub()),
-        CommandResult(result=INTERACTION_COMMAND.parse("日群主")),
+        "群主",
         Match(At("user", "67890"), True),
-        Match(UniMessage(), False),
     )
 
     assert app_calls == [(12345, 10001)]
@@ -581,10 +546,9 @@ async def test_interaction_with_mention_skips_member_enumeration(
 async def test_interaction_without_member_capability_requests_mention(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member
 
-    from nonebot_plugin_impart_plus.bot.commands import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
@@ -613,9 +577,8 @@ async def test_interaction_without_member_capability_requests_mention(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
-            CommandResult(result=INTERACTION_COMMAND.parse("日群友")),
+            "群友",
             Match(At("user", "unused"), False),
-            Match(UniMessage(), False),
         )
 
     assert released == [10001]
@@ -641,7 +604,7 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
 
     owner_matcher = MatcherStub()
     owner = await impart.yinpa_identity_handle(
-        "日群主",
+        "群主",
         members,
         "发起者",
         cast(Matcher, owner_matcher),
@@ -650,7 +613,7 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
     )
     admin_matcher = MatcherStub()
     admin = await impart.yinpa_identity_handle(
-        "日管理",
+        "管理",
         members,
         "发起者",
         cast(Matcher, admin_matcher),
@@ -681,8 +644,17 @@ async def test_help_uses_unimessage_auto_fallback():
 async def test_injection_history_chart_uses_unimessage_image(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import AUTO, At, Image, Match, Text, UniMessage
+    from nonebot_plugin_alconna import (
+        AUTO,
+        At,
+        CommandResult,
+        Image,
+        Match,
+        Text,
+        UniMessage,
+    )
 
+    from nonebot_plugin_impart_plus.bot.commands import INJECTION_QUERY_COMMAND
     from nonebot_plugin_impart_plus.bot.handlers import (
         draw_bar_chart,
         game_app,
@@ -717,8 +689,8 @@ async def test_injection_history_chart_uses_unimessage_image(
         await impart.query_injection(
             cast(Matcher, matcher),
             make_session(1, "12345"),
+            CommandResult(result=INJECTION_QUERY_COMMAND.parse("注入查询 历史")),
             Match(At("user", "unused"), False),
-            Match(UniMessage.text("历史"), True),
         )
 
     assert isinstance(matcher.raw_messages[0], UniMessage)

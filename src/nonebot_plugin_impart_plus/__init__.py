@@ -11,7 +11,7 @@ require("nonebot_plugin_uninfo")
 __plugin_meta__ = PluginMetadata(
     name="nonebot_plugin_impart_plus",
     usage="""impart功能说明:
-[日群友|透群友|日群主|透群主|日管理|透管理]
+[透|日][群友|群主|管理]
 字面意思,使用<透群友>时可@用户
 [pk|对决]
 通过random实现pk,胜方获取败方随机数/2的牛牛长度;
@@ -27,10 +27,9 @@ __plugin_meta__ = PluginMetadata(
 输出倒数五位/前五位/自己的排名
 [注入查询|摄入查询|射入查询]
 查询@用户被透注入的量(后接<历史/全部>可查看总被摄入的量)(若未@则为自己)
-[开启银趴|禁止银趴|开始impart|关闭impart]
+[银趴][开启|禁止|帮助]
 由管理员|群主|SUPERUSERS开启或者关闭impart
-[银趴介绍|impart介绍]
-输出impart插件的命令列表
+子命令前的空格可以省略，例如<银趴开启>, <银趴 帮助>
 """,
     description="NoneBot2 银趴插件 Plus",
     type="application",

@@ -8,16 +8,15 @@ from nonebot_plugin_uninfo import ADMIN
 from ..infra.database import init_db
 from .commands import (
     GROW_COMMAND,
-    HELP_COMMAND,
+    IMPART_COMMAND,
     INJECTION_QUERY_COMMAND,
     INTERACTION_COMMAND,
     PK_COMMAND,
     QUERY_COMMAND,
     RANK_COMMAND,
     SUO_COMMAND,
-    TOGGLE_COMMAND,
 )
-from .context import has_user_mention, public_scene
+from .context import public_scene
 from .handlers import impart
 
 require("nonebot_plugin_apscheduler")
@@ -40,7 +39,6 @@ on_alconna(
     PK_COMMAND,
     aliases={"对决"},
     rule=public_scene,
-    after_rule=has_user_mention,
     auto_send_output=False,
     use_cmd_start=True,
     priority=20,
@@ -92,6 +90,7 @@ on_alconna(
 
 on_alconna(
     INTERACTION_COMMAND,
+    aliases={"日"},
     rule=public_scene,
     auto_send_output=False,
     use_cmd_start=False,
@@ -100,15 +99,37 @@ on_alconna(
     handlers=[impart.yinpa],
 )
 
-on_alconna(
-    TOGGLE_COMMAND,
+impart_matcher = on_alconna(
+    IMPART_COMMAND,
+    aliases={"impart"},
     rule=public_scene,
     auto_send_output=False,
     use_cmd_start=False,
+    priority=1,
+    block=False,
+)
+
+impart_matcher.dispatch(
+    "enable",
     permission=SUPERUSER | ADMIN(),
-    priority=10,
+    priority=9,
     block=True,
     handlers=[impart.open_module],
+)
+
+impart_matcher.dispatch(
+    "disable",
+    permission=SUPERUSER | ADMIN(),
+    priority=9,
+    block=True,
+    handlers=[impart.open_module],
+)
+
+impart_matcher.dispatch(
+    "help",
+    priority=19,
+    block=True,
+    handlers=[impart.yinpa_introduce],
 )
 
 on_alconna(
@@ -120,14 +141,4 @@ on_alconna(
     priority=20,
     block=True,
     handlers=[impart.query_injection],
-)
-
-on_alconna(
-    HELP_COMMAND,
-    rule=public_scene,
-    auto_send_output=False,
-    use_cmd_start=False,
-    priority=20,
-    block=True,
-    handlers=[impart.yinpa_introduce],
 )

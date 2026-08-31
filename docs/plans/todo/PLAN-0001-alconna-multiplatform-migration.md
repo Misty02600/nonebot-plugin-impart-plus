@@ -6,7 +6,7 @@
 
 ## 背景
 
-当前插件已经把 NoneBot 接入、应用编排、核心规则和基础设施分开，Alconna 迁移可以主要限制在 `src/nonebot_plugin_impart_plus/bot/`。用户明确要求先完成迁移、再为迁移后的行为补测试；命令兼容、平台范围、缺少成员枚举时的显式 At 行为和 UniMessage fallback 均已确认。
+当前插件已经把 NoneBot 接入、应用编排、核心规则和基础设施分开，Alconna 迁移可以主要限制在 `src/nonebot_plugin_impart_plus/bot/`。用户明确要求先完成迁移、再为迁移后的行为补测试，并利用 Alconna 根命令、子命令、alias、typed Args 和 compact 语法重新整理命令；不保留旧松散 grammar 的兼容层。
 
 本计划只处理接入层：命令解析使用 Alconna，当前事件身份与场景使用 Uninfo，消息渲染使用 UniMessage。游戏规则、随机算法、冷却顺序、数据库提交方式和现有文案不在本计划中调整。
 
@@ -37,7 +37,7 @@ Alconna 0.62.1 的 `on_alconna` 已确认包含 `skip_for_unmatch`、`auto_send_
 
 - `use_cmd_start=True` 会把 NoneBot `COMMAND_START` 同时应用到主命令和 `aliases`。
 - 官方 `re:...` 命令头可以表达旧正则的大小写不敏感匹配；`CommandMeta(compact=True)` 可以把紧随命令头的内容继续交给参数解析。
-- `Args["target?", At]["tail?", AllParam]` 会优先得到类型化 At，并把其余文本或消息段保存在 `tail: UniMessage`；At 前存在文本时，At 也会保留在 tail 中。
+- `Args["target", At]` 可以在 parser 层保证 PK 目标必填；可选目标使用 `Args["target?", At]`，不再扫描未声明的尾随消息。
 
 迁移时必须显式设置会影响旧行为的参数，不依赖全局默认值。
 
@@ -92,11 +92,11 @@ Adapter event
 5. `test: 验证成长与状态查询命令`
    - 覆盖群未开启、创建用户、冷却、正常成长、挑战阻止和长度状态文案。
 6. `refactor: 迁移目标参数命令`
-   - 用 `Match[At]` 作为嗦、PK、查询和注入查询的主要目标参数；PK 在业务语义上仍要求目标，其余命令保持目标可选。
-   - 仅在类型化参数未取得目标时，从 Alconna 已解析出的可选 `tail: UniMessage` 恢复旧版“附加文本中含 At”行为；不重新扫描原始 Adapter 消息。
-   - 明确无 `At`、`AtAll`、自己、目标不存在和额外文本的处理。
+   - PK 使用必填 `At`；嗦、查询和注入查询使用可选 `At`，不接收未声明的尾随消息。
+   - 注入查询把“历史/全部”建模为正式 Alconna Option。
+   - 明确无 `At`、`AtAll`、自己、目标不存在和参数解析失败的处理。
 7. `test: 验证目标参数命令`
-   - 覆盖默认本人、显式目标、`@全体`、PK 必须有目标、别名与参数失败输出。
+   - 覆盖默认本人、显式目标、`@全体`、PK 必须有目标、历史选项、别名与参数失败输出。
 8. `refactor: 迁移排行榜与群友互动命令`
    - 排行榜昵称查询和群成员选择通过狭窄 MemberDirectory helper。
    - OneBot 行为先保持；缺少成员枚举的平台有显式 At 时直接使用该目标，不因“群友/群主/管理”标签禁用命令；无显式 At 时返回能力不足提示。
@@ -107,29 +107,34 @@ Adapter event
     - 所有发送使用 `fallback="auto"`；移除 OneBot `MessageSegment` 后再进入身份与 metadata gate。
 11. `test: 验证跨平台消息渲染`
     - 测试 UniMessage segment 结构；保留 OneBot 行为测试，并为当前三插件交集中的 Adapter 增加最小渲染测试。
-12. `feat: 声明三插件适配器交集`
+12. `refactor: 优化银趴与互动命令结构`
+    - `银趴` 作为根命令，开启、禁止、帮助作为子命令；使用 dispatch 保持开关权限与帮助公开访问相互独立。
+    - `透` 作为互动根命令、`日` 作为 alias，群友、管理、群主使用类型化 Literal 参数。
+    - 根命令使用 compact，同时接受有空格和无空格形式；不注册旧版动作前置 shortcut。
+13. `test: 验证分组命令语法`
+    - 覆盖根命令 alias、子命令 alias、dispatch path、权限边界、有/无空格，并验证旧格式不再匹配。
+14. `feat: 声明三插件适配器交集`
     - PLAN-0002 完成后，在插件入口依次 `require("nonebot_plugin_alconna")`、`require("nonebot_plugin_uninfo")`、`require("nonebot_plugin_uniref")`。
     - 把 `PluginMetadata.supported_adapters` 设置为 `inherit_supported_adapters("nonebot_plugin_alconna", "nonebot_plugin_uninfo", "nonebot_plugin_uniref")`。
     - 不手写 Adapter 集合。
-13. `test: 验证适配器支持交集`
+15. `test: 验证适配器支持交集`
     - 在测试依赖组加入当前交集对应的 OneBot V11、Telegram、Discord Adapter；交集随依赖升级变化时，同步测试依赖和 fixture。
     - 验证依赖加载顺序、动态交集、锁定版本的支持矩阵，以及交集内各 Adapter 的最小命令与消息行为。
-14. `docs: 更新命令与适配器边界`
+16. `docs: 更新命令与适配器边界`
     - 同步 README、architecture 和平台支持矩阵。
 
 ### 命令迁移映射
 
 | 当前入口 | Alconna 目标 | 必须保留或确认的语义 |
 |---|---|---|
-| `pk/对决` | `use_cmd_start=True`；类型化 At + 可选 tail | 目标在业务上必填、不能自己、兼容 At 前后尾随内容、保留 `block=False` |
+| `pk/对决` | `use_cmd_start=True`；必填 `At` | parser 保证目标必填；不能自己；保留 `block=False` |
 | `打胶/开导` | 无前缀命令加 alias | `use_cmd_start=False`，保持完整消息匹配 |
-| `嗦牛子/嗦/suo` | `use_cmd_start=True`；可选 `At` + 可选 tail | 无目标默认本人、`AtAll` 不作为用户、兼容旧尾随内容 |
-| `查询` | `use_cmd_start=True`；可选 `At` + 可选 tail | 无目标默认本人、兼容旧尾随内容 |
-| 排行榜别名 | `re:(?i:...)` 命令头 + compact tail | 无前缀、大小写不敏感，继续接受旧正则允许的尾随内容 |
-| 日/透系列 | `re:(?i:...)` 命令头 + 可选 `At`/tail | 显式 At 优先；无 At 才按群友、群主、管理自动选择 |
-| 开始/开启/关闭/禁止 | `re:(?i:...)` 命令头 + compact tail | 无前缀、大小写不敏感；OneBot owner/admin/superuser 权限迁为跨平台权限 helper |
-| 注入查询系列 | `use_cmd_start=True`；可选 `At` + payload | 保留“历史/全部”子串判断和额外文本范围 |
-| 银趴/impart 帮助 | `re:(?i:...)` 精确命令头 | 无前缀完整匹配，输出完整 metadata usage |
+| `嗦牛子/嗦/suo` | `use_cmd_start=True`；可选 `At` | 无目标默认本人，`AtAll` 与额外参数不匹配 |
+| `查询` | `use_cmd_start=True`；可选 `At` | 无目标默认本人，不接收额外参数 |
+| 排行榜别名 | `re:(?i:...)` 精确命令头 | 无前缀、大小写不敏感，不接收尾随内容 |
+| 日/透系列 | `透` 根命令 + `日` alias + `Literal["群友", "管理", "群主"]` | compact 支持 `透群友`/`透 群友`；显式 At 优先；不再接受任意黏连尾巴 |
+| 银趴开关与帮助 | `银趴` 根命令 + 开启/禁止/帮助子命令 | compact 支持有/无空格，dispatch 分离管理员权限，不兼容动作前置旧格式 |
+| 注入查询系列 | `use_cmd_start=True`；可选 `At` + 历史 Option | “历史/全部”是正式选项，不再按任意文本子串判断 |
 
 ## 已确认事项
 
@@ -137,26 +142,26 @@ Adapter event
 - 2026-08-30：Alconna 迁移不得顺带修改游戏规则、数据库提交顺序、冷却时机或文案。
 - 2026-08-30：UniRef 持久化身份不与 matcher 迁移强行绑定，在接入切片后作为独立计划实施。
 - 2026-08-31 · D-002：缺少成员枚举时不显式禁用互动命令；存在显式 At 就忽略“群友/群主/管理”的自动选择含义并直接使用该目标，无 At 时才返回平台能力不足提示。
-- 2026-08-31 · D-003：严格保留 command start、无前缀正则、大小写不敏感和尾随内容范围；目标优先使用类型化 `At`，仅从 Alconna 的可选 tail 恢复旧 At 位置，不扫描原始 Adapter 消息。
+- 2026-08-31 · D-003：命令使用原生 command start、无前缀设置、alias、子命令、Option 与 typed Args 明确定义 grammar；不提供旧格式 shortcut、任意尾随文本或消息内 At 扫描兼容。
 - 2026-08-31 · D-001：不把支持范围限制为 OneBot V11；完成 UniRef v1 身份重构后，使用 NoneBot `inherit_supported_adapters()` 直接继承 Alconna、Uninfo、UniRef 三插件支持集合的交集，不手写 Adapter 名单。
 - 2026-08-31 · D-004：UniMessage 发送统一采用 `fallback="auto"`，尽量导出为当前 Adapter 可发送的表现。
 - 2026-08-31：同平台多 Bot 共享同一用户和场景游戏状态；身份来源不受支持时静默跳过事件处理，不向用户发送拒绝文案。
+- 2026-08-31：`银趴` 使用子命令，是因为开关与帮助有独立权限/处理路径；`透/日` 的群友、管理、群主使用 Literal 参数，因为它们共享同一互动用例与参数结构。
 
 ## 实施进度
 
 | 状态 | 当前工作项 | 结果或下一步 |
 |---|---|---|
-| 进行中 | 等待 UniRef 身份切片 | Alconna/Uninfo 命令迁移及 UniMessage 文本、PNG、URL 图片与 AUTO fallback 测试已完成；动态 Adapter 声明留待 PLAN-0002 后 |
+| 进行中 | 优化银趴与互动命令结构 | 根命令、子命令、alias 与 compact 已实现，旧格式兼容层已删除，下一步补 dispatch 和严格语法测试 |
 
 ## 完成标准与验证
 
 | 覆盖条件或输入 | 预期结果 | 验证方式 |
 |---|---|---|
 | 插件加载 | Alconna、Uninfo 和所有 matcher 正常注册，无重复命令 | 插件加载测试、matcher 数量与命令解析自检 |
-| 原 `on_command` 命令及别名 | 读取 `COMMAND_START`；主命令和 alias 的无前缀、`/` 前缀行为与当前配置一致 | Alconna parser test + NoneBug 行为测试 |
-| 原完整匹配正则 | 仅无前缀完整消息匹配，`/` 前缀和尾随内容不触发 | Alconna parser 参数化测试 |
-| 原前缀匹配正则 | 无前缀、大小写不敏感并接受原有尾随范围 | Alconna parser 参数化测试 |
-| `At`、At 前后文本、无目标、`AtAll`、自己 | 类型化 At 优先，兼容 tail 内首个用户 At；每个命令维持既定目标语义 | 参数化 parser 与行为测试 |
+| 使用 command start 的命令及别名 | 读取 `COMMAND_START`；主命令和 alias 的无前缀、`/` 前缀行为符合声明 | Alconna parser test + NoneBug 行为测试 |
+| 无前缀命令 | 仅匹配结构化 grammar，`/` 前缀和未声明尾随内容不触发 | Alconna parser 参数化测试 |
+| `At`、无目标、`AtAll`、自己 | PK 必填 At；可选 At 命令按声明默认本人；未声明消息段解析失败 | 参数化 parser 与行为测试 |
 | 群未开启、冷却、用户创建、挑战状态 | application 的调用与回复未改变 | NoneBug + fake DataManager/Cooldown |
 | 管理权限 | OneBot 现有 owner/admin/superuser 行为保持；新平台按 D-001 与已确认的显式 At 降级策略 | 各 Adapter 权限 fixture 或明确的未覆盖说明 |
 | 无成员枚举平台的互动命令 | 显式 At 可用且覆盖群友/群主/管理自动选择；无 At 返回能力不足提示 | MemberDirectory capability fake + 行为测试 |

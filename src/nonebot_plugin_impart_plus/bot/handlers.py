@@ -27,7 +27,7 @@ from ..impart.app import (
 )
 from ..impart.core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
-from .context import legacy_scene_id, member_parent_scene_id, mentioned_user_id
+from .context import legacy_scene_id, member_parent_scene_id
 from .dependencies import botname, game_app, plugin_config
 
 NOT_ALLOWED_TEXT = (
@@ -95,16 +95,12 @@ class Impart:
     async def pk(
         matcher: Matcher,
         session: Uninfo,
-        target: Match[At],
-        tail: Match[UniMessage],
+        target: At,
     ) -> None:
-        defender_id = mentioned_user_id(target, tail)
-        if defender_id is None:
-            return
         outcome = await game_app.execute_pk(
             legacy_scene_id(session),
             session.user.id,
-            defender_id,
+            target.target,
         )
 
         if outcome.type is PkOutcomeType.DISABLED:
@@ -241,9 +237,8 @@ class Impart:
         matcher: Matcher,
         session: Uninfo,
         target: Match[At],
-        tail: Match[UniMessage],
     ) -> None:
-        mentioned = mentioned_user_id(target, tail)
+        mentioned = target.result.target if target.available else None
         target_id = int(mentioned or session.user.id)
         pronoun = "TA" if mentioned else "你"
         outcome = await game_app.grow_target(
@@ -286,9 +281,8 @@ class Impart:
         matcher: Matcher,
         session: Uninfo,
         target: Match[At],
-        tail: Match[UniMessage],
     ) -> None:
-        mentioned = mentioned_user_id(target, tail)
+        mentioned = target.result.target if target.available else None
         target_id = int(mentioned or session.user.id)
         pronoun = "TA" if mentioned else "你"
         outcome = await game_app.query_user(
@@ -462,18 +456,18 @@ class Impart:
 
     async def yinpa_identity_handle(
         self,
-        command: str,
+        kind: str,
         members: list[Member],
         req_user_card: str,
         matcher: Matcher,
         uid: int,
         random_nn: float,
     ) -> str:
-        if "群主" in command:
+        if kind == "群主":
             return await self.yinpa_owner_handle(
                 uid, members, req_user_card, matcher, random_nn
             )
-        if "管理" in command:
+        if kind == "管理":
             return await self.yinpa_admin_handle(
                 uid, members, req_user_card, matcher, random_nn
             )
@@ -486,9 +480,8 @@ class Impart:
         matcher: Matcher,
         session: Uninfo,
         interface: QryItrface,
-        result: CommandResult,
+        kind: str,
         target: Match[At],
-        tail: Match[UniMessage],
     ) -> None:
         scene_id = legacy_scene_id(session)
         uid = int(session.user.id)
@@ -505,8 +498,7 @@ class Impart:
             session.member,
             user_display_name(session.user, session.user.id),
         )
-        command = str(result.result.header_match.result)
-        mentioned = mentioned_user_id(target, tail)
+        mentioned = target.result.target if target.available else None
         members: list[Member] = []
         if mentioned is None:
             members = await get_members_or_empty(interface, session)
@@ -517,7 +509,7 @@ class Impart:
                 )
         random_nn = game_app.roll_interaction()
         lucky_user = mentioned or await self.yinpa_identity_handle(
-            command, members, req_user_card, matcher, uid, random_nn
+            kind, members, req_user_card, matcher, uid, random_nn
         )
         lucky_member = next(
             (member for member in members if member.user.id == lucky_user),
@@ -556,12 +548,11 @@ class Impart:
         session: Uninfo,
         result: CommandResult,
     ) -> None:
-        command = str(result.result.header_match.result)
         scene_id = legacy_scene_id(session)
-        if "开启" in command or "开始" in command:
+        if "enable" in result.result.subcommands:
             await game_app.set_group_enabled(scene_id, True)
             await matcher.finish("功能已开启喵")
-        elif "禁止" in command or "关闭" in command:
+        elif "disable" in result.result.subcommands:
             await game_app.set_group_enabled(scene_id, False)
             await matcher.finish("功能已禁用喵")
 
@@ -569,17 +560,16 @@ class Impart:
     async def query_injection(
         matcher: Matcher,
         session: Uninfo,
+        command_result: CommandResult,
         target: Match[At],
-        tail: Match[UniMessage],
     ) -> None:
-        mentioned = mentioned_user_id(target, tail)
+        mentioned = target.result.target if target.available else None
         object_id = mentioned or session.user.id
         replay = "该用户" if mentioned else "您"
-        payload = tail.result.extract_plain_text() if tail.available else ""
         result = await game_app.query_injection(
             legacy_scene_id(session),
             int(object_id),
-            history="历史" in payload or "全部" in payload,
+            history="history" in command_result.result.options,
         )
         if result.type is InjectionQueryType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
