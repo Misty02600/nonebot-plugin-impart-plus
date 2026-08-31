@@ -8,7 +8,7 @@ from nonebot_plugin_alconna import on_alconna
 from nonebot_plugin_uninfo import ADMIN
 
 from ..infra.database import init_db
-from .commands import HELP_COMMAND, TOGGLE_COMMAND
+from .commands import GROW_COMMAND, HELP_COMMAND, QUERY_COMMAND, TOGGLE_COMMAND
 from .context import public_scene
 from .handlers import has_at, impart
 
@@ -37,13 +37,30 @@ on_command(
     handlers=[impart.pk],
 )
 
-on_regex("^(打胶|开导)$", priority=20, block=True, handlers=[impart.dajiao])
+on_alconna(
+    GROW_COMMAND,
+    aliases={"开导"},
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=False,
+    priority=20,
+    block=True,
+    handlers=[impart.dajiao],
+)
 
 on_command(
     "嗦牛子", aliases={"嗦", "suo"}, priority=20, block=True, handlers=[impart.suo]
 )
 
-on_command("查询", priority=20, block=False, handlers=[impart.queryjj])
+on_alconna(
+    QUERY_COMMAND,
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=True,
+    priority=20,
+    block=False,
+    handlers=[impart.queryjj],
+)
 
 on_regex(
     r"^(jj|牛牛)(排行榜|排名|榜单|rank)",

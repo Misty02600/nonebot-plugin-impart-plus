@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg, RegexGroup
-from nonebot_plugin_alconna import CommandResult
+from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
 from nonebot_plugin_uninfo import Uninfo
 
 from .. import __plugin_meta__
@@ -22,7 +22,7 @@ from ..impart.app import (
 )
 from ..impart.core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
-from .context import legacy_scene_id
+from .context import legacy_scene_id, mentioned_user_id
 from .dependencies import botname, game_app, plugin_config
 
 NOT_ALLOWED_TEXT = (
@@ -164,8 +164,11 @@ class Impart:
         await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
 
     @staticmethod
-    async def dajiao(matcher: Matcher, event: GroupMessageEvent) -> None:
-        outcome = await game_app.grow_self(event.group_id, event.get_user_id())
+    async def dajiao(matcher: Matcher, session: Uninfo) -> None:
+        outcome = await game_app.grow_self(
+            legacy_scene_id(session),
+            session.user.id,
+        )
         if outcome.type is GrowthOutcomeType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
         if outcome.type is GrowthOutcomeType.COOLING_DOWN:
@@ -233,12 +236,19 @@ class Impart:
         )
 
     @staticmethod
-    async def queryjj(matcher: Matcher, event: GroupMessageEvent) -> None:
-        uid = event.get_user_id()
-        at = await get_at(event)
-        target_id = int(at if at != "寄" else uid)
-        pronoun = "你" if at == "寄" else "TA"
-        outcome = await game_app.query_user(event.group_id, target_id)
+    async def queryjj(
+        matcher: Matcher,
+        session: Uninfo,
+        target: Match[At],
+        tail: Match[UniMessage],
+    ) -> None:
+        mentioned = mentioned_user_id(target, tail)
+        target_id = int(mentioned or session.user.id)
+        pronoun = "TA" if mentioned else "你"
+        outcome = await game_app.query_user(
+            legacy_scene_id(session),
+            target_id,
+        )
 
         if outcome.type is QueryOutcomeType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)

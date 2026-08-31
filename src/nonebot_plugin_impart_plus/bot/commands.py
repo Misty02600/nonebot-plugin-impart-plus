@@ -1,6 +1,14 @@
 """Alconna 命令定义。"""
 
 from arclet.alconna import Alconna, AllParam, Args, CommandMeta
+from nonebot_plugin_alconna import At
+
+GROW_COMMAND = Alconna("打胶")
+
+QUERY_COMMAND = Alconna(
+    "查询",
+    Args["target?", At]["tail?", AllParam],
+)
 
 HELP_COMMAND = Alconna("re:(?i:(银趴|impart)(介绍|帮助))")
 
