@@ -251,6 +251,24 @@ def test_target_command_trigger_ranges(
     assert commands[command_name].parse(message).matched is matched
 
 
+@pytest.mark.parametrize("history_first", [True, False])
+def test_injection_history_option_accepts_either_position(history_first: bool):
+    from nonebot_plugin_alconna import At, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.commands import INJECTION_QUERY_COMMAND
+
+    message = (
+        UniMessage([Text("注入查询 历史 "), At("user", "67890")])
+        if history_first
+        else UniMessage([Text("注入查询 "), At("user", "67890"), Text(" 全部")])
+    )
+    result = INJECTION_QUERY_COMMAND.parse(message)
+
+    assert result.matched is True
+    assert result.all_matched_args["target"].target == "67890"
+    assert "history" in result.options
+
+
 def test_pk_rejects_at_all():
     from nonebot_plugin_alconna import AtAll, Text, UniMessage
 

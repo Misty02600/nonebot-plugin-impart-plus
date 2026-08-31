@@ -26,3 +26,32 @@ def test_plugin_metadata(app: App):
     assert impart is not None
     assert get_plugin("nonebot_plugin_alconna") is not None
     assert get_plugin("nonebot_plugin_uninfo") is not None
+
+
+def test_alconna_matcher_registration(app: App):
+    from nonebot import get_plugin
+    from nonebot_plugin_alconna import AlconnaMatcher
+
+    plugin = get_plugin("nonebot_plugin_impart_plus")
+
+    assert plugin is not None
+    assert len(plugin.matcher) == 11
+    assert all(issubclass(matcher, AlconnaMatcher) for matcher in plugin.matcher)
+
+    dispatch_matchers = {
+        matcher.basepath: matcher
+        for matcher in plugin.matcher
+        if matcher.basepath in {"enable", "disable", "help"}
+    }
+    assert set(dispatch_matchers) == {"enable", "disable", "help"}
+    assert dispatch_matchers["enable"].priority == 10
+    assert dispatch_matchers["disable"].priority == 10
+    assert dispatch_matchers["help"].priority == 20
+    assert len(dispatch_matchers["enable"].permission.checkers) == 2
+    assert len(dispatch_matchers["disable"].permission.checkers) == 2
+    assert len(dispatch_matchers["help"].permission.checkers) == 0
+    assert all(matcher.block for matcher in dispatch_matchers.values())
+
+    parent = next(matcher for matcher in plugin.matcher if matcher.priority == 1)
+    assert parent.block is False
+    assert len(parent.handlers) == 3
