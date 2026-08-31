@@ -152,7 +152,7 @@ Adapter event
 
 | 状态 | 当前工作项 | 结果或下一步 |
 |---|---|---|
-| 进行中 | 等待 UniRef 身份切片 | 分组命令严格语法、dispatch 优先级/权限、历史 Option 顺序和全量 matcher 注册测试已完成；动态 Adapter 声明留待 PLAN-0002 后 |
+| 进行中 | 等待 UniRef 身份切片 | 分组命令严格语法、dispatch、历史 Option、matcher 注册、README 与当前架构已同步；动态 Adapter 声明留待 PLAN-0002 后 |
 
 ## 完成标准与验证
 
