@@ -24,17 +24,25 @@ def make_session(scene_type: int, scene_id: str = "42") -> "Session":
 @dataclass
 class MatcherStub:
     messages: list[str] = field(default_factory=list)
+    raw_messages: list[object] = field(default_factory=list)
+    options: list[dict[str, object]] = field(default_factory=list)
 
-    async def send(self, message: object, **_: object) -> None:
+    async def send(self, message: object, **kwargs: object) -> None:
+        self.raw_messages.append(message)
         self.messages.append(str(message))
+        self.options.append(kwargs)
 
-    async def finish(self, message: object, **_: object) -> None:
+    async def finish(self, message: object, **kwargs: object) -> None:
+        self.raw_messages.append(message)
         self.messages.append(str(message))
+        self.options.append(kwargs)
 
 
 class FinishingMatcherStub(MatcherStub):
-    async def finish(self, message: object, **_: object) -> None:
+    async def finish(self, message: object, **kwargs: object) -> None:
+        self.raw_messages.append(message)
         self.messages.append(str(message))
+        self.options.append(kwargs)
         raise FinishedException
 
 
@@ -480,6 +488,12 @@ async def test_rank_uses_uninfo_user_directory(
     assert chart_data[0]["用户1"] == 1.0
     assert chart_data[0]["用户10"] == 10.0
     assert "你的排名为4喵" in matcher.messages[0]
+    from nonebot_plugin_alconna import AUTO, Image, Text, UniMessage
+
+    assert isinstance(matcher.raw_messages[0], UniMessage)
+    assert isinstance(matcher.raw_messages[0][0], Image)
+    assert isinstance(matcher.raw_messages[0][1], Text)
+    assert matcher.options[0]["fallback"] is AUTO
 
 
 async def test_interaction_with_mention_skips_member_enumeration(
@@ -524,7 +538,13 @@ async def test_interaction_with_mention_skips_member_enumeration(
             raise AssertionError("显式 At 不应枚举成员")
 
         async def get_member(self, *_: object) -> Member:
-            return Member(User(id="67890", nick="目标"))
+            return Member(
+                User(
+                    id="67890",
+                    nick="目标",
+                    avatar="https://example.com/avatar.png",
+                )
+            )
 
         async def get_user(self, user_id: str) -> User:
             return User(id=user_id, nick="目标")
@@ -550,6 +570,12 @@ async def test_interaction_with_mention_skips_member_enumeration(
     assert complete_calls == [(10001, 67890, 0.75)]
     assert len(matcher.messages) == 1
     assert "目标(67890)" in matcher.messages[0]
+    from nonebot_plugin_alconna import AUTO, Image, Text, UniMessage
+
+    assert isinstance(matcher.raw_messages[0], UniMessage)
+    assert isinstance(matcher.raw_messages[0][0], Text)
+    assert isinstance(matcher.raw_messages[0][1], Image)
+    assert matcher.options[0]["fallback"] is AUTO
 
 
 async def test_interaction_without_member_capability_requests_mention(
@@ -636,3 +662,66 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
     assert admin == "30003"
     assert owner_matcher.messages == ["现在咱将把群主\n送给发起者色色！"]
     assert admin_matcher.messages == ["现在咱将随机抽取一位幸运管理\n送给发起者色色！"]
+
+
+async def test_help_uses_unimessage_auto_fallback():
+    from nonebot_plugin_alconna import AUTO, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import impart
+
+    matcher = MatcherStub()
+
+    await impart.yinpa_introduce(cast(Matcher, matcher))
+
+    assert isinstance(matcher.raw_messages[0], UniMessage)
+    assert isinstance(matcher.raw_messages[0][0], Text)
+    assert matcher.options[0]["fallback"] is AUTO
+
+
+async def test_injection_history_chart_uses_unimessage_image(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import AUTO, At, Image, Match, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import (
+        draw_bar_chart,
+        game_app,
+        impart,
+    )
+    from nonebot_plugin_impart_plus.impart.app import (
+        InjectionQueryResult,
+        InjectionQueryType,
+    )
+
+    async def query_injection(
+        _: int,
+        __: int,
+        *,
+        history: bool,
+    ) -> InjectionQueryResult:
+        assert history is True
+        return InjectionQueryResult(
+            InjectionQueryType.HISTORY_CHART,
+            total=8.5,
+            history={"2026-08-30": 3.0, "2026-08-31": 5.5},
+        )
+
+    async def draw_line(_: dict[str, float]) -> bytes:
+        return b"png"
+
+    monkeypatch.setattr(game_app, "query_injection", query_injection)
+    monkeypatch.setattr(draw_bar_chart, "draw_line_chart", draw_line)
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await impart.query_injection(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            Match(At("user", "unused"), False),
+            Match(UniMessage.text("历史"), True),
+        )
+
+    assert isinstance(matcher.raw_messages[0], UniMessage)
+    assert isinstance(matcher.raw_messages[0][0], Text)
+    assert isinstance(matcher.raw_messages[0][1], Image)
+    assert matcher.options[0]["fallback"] is AUTO

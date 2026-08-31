@@ -146,7 +146,7 @@ Adapter event
 
 | 状态 | 当前工作项 | 结果或下一步 |
 |---|---|---|
-| 进行中 | 使用 UniMessage 统一回复 | OneBot MessageSegment 已移除，媒体与帮助输出使用 UniMessage/AUTO，下一步补消息结构测试 |
+| 进行中 | 等待 UniRef 身份切片 | Alconna/Uninfo 命令迁移及 UniMessage 文本、PNG、URL 图片与 AUTO fallback 测试已完成；动态 Adapter 声明留待 PLAN-0002 后 |
 
 ## 完成标准与验证
 
