@@ -2,7 +2,7 @@
 
 | 状态 | 优先级 | 最后更新 | 依赖 |
 |---|---|---|---|
-| 讨论中 | 中 | 2026-08-30 | PLAN-0001 的平台范围决定 |
+| 讨论中 | 中 | 2026-08-31 | PLAN-0001 的平台范围决定 |
 
 ## 背景
 
@@ -40,55 +40,45 @@
 
 因此，UniRef 对“跨平台持久化身份”价值高，对“只把 matcher 换成 Alconna”价值低。
 
-## 当前数据设计与迁移风险
+## 当前数据设计与重构边界
 
 - [`infra/database.py`](../../../src/nonebot_plugin_impart_plus/infra/database.py) 的三张表都以整数 QQ ID 或群号为核心。
 - [`impart/app.py`](../../../src/nonebot_plugin_impart_plus/impart/app.py) 和 `DataManager` 方法签名仍使用 `int`/数字字符串。
-- SQLite 不能简单把现有整数主键原地升级为复合跨平台语义；只增加 nullable ref 列仍会让旧整数主键阻止不同平台同值 ID 共存。
-- 既有 `impart.db` 已被 README 承诺可以沿用，任何身份迁移都必须可备份、可重跑、可验证，不能静默丢失数据。
+- 插件尚未发布到 NoneBot 插件市场，当前数据库契约始终视为全新 v1：可以直接重建表和字段，不保留开发期数据库兼容。
+- [`infra/database.py`](../../../src/nonebot_plugin_impart_plus/infra/database.py) 现有旧列兼容逻辑也属于发布前遗留；最终身份 schema 落地时一并删除，不扩展为 migration framework。
 
 ## 技术路线
 
-本计划不在 PLAN-0001 的 matcher 迁移中顺带修改数据库。只有 D-101 确认采用后进入实施。
+本计划不在 PLAN-0001 的 matcher 迁移中顺带修改数据库。只有 D-101 确认采用后进入实施，并直接修改 v1 schema：
 
-推荐采用 v2 表迁移，而不是原表原地改主键：
+1. 直接调整 `userdata`、`groupdata`、`ejaculation_data` 的用户和场景键，使用 `encode_ref()` 结果；不创建 v2 或 legacy 表。
+2. 删除旧列探测、回填和兼容分支；开发环境中的旧 `impart.db` 由维护者删除后按新 schema 重建。
+3. `DataManager` API 接收 `UserRef`/`SceneRef`，在 infra 内编码，不让 wire string 扩散到 core。
+4. `GameApplication` 接收 Ref 或更窄的稳定身份对象；core 的纯数值规则不感知身份。
+5. 冷却键改为 `encode_ref(user_ref)`；群开关以场景 Ref 为键。
+6. 只有需要事件外发送时才调用 `to_target()`，不把 Target 持久化进业务表。
 
-1. 增加 `userdata_v2`、`groupdata_v2`、`ejaculation_data_v2`，主键或外键使用 `encode_ref()` 结果。
-2. 在单个迁移事务内把旧用户 ID 回填为 `UserRef(scope="QQClient", id=str(userid))`，旧群号回填为 `SceneRef(scope="QQClient", type="group", id=str(groupid))`。
-3. 校验旧表与 v2 表记录数、关键字段和注入总量一致后切换读取。
-4. 首个版本保留 legacy 表作为恢复来源，不立即删除；重复启动时迁移必须幂等。
-5. `DataManager` API 接收 `UserRef`/`SceneRef`，在 infra 内编码，不让 wire string 扩散到 core。
-6. `GameApplication` 接收 Ref 或更窄的稳定身份对象；core 的纯数值规则不感知身份。
-7. 冷却键改为 `encode_ref(user_ref)`；群开关以场景 Ref 为键。
-8. 只有需要事件外发送时才调用 `to_target()`，不把 Target 持久化进业务表。
+该规则持续到插件首次发布到 NoneBot 插件市场；发布后若再修改持久化 schema，届时重新建立迁移与兼容策略，不能把本阶段的“直接重建”惯例延伸到已发布版本。
 
 ### 预期提交
 
 1. `feat: 引入UniRef持久化身份依赖`
 2. `refactor: 扩展DataManager身份参数`
-3. `feat: 迁移旧版身份数据表`
-4. `test: 验证UniRef数据迁移`
-5. `refactor: 使用Ref统一冷却与场景键`
-6. `test: 验证跨平台身份隔离`
-7. `docs: 记录持久化身份协议`
+3. `refactor: 使用Ref重建身份数据表`
+4. `refactor: 使用Ref统一冷却与场景键`
+5. `test: 验证跨平台身份隔离`
+6. `docs: 记录持久化身份协议`
 
-测试仍遵循用户确认的顺序：先完成对应迁移切片，再立即增加该切片的迁移和行为测试。
+测试仍遵循用户确认的顺序：先完成对应 schema 或身份切片，再立即增加该切片的行为测试；不增加旧数据库升级、回填或幂等迁移测试。
 
 ## 待确认事项
 
 ### D-101 · P0：UniRef 在何时进入当前插件
 
 - **A：不采用。** Alconna 迁移仍保持 OneBot 整数身份。
-- **B：Alconna 完成后单独采用。** 先稳定接入层，再执行数据迁移。
+- **B：Alconna 完成后单独采用。** 先稳定接入层，再重构持久化身份和 v1 schema。
 - **C：与 Alconna 首轮同时采用。** 同时修改 matcher、身份和 schema，风险最高。
 - **建议：B。** UniRef 有明确长期价值，但与 matcher 是独立边界；分开实施更容易定位回归和恢复数据。
-
-### D-102 · P0：既有数据库如何升级
-
-- **A：建立 v2 表、事务回填、校验后切换，并暂时保留 legacy 表。**
-- **B：给旧表增加 ref 列，但继续保留整数主键。** 无法真正解决跨平台同值碰撞，只适合作为短暂过渡。
-- **C：放弃旧数据并创建新数据库。** 与当前沿用旧数据库承诺冲突。
-- **建议：A。** 它是唯一同时满足跨平台唯一性、可验证和可恢复的方向。
 
 ### D-103 · P1：是否按 Bot 隔离用户状态
 
@@ -102,21 +92,25 @@ UniRef 的 Ref 默认不含 Bot，同一平台的两个 Bot 会看到相同用�
 
 - **A：显式拒绝该命令并提示平台暂未支持。**
 - **B：回退到裸 ID。** 会破坏持久化唯一性保证。
-- **建议：A。** 持久化身份应失败安全，不生成之后难以迁移的键。
+- **建议：A。** 持久化身份应失败安全，不写入来源不明确、无法稳定复现的键。
 
 ## 完成标准与验证
 
 | 覆盖条件或输入 | 预期结果 | 验证方式 |
 |---|---|---|
-| 旧 OneBot 数据库 | 所有用户、群开关、注入记录无损进入 v2 表 | 真实结构 fixture、记录数与字段逐项比对 |
-| 重复启动迁移 | 不重复、不覆盖新数据、不改变总量 | 幂等迁移测试 |
+| 空数据库首次启动 | 直接创建采用 Ref 键的 v1 表，不出现 v2 或 legacy 表 | schema 集成测试 |
+| 旧开发数据库 | 不执行探测、回填或兼容；删除后可按当前 v1 schema 重建 | 源码审查与干净数据库启动测试 |
 | 同值用户 ID、不同 scope | 生成不同主键且互不读取 | DataManager 集成测试 |
 | 两个 OneBot Bot 观察同一 QQ 用户 | 按 D-103 得到相同或隔离状态 | 身份键参数化测试 |
 | 未验证 Adapter/scope | 按 D-104 显式失败，不写入数据库 | 依赖与数据层测试 |
 | Telegram topic | 保持 UniRef 明确拒绝，不生成碰撞 SceneRef | 错误路径测试 |
 | 冷却和群开关 | 使用 Ref 后不发生跨平台碰撞 | 应用层与冷却测试 |
-| 数据恢复 | legacy 表仍可用于核对和人工恢复 | 迁移后 schema 检查与恢复说明 |
+| 发布前 schema 代码 | 不包含 migration runner、旧列兼容或 legacy 表分支 | 静态审查与定向测试 |
 | 质量门 | Ruff、BasedPyright、pytest、构建全部通过 | 项目标准命令 |
+
+## 已确认事项
+
+- 2026-08-31 · D-102：插件首次进入 NoneBot 插件市场前始终按全新 v1 开发；schema 直接修改，旧开发数据库直接重建，不编写迁移、回填、v2 表或 legacy 兼容逻辑。
 
 ## 相关文档
 
