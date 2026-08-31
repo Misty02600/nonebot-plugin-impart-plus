@@ -60,6 +60,36 @@ def test_toggle_command_preserves_regex_range(message: str, matched: bool):
 
 
 @pytest.mark.parametrize(
+    ("message", "matched"),
+    [
+        ("打胶", True),
+        ("开导", True),
+        ("/打胶", False),
+        ("打胶尾巴", False),
+    ],
+)
+def test_growth_command_preserves_full_match(message: str, matched: bool):
+    from nonebot_plugin_impart_plus.bot.commands import GROW_COMMAND
+
+    assert GROW_COMMAND.parse(message).matched is matched
+
+
+@pytest.mark.parametrize(
+    ("message", "matched"),
+    [
+        ("查询", True),
+        ("/查询", True),
+        ("查询尾巴", False),
+        ("/查询 尾巴", True),
+    ],
+)
+def test_query_command_uses_command_start(message: str, matched: bool):
+    from nonebot_plugin_impart_plus.bot.commands import QUERY_COMMAND
+
+    assert QUERY_COMMAND.parse(message).matched is matched
+
+
+@pytest.mark.parametrize(
     ("scene_type", "expected"),
     [
         (0, False),
@@ -110,3 +140,82 @@ async def test_toggle_handler_uses_uninfo_scene(
 
     assert calls == [(12345, enabled)]
     assert matcher.messages == [reply]
+
+
+async def test_growth_handler_uses_uninfo_identity(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import GrowthOutcome, GrowthOutcomeType
+
+    calls: list[tuple[int, str]] = []
+
+    async def grow_self(scene_id: int, user_id: str) -> GrowthOutcome:
+        calls.append((scene_id, user_id))
+        return GrowthOutcome(
+            GrowthOutcomeType.COMPLETED,
+            random_num=1.25,
+            new_length=11.25,
+        )
+
+    monkeypatch.setattr(game_app, "grow_self", grow_self)
+    matcher = MatcherStub()
+
+    await impart.dajiao(
+        cast(Matcher, matcher),
+        make_session(1, "12345"),
+    )
+
+    assert calls == [(12345, "10001")]
+    assert len(matcher.messages) == 1
+    assert "长了1.25cm" in matcher.messages[0]
+    assert "目前长度为11.25cm" in matcher.messages[0]
+
+
+async def test_query_handler_prefers_typed_mention(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import At, Match, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import QueryOutcome, QueryOutcomeType
+    from nonebot_plugin_impart_plus.impart.core import LengthState
+
+    calls: list[tuple[int, int]] = []
+
+    async def query_user(scene_id: int, user_id: int) -> QueryOutcome:
+        calls.append((scene_id, user_id))
+        return QueryOutcome(
+            QueryOutcomeType.COMPLETED,
+            length=12.5,
+            state=LengthState.NORMAL,
+        )
+
+    monkeypatch.setattr(game_app, "query_user", query_user)
+    matcher = MatcherStub()
+
+    await impart.queryjj(
+        cast(Matcher, matcher),
+        make_session(1, "12345"),
+        Match(At("user", "67890"), True),
+        Match(UniMessage(), False),
+    )
+
+    assert calls == [(12345, 67890)]
+    assert len(matcher.messages) == 1
+    assert "TA的" in matcher.messages[0]
+    assert "12.5cm" in matcher.messages[0]
+
+
+def test_mention_can_be_recovered_from_tail():
+    from nonebot_plugin_alconna import At, Match, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.context import mentioned_user_id
+
+    assert (
+        mentioned_user_id(
+            Match(At("user", "unused"), False),
+            Match(UniMessage([Text("前置文字 "), At("user", "67890")]), True),
+        )
+        == "67890"
+    )
