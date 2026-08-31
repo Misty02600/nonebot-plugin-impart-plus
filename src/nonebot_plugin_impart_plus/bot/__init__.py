@@ -3,10 +3,13 @@
 from re import I
 
 from nonebot import get_driver, on_command, on_regex, require
-from nonebot.adapters.onebot.v11.permission import GROUP_ADMIN, GROUP_OWNER
 from nonebot.permission import SUPERUSER
+from nonebot_plugin_alconna import on_alconna
+from nonebot_plugin_uninfo import ADMIN
 
 from ..infra.database import init_db
+from .commands import HELP_COMMAND, TOGGLE_COMMAND
+from .context import public_scene
 from .handlers import has_at, impart
 
 require("nonebot_plugin_apscheduler")
@@ -58,10 +61,12 @@ on_regex(
     handlers=[impart.yinpa],
 )
 
-on_regex(
-    r"^(开始|开启|关闭|禁止)(银趴|impart)",
-    permission=SUPERUSER | GROUP_ADMIN | GROUP_OWNER,
-    flags=I,
+on_alconna(
+    TOGGLE_COMMAND,
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=False,
+    permission=SUPERUSER | ADMIN(),
     priority=10,
     block=True,
     handlers=[impart.open_module],
@@ -75,9 +80,11 @@ on_command(
     handlers=[impart.query_injection],
 )
 
-on_regex(
-    r"^(银趴|impart)(介绍|帮助)$",
-    flags=I,
+on_alconna(
+    HELP_COMMAND,
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=False,
     priority=20,
     block=True,
     handlers=[impart.yinpa_introduce],

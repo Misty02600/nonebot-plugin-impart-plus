@@ -7,6 +7,8 @@ from httpx import AsyncClient
 from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
 from nonebot.matcher import Matcher
 from nonebot.params import CommandArg, RegexGroup
+from nonebot_plugin_alconna import CommandResult
+from nonebot_plugin_uninfo import Uninfo
 
 from .. import __plugin_meta__
 from ..impart.app import (
@@ -20,6 +22,7 @@ from ..impart.app import (
 )
 from ..impart.core import LengthState
 from ..infra.chart_renderer import draw_bar_chart
+from .context import legacy_scene_id
 from .dependencies import botname, game_app, plugin_config
 
 NOT_ALLOWED_TEXT = (
@@ -459,15 +462,16 @@ class Impart:
     @staticmethod
     async def open_module(
         matcher: Matcher,
-        event: GroupMessageEvent,
-        args: tuple = RegexGroup(),
+        session: Uninfo,
+        result: CommandResult,
     ) -> None:
-        command = args[0]
+        command = str(result.result.header_match.result)
+        scene_id = legacy_scene_id(session)
         if "开启" in command or "开始" in command:
-            await game_app.set_group_enabled(event.group_id, True)
+            await game_app.set_group_enabled(scene_id, True)
             await matcher.finish("功能已开启喵")
         elif "禁止" in command or "关闭" in command:
-            await game_app.set_group_enabled(event.group_id, False)
+            await game_app.set_group_enabled(scene_id, False)
             await matcher.finish("功能已禁用喵")
 
     @staticmethod
