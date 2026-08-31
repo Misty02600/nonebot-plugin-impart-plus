@@ -2,10 +2,17 @@
 
 import asyncio
 from random import choice
+from typing import cast
 
-from nonebot.adapters.onebot.v11 import MessageSegment
 from nonebot.matcher import Matcher
-from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
+from nonebot_plugin_alconna import (
+    AUTO,
+    AlconnaMatcher,
+    At,
+    CommandResult,
+    Match,
+    UniMessage,
+)
 from nonebot_plugin_uninfo import Interface, Member, QryItrface, Uninfo, User
 
 from .. import __plugin_meta__
@@ -350,7 +357,11 @@ class Impart:
             data[last5names[i]] = last5[i]["jj_length"]
         img_bytes = await draw_bar_chart.draw_bar_chart(data)
         reply = f"你的排名为{outcome.index + 1}喵"
-        await matcher.finish(MessageSegment.image(img_bytes) + reply, at_sender=True)
+        await cast(AlconnaMatcher, matcher).finish(
+            UniMessage.image(raw=img_bytes).text(reply),
+            fallback=AUTO,
+            at_sender=True,
+        )
 
     @staticmethod
     async def yinpa_member_handle(
@@ -534,10 +545,10 @@ class Impart:
             report = f"好欸！{lucky_user_card}({lucky_user})用时{interaction_result.seconds}秒 \n给 {req_user_card}({uid}) 注入了{interaction_result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{interaction_result.today_total}毫升\n"
         else:
             report = f"好欸！{req_user_card}({uid})用时{interaction_result.seconds}秒 \n给 {lucky_user_card}({lucky_user}) 注入了{interaction_result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{interaction_result.today_total}毫升\n"
+        message = UniMessage.text(report)
         if lucky_user_avatar:
-            await matcher.send(report + MessageSegment.image(lucky_user_avatar))
-        else:
-            await matcher.send(report)
+            message.image(url=lucky_user_avatar)
+        await cast(AlconnaMatcher, matcher).send(message, fallback=AUTO)
 
     @staticmethod
     async def open_module(
@@ -576,14 +587,19 @@ class Impart:
             await matcher.finish(f"{replay}当日总被注射量为{result.total}ml")
         if result.type is InjectionQueryType.HISTORY_TEXT:
             await matcher.finish(f"{replay}历史总被注射量为{result.total}ml")
-        await matcher.finish(
-            MessageSegment.text(f"{replay}历史总被注射量为{result.total}ml")
-            + MessageSegment.image(await draw_bar_chart.draw_line_chart(result.history))
+        await cast(AlconnaMatcher, matcher).finish(
+            UniMessage.text(f"{replay}历史总被注射量为{result.total}ml").image(
+                raw=await draw_bar_chart.draw_line_chart(result.history),
+            ),
+            fallback=AUTO,
         )
 
     @staticmethod
     async def yinpa_introduce(matcher: Matcher) -> None:
-        await matcher.send(MessageSegment.text(__plugin_meta__.usage))
+        await cast(AlconnaMatcher, matcher).send(
+            UniMessage.text(__plugin_meta__.usage),
+            fallback=AUTO,
+        )
 
 
 impart = Impart()

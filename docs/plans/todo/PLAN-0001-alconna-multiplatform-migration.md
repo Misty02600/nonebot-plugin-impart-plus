@@ -146,7 +146,7 @@ Adapter event
 
 | 状态 | 当前工作项 | 结果或下一步 |
 |---|---|---|
-| 进行中 | 使用 UniMessage 统一回复 | 排行榜资料、显式 At、成员能力降级和互动 application 调用测试已补齐 |
+| 进行中 | 使用 UniMessage 统一回复 | OneBot MessageSegment 已移除，媒体与帮助输出使用 UniMessage/AUTO，下一步补消息结构测试 |
 
 ## 完成标准与验证
 
