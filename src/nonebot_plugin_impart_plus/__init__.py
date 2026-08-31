@@ -1,8 +1,12 @@
 """插件入口。"""
 
+from nonebot import require
 from nonebot.plugin import PluginMetadata
 
 from .config import Config
+
+require("nonebot_plugin_alconna")
+require("nonebot_plugin_uninfo")
 
 __plugin_meta__ = PluginMetadata(
     name="nonebot_plugin_impart_plus",

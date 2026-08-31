@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from nonebot import get_plugin
 from nonebug import App
 
 
@@ -23,3 +24,5 @@ def test_plugin_metadata(app: App):
     )
     assert isinstance(plugin_config, Config)
     assert impart is not None
+    assert get_plugin("nonebot_plugin_alconna") is not None
+    assert get_plugin("nonebot_plugin_uninfo") is not None
