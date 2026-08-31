@@ -1,16 +1,18 @@
-# PLAN-0002：评估并采用 UniRef 持久化身份
+# PLAN-0002：采用 UniRef 持久化身份
 
 | 状态 | 优先级 | 最后更新 | 依赖 |
 |---|---|---|---|
-| 讨论中 | 中 | 2026-08-31 | PLAN-0001 的平台范围决定 |
+| 讨论中 | 中 | 2026-08-31 | PLAN-0001 完成 Alconna 接入切片后、扩大 Adapter 声明前 |
 
 ## 背景
 
 当前数据库把 QQ 用户号和群号直接存为整数主键。只要插件仍是 OneBot V11 单平台，这个模型足够；一旦同一数据库承载 Telegram、Discord 或其他平台，裸 ID 会发生跨平台碰撞，群、频道和私聊场景也无法由单个 `groupid` 表达。
 
-[`nonebot-plugin-uniref`](https://github.com/Misty02600/nonebot-plugin-uniref) 提供可比较、可编码、可持久化的 `UserRef(scope, id)` 与 `SceneRef(scope, type, id)`。本计划评估是否将它用于数据库和冷却键；它不是 Alconna matcher 或 Uninfo 运行时会话的替代品。
+[`nonebot-plugin-uniref`](https://github.com/Misty02600/nonebot-plugin-uniref) 提供可比较、可编码、可持久化的 `UserRef(scope, id)` 与 `SceneRef(scope, type, id)`。本计划将它用于数据库和冷却键；它不是 Alconna matcher 或 Uninfo 运行时会话的替代品。
 
-## UniRef 评估
+项目已经确认不把首轮支持范围限制为 OneBot V11，最终 Adapter 声明取 Alconna、Uninfo、UniRef 三插件支持集合的交集。因此 UniRef 不再只是候选评估：它必须在 PLAN-0001 扩大 `PluginMetadata.supported_adapters` 前完成，用来消除跨 scope 的持久化 ID 碰撞。
+
+## UniRef 价值与边界
 
 ### 已核对版本与质量
 
@@ -49,7 +51,7 @@
 
 ## 技术路线
 
-本计划不在 PLAN-0001 的 matcher 迁移中顺带修改数据库。只有 D-101 确认采用后进入实施，并直接修改 v1 schema：
+本计划不在 PLAN-0001 的 matcher 迁移中顺带修改数据库。先完成 Alconna 接入切片，再单独实施本计划并直接修改 v1 schema：
 
 1. 直接调整 `userdata`、`groupdata`、`ejaculation_data` 的用户和场景键，使用 `encode_ref()` 结果；不创建 v2 或 legacy 表。
 2. 删除旧列探测、回填和兼容分支；开发环境中的旧 `impart.db` 由维护者删除后按新 schema 重建。
@@ -72,13 +74,6 @@
 测试仍遵循用户确认的顺序：先完成对应 schema 或身份切片，再立即增加该切片的行为测试；不增加旧数据库升级、回填或幂等迁移测试。
 
 ## 待确认事项
-
-### D-101 · P0：UniRef 在何时进入当前插件
-
-- **A：不采用。** Alconna 迁移仍保持 OneBot 整数身份。
-- **B：Alconna 完成后单独采用。** 先稳定接入层，再重构持久化身份和 v1 schema。
-- **C：与 Alconna 首轮同时采用。** 同时修改 matcher、身份和 schema，风险最高。
-- **建议：B。** UniRef 有明确长期价值，但与 matcher 是独立边界；分开实施更容易定位回归和恢复数据。
 
 ### D-103 · P1：是否按 Bot 隔离用户状态
 
@@ -110,6 +105,7 @@ UniRef 的 Ref 默认不含 Bot，同一平台的两个 Bot 会看到相同用�
 
 ## 已确认事项
 
+- 2026-08-31 · D-101：先迁移 Alconna 接入，再单独采用 UniRef 重构持久化身份；PLAN-0001 只有在本计划完成后才扩大 Adapter 声明。
 - 2026-08-31 · D-102：插件首次进入 NoneBot 插件市场前始终按全新 v1 开发；schema 直接修改，旧开发数据库直接重建，不编写迁移、回填、v2 表或 legacy 兼容逻辑。
 
 ## 相关文档

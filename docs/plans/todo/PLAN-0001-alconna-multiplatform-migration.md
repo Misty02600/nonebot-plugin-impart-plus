@@ -2,11 +2,11 @@
 
 | 状态 | 优先级 | 最后更新 | 基准 |
 |---|---|---|---|
-| 讨论中 | 阻塞 | 2026-08-31 | `feature@bdd531e` |
+| 讨论中 | 阻塞 | 2026-08-31 | `feature@c2ec0cd` |
 
 ## 背景
 
-当前插件已经把 NoneBot 接入、应用编排、核心规则和基础设施分开，Alconna 迁移可以主要限制在 `src/nonebot_plugin_impart_plus/bot/`。用户明确要求先完成迁移、再为迁移后的行为补测试；命令兼容和缺少成员枚举时的显式 At 行为已经确认，实施前仍需确认首轮平台范围和 UniMessage fallback，避免在重写 matcher 时临时决定产品语义。
+当前插件已经把 NoneBot 接入、应用编排、核心规则和基础设施分开，Alconna 迁移可以主要限制在 `src/nonebot_plugin_impart_plus/bot/`。用户明确要求先完成迁移、再为迁移后的行为补测试；命令兼容、平台范围、缺少成员枚举时的显式 At 行为和 UniMessage fallback 均已确认。
 
 本计划只处理接入层：命令解析使用 Alconna，当前事件身份与场景使用 Uninfo，消息渲染使用 UniMessage。游戏规则、随机算法、冷却顺序、数据库提交方式和现有文案不在本计划中调整。
 
@@ -31,7 +31,7 @@
 |---|---|---|
 | `nonebot-plugin-alconna` | `0.62.1` | `on_alconna`、`Alconna`、`Args`、`Match`、`Query`、`UniMessage`、`At`、`Image`；要求 NoneBot ≥2.5.0 |
 | `nonebot-plugin-uninfo` | `0.11.1` | `Uninfo`、`Interface`、`get_session`、`get_interface`；要求 NoneBot ≥2.5.0 |
-| `nonebot-plugin-uniref` | `0.2.0` | 本计划不强制采用；独立评估见 PLAN-0002 |
+| `nonebot-plugin-uniref` | `0.2.0` | 在扩大 Adapter 声明前用于持久化身份；实施见 PLAN-0002 |
 
 Alconna 0.62.1 的 `on_alconna` 已确认包含 `skip_for_unmatch`、`auto_send_output`、`aliases`、`use_cmd_start`、`use_cmd_sep`、`permission`、`handlers`、`priority` 和 `block`。隔离解析验证还确认：
 
@@ -41,11 +41,13 @@ Alconna 0.62.1 的 `on_alconna` 已确认包含 `skip_for_unmatch`、`auto_send_
 
 迁移时必须显式设置会影响旧行为的参数，不依赖全局默认值。
 
+NoneBot 2.5.0 的 `inherit_supported_adapters(*names)` 会展开 `~` 缩写并返回已加载依赖插件支持集合的交集；依赖未先 `require()` 时会抛出 `RuntimeError`。对上述锁定版本实测三插件交集为 OneBot V11、Telegram 和 Discord，但实现不硬编码该结果。
+
 ### 跨平台能力边界
 
 Uninfo 0.11.1 能为 OneBot V11 和 Discord 枚举成员；Telegram fetcher 没有 `query_members`，因此当前“随机群友”无法在 Telegram 保持原行为。Discord 可以枚举成员，但“群主/管理”与 OneBot 的 owner/admin 角色并非同一模型，需要单独验证角色映射。
 
-这意味着“命令能够被多个 Adapter 解析”不等于“全部玩法已经跨平台”。在能力未验证前，插件元数据不能扩大 `supported_adapters`。
+这意味着“命令能够被多个 Adapter 解析”不等于“全部玩法已经跨平台”。最终 `supported_adapters` 直接继承 Alconna、Uninfo、UniRef 三个插件的动态交集；本插件仍需为该交集中的 Adapter 验证自身命令、身份和能力降级，依赖升级后也必须重新运行支持矩阵测试。
 
 ## 技术路线
 
@@ -64,7 +66,8 @@ Adapter event
 - `bot` 持有 Alconna、Uninfo、UniMessage 和狭窄的平台降级 helper。
 - `impart/app.py`、`impart/core.py` 和 `infra` 不接收 `Event`、`Session`、`UniMessage` 或 Alconna 解析对象。
 - 当前事件回复不构造 `Target`；只有未来出现事件外主动发送时才使用。
-- 第一轮不改变 SQLite 主键类型；UniRef 及持久化身份重构由 PLAN-0002 单独决定。插件发布到 NoneBot 插件市场前，数据库始终按全新 v1 处理，不编写迁移兼容代码。
+- Alconna matcher 切片本身不改变 SQLite 主键类型；完成这些切片后按 PLAN-0002 使用 UniRef 重构 v1 身份 schema，完成身份隔离后才把 metadata 改为三插件支持交集。
+- 插件发布到 NoneBot 插件市场前，数据库始终按全新 v1 处理，不编写迁移兼容代码。
 - 第一轮不修改玩法、提示语、随机调用次序、冷却时机和数据提交边界。
 
 ### 迁移与测试顺序
@@ -74,7 +77,7 @@ Adapter event
 1. `feat: 引入跨平台接入依赖`
    - 将 NoneBot 下限提升到 `2.5.0`。
    - 添加 Alconna `0.62.1` 与 Uninfo `0.11.1` 兼容范围。
-   - 在入口 `require()` 两个插件；暂不扩大 `supported_adapters`。
+   - 在入口 `require()` 两个插件；matcher 迁移期间暂不扩大 `supported_adapters`。
    - 建立 `bot` 内的 session、mention、renderer helper，不迁命令。
 2. `refactor: 迁移帮助与群开关命令`
    - 迁移固定文本和简单权限命令。
@@ -100,11 +103,18 @@ Adapter event
    - 覆盖成员列表、owner/admin 选择、找不到目标、反透、图片输出和 Adapter 降级。
 10. `refactor: 使用UniMessage统一回复`
     - 将文本、at sender 与 PNG bytes 转换为 UniMessage/uniseg segment。
-    - 明确 fallback；移除 OneBot `MessageSegment` 后再评估 metadata。
+    - 所有发送使用 `fallback="auto"`；移除 OneBot `MessageSegment` 后再进入身份与 metadata gate。
 11. `test: 验证跨平台消息渲染`
-    - 测试 UniMessage segment 结构；保留 OneBot 行为测试，并为已声明支持的 Adapter 增加最小渲染测试。
-12. `docs: 更新命令与适配器边界`
-    - 同步 README、PluginMetadata、architecture 和平台支持矩阵。
+    - 测试 UniMessage segment 结构；保留 OneBot 行为测试，并为当前三插件交集中的 Adapter 增加最小渲染测试。
+12. `feat: 声明三插件适配器交集`
+    - PLAN-0002 完成后，在插件入口依次 `require("nonebot_plugin_alconna")`、`require("nonebot_plugin_uninfo")`、`require("nonebot_plugin_uniref")`。
+    - 把 `PluginMetadata.supported_adapters` 设置为 `inherit_supported_adapters("nonebot_plugin_alconna", "nonebot_plugin_uninfo", "nonebot_plugin_uniref")`。
+    - 不手写 Adapter 集合。
+13. `test: 验证适配器支持交集`
+    - 在测试依赖组加入当前交集对应的 OneBot V11、Telegram、Discord Adapter；交集随依赖升级变化时，同步测试依赖和 fixture。
+    - 验证依赖加载顺序、动态交集、锁定版本的支持矩阵，以及交集内各 Adapter 的最小命令与消息行为。
+14. `docs: 更新命令与适配器边界`
+    - 同步 README、architecture 和平台支持矩阵。
 
 ### 命令迁移映射
 
@@ -120,28 +130,15 @@ Adapter event
 | 注入查询系列 | `use_cmd_start=True`；可选 `At` + payload | 保留“历史/全部”子串判断和额外文本范围 |
 | 银趴/impart 帮助 | `re:(?i:...)` 精确命令头 | 无前缀完整匹配，输出完整 metadata usage |
 
-## 待确认事项
-
-### D-001 · P0：首轮声明支持哪些 Adapter
-
-- **A：首轮仅声明 OneBot V11。** 接入代码使用 Alconna、Uninfo 和 UniMessage，但数据库继续使用现有整数身份；完成 PLAN-0002 后再扩大平台声明。
-- **B：立即让通用命令支持 OneBot V11、Telegram、Discord。** 在 PLAN-0002 完成前会让不同 scope 的同值整数 ID 发生碰撞，不能安全实施。
-- **C：全部玩法同时支持三平台。** 除身份碰撞外，Telegram 还没有成员枚举，必须先重新设计群友互动。
-- **建议：A。** 它保持 Alconna 与身份 schema 两个计划可独立实施和回退，同时让 bot 层先形成跨平台边界。
-
-### D-004 · P1：UniMessage 无法导出 segment 时的 fallback
-
-- **A：`auto`，尽量降级为可发送表现。**
-- **B：`forbid`，不支持就显式失败。**
-- **建议：A。** 当前主要输出是文本、At 和 PNG，通用表示明确；自动降级更接近现有“尽量回复”的行为。
-
 ## 已确认事项
 
 - 2026-08-30：迁移实现先于对应测试，但每个命令切片迁移后立即补测试。
 - 2026-08-30：Alconna 迁移不得顺带修改游戏规则、数据库提交顺序、冷却时机或文案。
-- 2026-08-30：UniRef 持久化身份不与 matcher 迁移强行绑定，作为独立计划评估。
+- 2026-08-30：UniRef 持久化身份不与 matcher 迁移强行绑定，在接入切片后作为独立计划实施。
 - 2026-08-31 · D-002：缺少成员枚举时不显式禁用互动命令；存在显式 At 就忽略“群友/群主/管理”的自动选择含义并直接使用该目标，无 At 时才返回平台能力不足提示。
 - 2026-08-31 · D-003：严格保留 command start、无前缀正则、大小写不敏感和尾随内容范围；目标优先使用类型化 `At`，仅从 Alconna 的可选 tail 恢复旧 At 位置，不扫描原始 Adapter 消息。
+- 2026-08-31 · D-001：不把支持范围限制为 OneBot V11；完成 UniRef v1 身份重构后，使用 NoneBot `inherit_supported_adapters()` 直接继承 Alconna、Uninfo、UniRef 三插件支持集合的交集，不手写 Adapter 名单。
+- 2026-08-31 · D-004：UniMessage 发送统一采用 `fallback="auto"`，尽量导出为当前 Adapter 可发送的表现。
 
 ## 完成标准与验证
 
@@ -155,13 +152,15 @@ Adapter event
 | 群未开启、冷却、用户创建、挑战状态 | application 的调用与回复未改变 | NoneBug + fake DataManager/Cooldown |
 | 管理权限 | OneBot 现有 owner/admin/superuser 行为保持；新平台按 D-001 与已确认的显式 At 降级策略 | 各 Adapter 权限 fixture 或明确的未覆盖说明 |
 | 无成员枚举平台的互动命令 | 显式 At 可用且覆盖群友/群主/管理自动选择；无 At 返回能力不足提示 | MemberDirectory capability fake + 行为测试 |
-| 文本、at sender、PNG | UniMessage 可导出并发送；fallback 符合 D-004 | segment 单测与 OneBot 行为测试 |
-| 适配器声明 | metadata 只包含已经有行为证据的平台 | metadata 测试与平台支持矩阵审查 |
+| 文本、at sender、PNG | UniMessage 可导出并发送；无法原样导出时使用 `auto` fallback | segment 单测与各支持 Adapter 行为测试 |
+| 依赖加载顺序 | Alconna、Uninfo、UniRef 均在继承支持集合前完成 `require()` | 插件加载测试 |
+| 适配器声明 | metadata 等于 `inherit_supported_adapters()` 对三插件计算出的交集，不存在手写名单 | metadata 测试与平台支持矩阵审查 |
 | 质量门 | Ruff、BasedPyright、pytest、sdist/wheel 构建全部通过 | `just lint`、`just check`、`just test`、`uv build` |
 
 ## 相关文档
 
 - [当前项目架构](../../architecture/overview.md)
 - [NoneBot Alconna 插件文档](https://nonebot.dev/docs/2.4.4/best-practice/alconna/)
+- [NoneBot `inherit_supported_adapters`](https://nonebot.dev/docs/2.4.3/api/plugin/load)
 - [nonebot-plugin-alconna v0.62.1](https://github.com/nonebot/plugin-alconna/releases/tag/v0.62.1)
-- [PLAN-0002：评估并采用 UniRef 持久化身份](PLAN-0002-uniref-persistent-identity.md)
+- [PLAN-0002：采用 UniRef 持久化身份](PLAN-0002-uniref-persistent-identity.md)
