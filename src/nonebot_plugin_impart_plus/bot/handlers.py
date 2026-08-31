@@ -4,9 +4,9 @@ import asyncio
 from random import choice
 
 from httpx import AsyncClient
-from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, Message, MessageSegment
+from nonebot.adapters.onebot.v11 import Bot, GroupMessageEvent, MessageSegment
 from nonebot.matcher import Matcher
-from nonebot.params import CommandArg, RegexGroup
+from nonebot.params import RegexGroup
 from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
 from nonebot_plugin_uninfo import Uninfo
 
@@ -64,10 +64,20 @@ class Impart:
         await game_app.penalties_and_resets()
 
     @staticmethod
-    async def pk(matcher: Matcher, event: GroupMessageEvent) -> None:
-        uid = event.get_user_id()
-        at = await get_at(event)
-        outcome = await game_app.execute_pk(event.group_id, uid, at)
+    async def pk(
+        matcher: Matcher,
+        session: Uninfo,
+        target: Match[At],
+        tail: Match[UniMessage],
+    ) -> None:
+        defender_id = mentioned_user_id(target, tail)
+        if defender_id is None:
+            return
+        outcome = await game_app.execute_pk(
+            legacy_scene_id(session),
+            session.user.id,
+            defender_id,
+        )
 
         if outcome.type is PkOutcomeType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
@@ -199,12 +209,20 @@ class Impart:
         )
 
     @staticmethod
-    async def suo(matcher: Matcher, event: GroupMessageEvent) -> None:
-        uid = event.get_user_id()
-        at = await get_at(event)
-        target_id = int(uid if at == "寄" else at)
-        pronoun = "你" if at == "寄" else "TA"
-        outcome = await game_app.grow_target(event.group_id, uid, target_id)
+    async def suo(
+        matcher: Matcher,
+        session: Uninfo,
+        target: Match[At],
+        tail: Match[UniMessage],
+    ) -> None:
+        mentioned = mentioned_user_id(target, tail)
+        target_id = int(mentioned or session.user.id)
+        pronoun = "TA" if mentioned else "你"
+        outcome = await game_app.grow_target(
+            legacy_scene_id(session),
+            session.user.id,
+            target_id,
+        )
 
         if outcome.type is GrowthOutcomeType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
@@ -487,20 +505,18 @@ class Impart:
     @staticmethod
     async def query_injection(
         matcher: Matcher,
-        event: GroupMessageEvent,
-        args: Message = CommandArg(),
+        session: Uninfo,
+        target: Match[At],
+        tail: Match[UniMessage],
     ) -> None:
-        target = args.extract_plain_text()
-        user_id = event.get_user_id()
-        [object_id, replay] = (
-            [await get_at(event), "该用户"]
-            if await get_at(event) != "寄"
-            else [user_id, "您"]
-        )
+        mentioned = mentioned_user_id(target, tail)
+        object_id = mentioned or session.user.id
+        replay = "该用户" if mentioned else "您"
+        payload = tail.result.extract_plain_text() if tail.available else ""
         result = await game_app.query_injection(
-            event.group_id,
+            legacy_scene_id(session),
             int(object_id),
-            history="历史" in target or "全部" in target,
+            history="历史" in payload or "全部" in payload,
         )
         if result.type is InjectionQueryType.DISABLED:
             await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)

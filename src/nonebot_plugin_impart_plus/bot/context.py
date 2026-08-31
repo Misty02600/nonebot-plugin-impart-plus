@@ -1,6 +1,6 @@
 """跨平台事件上下文转换。"""
 
-from nonebot_plugin_alconna import At, Match, UniMessage
+from nonebot_plugin_alconna import At, AtAll, Match, UniMessage, UniMsg
 from nonebot_plugin_uninfo import Session, Uninfo
 
 
@@ -20,12 +20,18 @@ def mentioned_user_id(
     if target.available and target.result.flag == "user":
         return target.result.target
     if tail.available:
-        return next(
-            (
-                segment.target
-                for segment in tail.result
-                if isinstance(segment, At) and segment.flag == "user"
-            ),
-            None,
-        )
+        return first_mentioned_user_id(tail.result)
     return None
+
+
+def first_mentioned_user_id(message: UniMessage) -> str | None:
+    for segment in message:
+        if isinstance(segment, AtAll):
+            return None
+        if isinstance(segment, At):
+            return segment.target if segment.flag == "user" else None
+    return None
+
+
+def has_user_mention(message: UniMsg) -> bool:
+    return first_mentioned_user_id(message) is not None

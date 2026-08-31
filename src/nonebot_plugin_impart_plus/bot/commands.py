@@ -3,10 +3,25 @@
 from arclet.alconna import Alconna, AllParam, Args, CommandMeta
 from nonebot_plugin_alconna import At
 
+PK_COMMAND = Alconna(
+    "pk",
+    Args["target?", At]["tail?", AllParam],
+)
+
 GROW_COMMAND = Alconna("打胶")
+
+SUO_COMMAND = Alconna(
+    "嗦牛子",
+    Args["target?", At]["tail?", AllParam],
+)
 
 QUERY_COMMAND = Alconna(
     "查询",
+    Args["target?", At]["tail?", AllParam],
+)
+
+INJECTION_QUERY_COMMAND = Alconna(
+    "注入查询",
     Args["target?", At]["tail?", AllParam],
 )
 

@@ -2,15 +2,23 @@
 
 from re import I
 
-from nonebot import get_driver, on_command, on_regex, require
+from nonebot import get_driver, on_regex, require
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import on_alconna
 from nonebot_plugin_uninfo import ADMIN
 
 from ..infra.database import init_db
-from .commands import GROW_COMMAND, HELP_COMMAND, QUERY_COMMAND, TOGGLE_COMMAND
-from .context import public_scene
-from .handlers import has_at, impart
+from .commands import (
+    GROW_COMMAND,
+    HELP_COMMAND,
+    INJECTION_QUERY_COMMAND,
+    PK_COMMAND,
+    QUERY_COMMAND,
+    SUO_COMMAND,
+    TOGGLE_COMMAND,
+)
+from .context import has_user_mention, public_scene
+from .handlers import impart
 
 require("nonebot_plugin_apscheduler")
 from nonebot_plugin_apscheduler import scheduler
@@ -28,10 +36,13 @@ scheduler.add_job(
     misfire_grace_time=600,
 )
 
-on_command(
-    "pk",
+on_alconna(
+    PK_COMMAND,
     aliases={"对决"},
-    rule=has_at,
+    rule=public_scene,
+    after_rule=has_user_mention,
+    auto_send_output=False,
+    use_cmd_start=True,
     priority=20,
     block=False,
     handlers=[impart.pk],
@@ -48,8 +59,15 @@ on_alconna(
     handlers=[impart.dajiao],
 )
 
-on_command(
-    "嗦牛子", aliases={"嗦", "suo"}, priority=20, block=True, handlers=[impart.suo]
+on_alconna(
+    SUO_COMMAND,
+    aliases={"嗦", "suo"},
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=True,
+    priority=20,
+    block=True,
+    handlers=[impart.suo],
 )
 
 on_alconna(
@@ -89,9 +107,12 @@ on_alconna(
     handlers=[impart.open_module],
 )
 
-on_command(
-    "注入查询",
+on_alconna(
+    INJECTION_QUERY_COMMAND,
     aliases={"摄入查询", "射入查询"},
+    rule=public_scene,
+    auto_send_output=False,
+    use_cmd_start=True,
     priority=20,
     block=True,
     handlers=[impart.query_injection],
