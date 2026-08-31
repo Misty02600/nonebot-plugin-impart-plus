@@ -25,13 +25,16 @@ def make_session(scene_type: int, scene_id: str = "42") -> "Session":
 class MatcherStub:
     messages: list[str] = field(default_factory=list)
 
-    async def finish(self, message: str, **_: object) -> None:
-        self.messages.append(message)
+    async def send(self, message: object, **_: object) -> None:
+        self.messages.append(str(message))
+
+    async def finish(self, message: object, **_: object) -> None:
+        self.messages.append(str(message))
 
 
 class FinishingMatcherStub(MatcherStub):
-    async def finish(self, message: str, **_: object) -> None:
-        self.messages.append(message)
+    async def finish(self, message: object, **_: object) -> None:
+        self.messages.append(str(message))
         raise FinishedException
 
 
@@ -392,3 +395,244 @@ async def test_injection_query_reads_target_and_history_from_tail(
 
     assert calls == [(12345, 67890, True)]
     assert matcher.messages == ["该用户历史总被注射量为8.5ml"]
+
+
+@pytest.mark.parametrize(
+    ("command_name", "message", "matched"),
+    [
+        ("rank", "jj排行榜", True),
+        ("rank", "JJRank尾巴", True),
+        ("rank", "/jj排行榜", False),
+        ("interaction", "日群友", True),
+        ("interaction", "透群主尾巴", True),
+        ("interaction", "/日群友", False),
+    ],
+)
+def test_rank_and_interaction_regex_ranges(
+    command_name: str,
+    message: str,
+    matched: bool,
+):
+    from nonebot_plugin_impart_plus.bot.commands import (
+        INTERACTION_COMMAND,
+        RANK_COMMAND,
+    )
+
+    commands = {
+        "rank": RANK_COMMAND,
+        "interaction": INTERACTION_COMMAND,
+    }
+    assert commands[command_name].parse(message).matched is matched
+
+
+async def test_rank_uses_uninfo_user_directory(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_uninfo import Interface, User
+
+    from nonebot_plugin_impart_plus.bot.handlers import (
+        draw_bar_chart,
+        game_app,
+        impart,
+    )
+    from nonebot_plugin_impart_plus.impart.app import (
+        RankingOutcome,
+        RankingOutcomeType,
+    )
+
+    ranking = [
+        {"userid": user_id, "jj_length": float(user_id)} for user_id in range(1, 11)
+    ]
+    app_calls: list[tuple[int, int]] = []
+    user_calls: list[str] = []
+    chart_data: list[dict[str, float]] = []
+
+    async def query_ranking(scene_id: int, user_id: int) -> RankingOutcome:
+        app_calls.append((scene_id, user_id))
+        return RankingOutcome(
+            RankingOutcomeType.COMPLETED,
+            ranking=ranking,
+            index=3,
+        )
+
+    class InterfaceStub:
+        async def get_user(self, user_id: str) -> User:
+            user_calls.append(user_id)
+            return User(id=user_id, nick=f"用户{user_id}")
+
+    async def draw_bar(data: dict[str, float]) -> bytes:
+        chart_data.append(data)
+        return b"png"
+
+    monkeypatch.setattr(game_app, "query_ranking", query_ranking)
+    monkeypatch.setattr(draw_bar_chart, "draw_bar_chart", draw_bar)
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await impart.jjrank(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            cast(Interface, InterfaceStub()),
+        )
+
+    assert app_calls == [(12345, 10001)]
+    assert user_calls == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+    assert chart_data[0]["用户1"] == 1.0
+    assert chart_data[0]["用户10"] == 10.0
+    assert "你的排名为4喵" in matcher.messages[0]
+
+
+async def test_interaction_with_mention_skips_member_enumeration(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
+    from nonebot_plugin_uninfo import Interface, Member, User
+
+    from nonebot_plugin_impart_plus.bot.commands import INTERACTION_COMMAND
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+        InteractionResult,
+    )
+
+    app_calls: list[tuple[int, int]] = []
+    complete_calls: list[tuple[int, int, float]] = []
+
+    async def prepare_interaction(scene_id: int, user_id: int) -> InteractionGuard:
+        app_calls.append((scene_id, user_id))
+        return InteractionGuard(InteractionGuardType.ALLOWED)
+
+    async def complete_interaction(
+        user_id: int,
+        target_id: int,
+        random_value: float,
+    ) -> InteractionResult:
+        complete_calls.append((user_id, target_id, random_value))
+        return InteractionResult(
+            reversed=False,
+            ejaculation=2.5,
+            today_total=8.0,
+            seconds=3,
+        )
+
+    async def no_sleep(_: float) -> None:
+        return None
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            raise AssertionError("显式 At 不应枚举成员")
+
+        async def get_member(self, *_: object) -> Member:
+            return Member(User(id="67890", nick="目标"))
+
+        async def get_user(self, user_id: str) -> User:
+            return User(id=user_id, nick="目标")
+
+    monkeypatch.setattr(game_app, "prepare_interaction", prepare_interaction)
+    monkeypatch.setattr(game_app, "roll_interaction", lambda: 0.75)
+    monkeypatch.setattr(game_app, "complete_interaction", complete_interaction)
+    monkeypatch.setattr(
+        "nonebot_plugin_impart_plus.bot.handlers.asyncio.sleep", no_sleep
+    )
+    matcher = MatcherStub()
+
+    await impart.yinpa(
+        cast(Matcher, matcher),
+        make_session(1, "12345"),
+        cast(Interface, InterfaceStub()),
+        CommandResult(result=INTERACTION_COMMAND.parse("日群主")),
+        Match(At("user", "67890"), True),
+        Match(UniMessage(), False),
+    )
+
+    assert app_calls == [(12345, 10001)]
+    assert complete_calls == [(10001, 67890, 0.75)]
+    assert len(matcher.messages) == 1
+    assert "目标(67890)" in matcher.messages[0]
+
+
+async def test_interaction_without_member_capability_requests_mention(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_alconna import At, CommandResult, Match, UniMessage
+    from nonebot_plugin_uninfo import Interface, Member
+
+    from nonebot_plugin_impart_plus.bot.commands import INTERACTION_COMMAND
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+
+    released: list[int] = []
+
+    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+        return InteractionGuard(InteractionGuardType.ALLOWED)
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            return []
+
+    monkeypatch.setattr(game_app, "prepare_interaction", prepare_interaction)
+    monkeypatch.setattr(
+        game_app,
+        "release_interaction_cooldown",
+        released.append,
+    )
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await impart.yinpa(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            cast(Interface, InterfaceStub()),
+            CommandResult(result=INTERACTION_COMMAND.parse("日群友")),
+            Match(At("user", "unused"), False),
+            Match(UniMessage(), False),
+        )
+
+    assert released == [10001]
+    assert matcher.messages == ["当前平台无法获取群成员列表，请明确@目标"]
+
+
+async def test_interaction_selects_uninfo_owner_and_admin_roles(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from nonebot_plugin_uninfo import Member, Role, User
+
+    from nonebot_plugin_impart_plus.bot.handlers import game_app, impart
+
+    async def get_length(_: int) -> float:
+        return 10.0
+
+    monkeypatch.setattr(game_app, "get_length", get_length)
+    members = [
+        Member(User(id="10001"), roles=[Role("MEMBER", 1)]),
+        Member(User(id="20002"), roles=[Role("OWNER", 100)]),
+        Member(User(id="30003"), roles=[Role("ADMINISTRATOR", 10)]),
+    ]
+
+    owner_matcher = MatcherStub()
+    owner = await impart.yinpa_identity_handle(
+        "日群主",
+        members,
+        "发起者",
+        cast(Matcher, owner_matcher),
+        10001,
+        0.75,
+    )
+    admin_matcher = MatcherStub()
+    admin = await impart.yinpa_identity_handle(
+        "日管理",
+        members,
+        "发起者",
+        cast(Matcher, admin_matcher),
+        10001,
+        0.75,
+    )
+
+    assert owner == "20002"
+    assert admin == "30003"
+    assert owner_matcher.messages == ["现在咱将把群主\n送给发起者色色！"]
+    assert admin_matcher.messages == ["现在咱将随机抽取一位幸运管理\n送给发起者色色！"]
