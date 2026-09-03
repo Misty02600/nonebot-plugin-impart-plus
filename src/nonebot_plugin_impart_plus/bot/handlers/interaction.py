@@ -5,13 +5,24 @@ from random import choice
 from typing import cast
 
 from nonebot.matcher import Matcher
-from nonebot_plugin_alconna import AUTO, AlconnaMatcher, At, Match, UniMessage
+from nonebot_plugin_alconna import (
+    AUTO,
+    AlconnaMatcher,
+    At,
+    CommandResult,
+    Match,
+    UniMessage,
+)
 from nonebot_plugin_uninfo import Member, QryItrface, Uninfo
 
 from ...impart.app import InteractionGuardType
 from ..context import legacy_scene_id
 from ..dependencies import botname, game_app
-from ..matchers import interaction_matcher
+from ..matchers import (
+    interaction_admin_matcher,
+    interaction_member_matcher,
+    interaction_owner_matcher,
+)
 from .shared import (
     NOT_ALLOWED_TEXT,
     get_member_or_none,
@@ -23,118 +34,72 @@ from .shared import (
 )
 
 
-async def yinpa_member_handle(
-    members: list[Member],
-    req_user_card: str,
-    matcher: Matcher,
-    uid: int,
-    random_nn: float,
-) -> str:
-    member_ids = [int(member.user.id) for member in members]
-    if uid in member_ids:
-        member_ids.remove(uid)
-    if not member_ids:
-        game_app.release_interaction_cooldown(uid)
-        await matcher.finish("喵喵喵? 找不到群友!")
-    lucky_user = choice(member_ids)
-    jj_length = await game_app.get_length(uid)
-    if jj_length > 5:
-        await matcher.send(f"现在咱将随机抽取一位幸运群友\n送给{req_user_card}色色！")
-    elif 5 >= jj_length > 0:
-        if random_nn < 0.5:
-            await matcher.send(
-                f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给随机一位幸运群友色色！"
-            )
-        else:
-            await matcher.send(
-                f"现在咱将随机抽取一位幸运群友\n送给{req_user_card}色色！"
-            )
-    else:
-        await matcher.send(
-            f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给随机一位幸运群友色色！"
-        )
-    return str(lucky_user)
-
-
-async def yinpa_owner_handle(
-    uid: int,
-    members: list[Member],
-    req_user_card: str,
-    matcher: Matcher,
-    random_nn: float,
-) -> str:
-    lucky_user = next(
-        (member.user.id for member in members if member_has_role(member, "OWNER")),
-        str(uid),
-    )
-    if int(lucky_user) == uid:
-        game_app.release_interaction_cooldown(uid)
-        await matcher.finish("你透你自己?")
-    jj_length = await game_app.get_length(uid)
-    if jj_length <= 0:
-        await matcher.send(f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给群主色色！")
-    elif 5 >= jj_length > 0 and random_nn < 0.5:
-        await matcher.send(
-            f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给群主色色！"
-        )
-    else:
-        await matcher.send(f"现在咱将把群主\n送给{req_user_card}色色！")
-    return str(lucky_user)
-
-
-async def yinpa_admin_handle(
-    uid: int,
-    members: list[Member],
-    req_user_card: str,
-    matcher: Matcher,
-    random_nn: float,
-) -> str:
-    admin_id = [
-        int(member.user.id)
-        for member in members
-        if member_has_role(member, "ADMINISTRATOR")
-    ]
-    if uid in admin_id:
-        admin_id.remove(uid)
-    if not admin_id:
-        game_app.release_interaction_cooldown(uid)
-        await matcher.finish("喵喵喵? 找不到群管理!")
-    lucky_user = choice(admin_id)
-    jj_length = await game_app.get_length(uid)
-    if jj_length <= 0:
-        await matcher.send(
-            f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给随机一位管理色色！"
-        )
-    elif 5 >= jj_length > 0 and random_nn < 0.5:
-        await matcher.send(
-            f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给随机一位管理色色！"
-        )
-    else:
-        await matcher.send(f"现在咱将随机抽取一位幸运管理\n送给{req_user_card}色色！")
-    return str(lucky_user)
-
-
-async def yinpa_identity_handle(
+def select_interaction_target(
     kind: str,
     members: list[Member],
+    uid: int,
+) -> int | None:
+    if kind == "群主":
+        return next(
+            (
+                int(member.user.id)
+                for member in members
+                if member_has_role(member, "OWNER")
+            ),
+            None,
+        )
+    if kind == "管理":
+        admin_ids = [
+            int(member.user.id)
+            for member in members
+            if member_has_role(member, "ADMINISTRATOR")
+        ]
+        if not admin_ids:
+            return None
+        other_admin_ids = [user_id for user_id in admin_ids if user_id != uid]
+        return choice(other_admin_ids or admin_ids)
+    if kind == "群友":
+        member_ids = [
+            int(member.user.id) for member in members if int(member.user.id) != uid
+        ]
+        return choice(member_ids) if member_ids else None
+    raise ValueError(f"未知互动目标类型: {kind}")
+
+
+async def send_interaction_prompt(
+    kind: str,
     req_user_card: str,
     matcher: Matcher,
     uid: int,
     random_nn: float,
-) -> str:
-    if kind == "群主":
-        return await yinpa_owner_handle(uid, members, req_user_card, matcher, random_nn)
-    if kind == "管理":
-        return await yinpa_admin_handle(uid, members, req_user_card, matcher, random_nn)
-    return await yinpa_member_handle(members, req_user_card, matcher, uid, random_nn)
+) -> None:
+    jj_length = await game_app.get_length(uid)
+    target_text = {
+        "群友": "随机一位幸运群友",
+        "管理": "随机一位管理",
+        "群主": "群主",
+    }[kind]
+    if jj_length <= 0:
+        message = f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给{target_text}色色！"
+    elif jj_length <= 5 and random_nn < 0.5:
+        message = (
+            f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给{target_text}色色！"
+        )
+    elif kind == "群主":
+        message = f"现在咱将把群主\n送给{req_user_card}色色！"
+    else:
+        message = f"现在咱将随机抽取一位幸运{kind}\n送给{req_user_card}色色！"
+    await matcher.send(message)
 
 
-@interaction_matcher.handle()
+@interaction_member_matcher.handle()
+@interaction_admin_matcher.handle()
+@interaction_owner_matcher.handle()
 async def yinpa(
     matcher: Matcher,
     session: Uninfo,
     interface: QryItrface,
-    kind: str,
+    command_result: CommandResult,
     target: Match[At],
 ) -> None:
     scene_id = legacy_scene_id(session)
@@ -152,27 +117,46 @@ async def yinpa(
         session.member,
         user_display_name(session.user, session.user.id),
     )
-    mentioned = target.result.target if target.available else None
+    subcommands = command_result.result.subcommands
+    if "owner" in subcommands:
+        kind = "群主"
+    elif "admin" in subcommands:
+        kind = "管理"
+    else:
+        kind = "群友"
+    mentioned = int(target.result.target) if target.available else None
     members: list[Member] = []
     if mentioned is None:
         members = await get_members_or_empty(interface, session)
         if not members:
             game_app.release_interaction_cooldown(uid)
-            await matcher.finish(
-                "当前平台无法获取群成员列表，请明确@目标",
-            )
+            await matcher.finish("请@指定目标" if kind == "群友" else f"没找到{kind}")
+    lucky_user = mentioned or select_interaction_target(kind, members, uid)
+    if lucky_user is None:
+        game_app.release_interaction_cooldown(uid)
+        await matcher.finish(
+            "喵喵喵? 找不到群友!" if kind == "群友" else f"没找到{kind}"
+        )
+    if lucky_user == uid:
+        game_app.release_interaction_cooldown(uid)
+        await matcher.finish("你透你自己?")
     random_nn = game_app.roll_interaction()
-    lucky_user = mentioned or await yinpa_identity_handle(
-        kind, members, req_user_card, matcher, uid, random_nn
-    )
+    if mentioned is None:
+        await send_interaction_prompt(
+            kind,
+            req_user_card,
+            matcher,
+            uid,
+            random_nn,
+        )
     lucky_member = next(
-        (member for member in members if member.user.id == lucky_user),
+        (member for member in members if member.user.id == str(lucky_user)),
         None,
-    ) or await get_member_or_none(interface, session, lucky_user)
+    ) or await get_member_or_none(interface, session, str(lucky_user))
     lucky_user_info = (
         lucky_member.user
         if lucky_member
-        else await get_user_or_none(interface, lucky_user)
+        else await get_user_or_none(interface, str(lucky_user))
     )
     lucky_user_card = member_display_name(
         lucky_member,
@@ -184,7 +168,7 @@ async def yinpa(
     await asyncio.sleep(2)
     interaction_result = await game_app.complete_interaction(
         uid,
-        int(lucky_user),
+        lucky_user,
         random_nn,
     )
     if interaction_result.reversed:

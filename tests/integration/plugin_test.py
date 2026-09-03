@@ -39,15 +39,25 @@ def test_alconna_matcher_registration(app: App):
     plugin = get_plugin("nonebot_plugin_impart_plus")
 
     assert plugin is not None
-    assert len(plugin.matcher) == 10
+    assert len(plugin.matcher) == 13
     assert all(issubclass(matcher, AlconnaMatcher) for matcher in plugin.matcher)
 
     dispatch_matchers = {
         matcher.basepath: matcher
         for matcher in plugin.matcher
-        if matcher.basepath in {"enabled", "query", "help"}
+        if matcher.basepath in {"member", "admin", "owner", "enabled", "query", "help"}
     }
-    assert set(dispatch_matchers) == {"enabled", "query", "help"}
+    assert set(dispatch_matchers) == {
+        "member",
+        "admin",
+        "owner",
+        "enabled",
+        "query",
+        "help",
+    }
+    assert dispatch_matchers["member"].priority == 20
+    assert dispatch_matchers["admin"].priority == 20
+    assert dispatch_matchers["owner"].priority == 20
     assert dispatch_matchers["enabled"].priority == 10
     assert dispatch_matchers["query"].priority == 20
     assert dispatch_matchers["help"].priority == 20
@@ -56,13 +66,14 @@ def test_alconna_matcher_registration(app: App):
     assert len(dispatch_matchers["help"].permission.checkers) == 0
     assert all(matcher.block for matcher in dispatch_matchers.values())
 
-    parent = next(matcher for matcher in plugin.matcher if matcher.priority == 1)
-    assert parent.block is False
-    assert len(parent.handlers) == 3
+    parents = [matcher for matcher in plugin.matcher if matcher.priority == 1]
+    assert len(parents) == 2
+    assert all(parent.block is False for parent in parents)
+    assert all(len(parent.handlers) == 3 for parent in parents)
     assert all(
         len(matcher.handlers) == 1
         for matcher in plugin.matcher
-        if matcher is not parent
+        if matcher not in parents
     )
     assert not hasattr(handlers, "Impart")
     assert not hasattr(handlers, "impart")

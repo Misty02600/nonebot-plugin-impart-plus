@@ -1,7 +1,5 @@
 """Alconna matcher 注册与分派策略。"""
 
-from typing import Literal
-
 from arclet.alconna import Alconna, Args, CommandMeta, Option, Subcommand
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import At, on_alconna
@@ -25,7 +23,9 @@ RANK_COMMAND = Alconna("re:(?i:(银趴|impart)(排行榜|排名|榜单|rank))")
 
 INTERACTION_COMMAND = Alconna(
     "透",
-    Args["kind", Literal["群友", "管理", "群主"]]["target?", At],
+    Subcommand("群友", Args["target?", At], dest="member"),
+    Subcommand("管理", dest="admin"),
+    Subcommand("群主", dest="owner"),
     meta=CommandMeta(compact=True),
 )
 
@@ -94,7 +94,25 @@ interaction_matcher = on_alconna(
     rule=public_scene,
     auto_send_output=False,
     use_cmd_start=False,
-    priority=20,
+    priority=1,
+    block=False,
+)
+
+interaction_member_matcher = interaction_matcher.dispatch(
+    "member",
+    priority=19,
+    block=True,
+)
+
+interaction_admin_matcher = interaction_matcher.dispatch(
+    "admin",
+    priority=19,
+    block=True,
+)
+
+interaction_owner_matcher = interaction_matcher.dispatch(
+    "owner",
+    priority=19,
     block=True,
 )
 

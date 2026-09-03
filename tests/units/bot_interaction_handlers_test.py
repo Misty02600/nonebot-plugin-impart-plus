@@ -10,10 +10,11 @@ from .bot_test_utils import FinishingMatcherStub, MatcherStub, make_session
 async def test_interaction_with_mention_skips_member_enumeration(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_alconna import At, CommandResult, Match, Text, UniMessage
     from nonebot_plugin_uninfo import Interface, Member, User
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -77,7 +78,11 @@ async def test_interaction_with_mention_skips_member_enumeration(
         cast(Matcher, matcher),
         make_session(1, "12345"),
         cast(Interface, InterfaceStub()),
-        "群主",
+        CommandResult(
+            result=INTERACTION_COMMAND.parse(
+                UniMessage([Text("透群友 "), At("user", "67890")]),
+            )
+        ),
         Match(At("user", "67890"), True),
     )
 
@@ -96,10 +101,11 @@ async def test_interaction_with_mention_skips_member_enumeration(
 async def test_interaction_without_member_capability_requests_mention(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_alconna import At, CommandResult, Match
     from nonebot_plugin_uninfo import Interface, Member
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -131,12 +137,12 @@ async def test_interaction_without_member_capability_requests_mention(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
-            "群友",
+            CommandResult(result=INTERACTION_COMMAND.parse("透群友")),
             Match(At("user", "unused"), False),
         )
 
     assert released == [10001]
-    assert matcher.messages == ["当前平台无法获取群成员列表，请明确@目标"]
+    assert matcher.messages == ["请@指定目标"]
 
 
 async def test_interaction_selects_uninfo_owner_and_admin_roles(
@@ -156,26 +162,192 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
         Member(User(id="30003"), roles=[Role("ADMINISTRATOR", 10)]),
     ]
 
+    owner = interaction.select_interaction_target("群主", members, 10001)
+    admin = interaction.select_interaction_target("管理", members, 10001)
+
+    assert owner == 20002
+    assert admin == 30003
+
     owner_matcher = MatcherStub()
-    owner = await interaction.yinpa_identity_handle(
+    await interaction.send_interaction_prompt(
         "群主",
-        members,
         "发起者",
         cast(Matcher, owner_matcher),
         10001,
         0.75,
     )
     admin_matcher = MatcherStub()
-    admin = await interaction.yinpa_identity_handle(
+    await interaction.send_interaction_prompt(
         "管理",
-        members,
         "发起者",
         cast(Matcher, admin_matcher),
         10001,
         0.75,
     )
 
-    assert owner == "20002"
-    assert admin == "30003"
     assert owner_matcher.messages == ["现在咱将把群主\n送给发起者色色！"]
     assert admin_matcher.messages == ["现在咱将随机抽取一位幸运管理\n送给发起者色色！"]
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("透群主", "没找到群主"),
+        ("透管理", "没找到管理"),
+    ],
+)
+async def test_role_target_not_found_uses_role_message(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    expected: str,
+) -> None:
+    from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_uninfo import Interface, Member, Role, User
+
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+
+    released: list[int] = []
+
+    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+        return InteractionGuard(InteractionGuardType.ALLOWED)
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            return [Member(User(id="20002"), roles=[Role("MEMBER", 1)])]
+
+    monkeypatch.setattr(
+        interaction.game_app,
+        "prepare_interaction",
+        prepare_interaction,
+    )
+    monkeypatch.setattr(
+        interaction.game_app,
+        "release_interaction_cooldown",
+        released.append,
+    )
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await interaction.yinpa(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            cast(Interface, InterfaceStub()),
+            CommandResult(result=INTERACTION_COMMAND.parse(command)),
+            Match(At("user", "unused"), False),
+        )
+
+    assert released == [10001]
+    assert matcher.messages == [expected]
+
+
+@pytest.mark.parametrize(
+    ("command", "role"),
+    [
+        ("透群主", "OWNER"),
+        ("透管理", "ADMINISTRATOR"),
+    ],
+)
+async def test_role_target_self_uses_global_self_message(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    role: str,
+) -> None:
+    from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_uninfo import Interface, Member, Role, User
+
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+
+    released: list[int] = []
+
+    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+        return InteractionGuard(InteractionGuardType.ALLOWED)
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            return [Member(User(id="10001"), roles=[Role(role, 100)])]
+
+    monkeypatch.setattr(
+        interaction.game_app,
+        "prepare_interaction",
+        prepare_interaction,
+    )
+    monkeypatch.setattr(
+        interaction.game_app,
+        "release_interaction_cooldown",
+        released.append,
+    )
+    matcher = FinishingMatcherStub()
+
+    with pytest.raises(FinishedException):
+        await interaction.yinpa(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            cast(Interface, InterfaceStub()),
+            CommandResult(result=INTERACTION_COMMAND.parse(command)),
+            Match(At("user", "unused"), False),
+        )
+
+    assert released == [10001]
+    assert matcher.messages == ["你透你自己?"]
+
+
+async def test_explicit_self_target_uses_global_self_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_alconna import At, CommandResult, Match, Text, UniMessage
+    from nonebot_plugin_uninfo import Interface, Member
+
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+
+    released: list[int] = []
+
+    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+        return InteractionGuard(InteractionGuardType.ALLOWED)
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            raise AssertionError("显式 At 不应枚举成员")
+
+    monkeypatch.setattr(
+        interaction.game_app,
+        "prepare_interaction",
+        prepare_interaction,
+    )
+    monkeypatch.setattr(
+        interaction.game_app,
+        "release_interaction_cooldown",
+        released.append,
+    )
+    matcher = FinishingMatcherStub()
+    target = At("user", "10001")
+
+    with pytest.raises(FinishedException):
+        await interaction.yinpa(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            cast(Interface, InterfaceStub()),
+            CommandResult(
+                result=INTERACTION_COMMAND.parse(
+                    UniMessage([Text("透群友 "), target]),
+                )
+            ),
+            Match(target, True),
+        )
+
+    assert released == [10001]
+    assert matcher.messages == ["你透你自己?"]
