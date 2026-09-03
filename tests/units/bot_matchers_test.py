@@ -22,8 +22,8 @@ import pytest
         ("银趴帮助尾巴", None, None, False),
         ("银趴开启尾巴", None, None, False),
         ("银趴查询尾巴", None, None, False),
-        ("/银趴帮助", None, None, False),
-        ("/银趴查询", None, None, False),
+        ("/银趴帮助", None, "help", True),
+        ("/银趴查询", None, "query", True),
     ],
 )
 def test_impart_command_group(
@@ -43,7 +43,10 @@ def test_impart_command_group(
 
 
 def test_self_growth_command_maps_header_to_mode():
-    from nonebot_plugin_impart_plus.bot.matchers import SELF_GROW_COMMAND
+    from nonebot_plugin_impart_plus.bot.matchers import (
+        SELF_GROW_COMMAND,
+        SELF_GROW_MODES,
+    )
     from nonebot_plugin_impart_plus.impart.core import GrowthMode
 
     expected = {
@@ -55,9 +58,55 @@ def test_self_growth_command_maps_header_to_mode():
     for message, mode in expected.items():
         result = SELF_GROW_COMMAND.parse(message)
         assert result.matched is True
-        assert result.header_match.result is mode
-    assert SELF_GROW_COMMAND.parse("/打胶").matched is False
+        assert SELF_GROW_MODES[result.header_match.groups["action"]] is mode
+    assert SELF_GROW_COMMAND.parse("/打胶").matched is True
     assert SELF_GROW_COMMAND.parse("打胶尾巴").matched is False
+
+
+def test_target_growth_command_maps_headers_and_keeps_missing_target_parseable():
+    from nonebot_plugin_alconna import At, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.matchers import (
+        TARGET_GROW_COMMAND,
+        TARGET_GROW_MODES,
+    )
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
+
+    expected = {
+        "嗦": GrowthMode.LENGTH,
+        "舔": GrowthMode.DEPTH,
+    }
+    for command, mode in expected.items():
+        result = TARGET_GROW_COMMAND.parse(
+            UniMessage([Text(command), At("user", "67890")])
+        )
+        assert result.matched is True
+        assert TARGET_GROW_MODES[result.header_match.groups["action"]] is mode
+        assert result.all_matched_args["targets"] == (At("user", "67890"),)
+
+    assert TARGET_GROW_COMMAND.parse("嗦").matched is True
+    assert TARGET_GROW_COMMAND.parse("舔").matched is True
+    assert TARGET_GROW_COMMAND.parse("/舔").matched is True
+    assert TARGET_GROW_COMMAND.parse("suo").matched is False
+    assert TARGET_GROW_COMMAND.parse("tian").matched is False
+    assert TARGET_GROW_COMMAND.parse("嗦牛子").matched is False
+    assert TARGET_GROW_COMMAND.parse("舔小学").matched is False
+    assert TARGET_GROW_COMMAND.parse("嗦尾巴").matched is False
+    multiple = TARGET_GROW_COMMAND.parse(
+        UniMessage(
+            [
+                Text("嗦 "),
+                At("user", "67890"),
+                Text(" "),
+                At("user", "12345"),
+            ]
+        )
+    )
+    assert multiple.matched is True
+    assert multiple.all_matched_args["targets"] == (
+        At("user", "67890"),
+        At("user", "12345"),
+    )
 
 
 def test_query_subcommand_extracts_typed_target():
@@ -81,11 +130,9 @@ def test_query_subcommand_extracts_typed_target():
 @pytest.mark.parametrize(
     ("command_name", "message", "matched"),
     [
-        ("pk", "pk", False),
-        ("pk", "/对决", False),
+        ("pk", "pk", True),
+        ("pk", "/对决", True),
         ("pk", "pk尾巴", False),
-        ("suo", "嗦牛子", True),
-        ("suo", "/suo", True),
         ("injection", "注入查询", True),
         ("injection", "/摄入查询 历史", True),
     ],
@@ -98,12 +145,10 @@ def test_target_command_trigger_ranges(
     from nonebot_plugin_impart_plus.bot.matchers import (
         INJECTION_QUERY_COMMAND,
         PK_COMMAND,
-        SUO_COMMAND,
     )
 
     commands = {
         "pk": PK_COMMAND,
-        "suo": SUO_COMMAND,
         "injection": INJECTION_QUERY_COMMAND,
     }
     assert commands[command_name].parse(message).matched is matched
@@ -139,19 +184,33 @@ def test_pk_rejects_at_all():
     assert PK_COMMAND.parse(message).matched is False
 
 
+def test_pk_accepts_multiple_targets_and_keeps_their_order():
+    from nonebot_plugin_alconna import At, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.matchers import PK_COMMAND
+
+    targets = (At("user", "67890"), At("user", "12345"))
+    result = PK_COMMAND.parse(
+        UniMessage([Text("pk "), targets[0], Text(" "), targets[1]])
+    )
+
+    assert result.matched is True
+    assert result.all_matched_args["targets"] == targets
+
+
 @pytest.mark.parametrize(
     ("command_name", "message", "matched"),
     [
         ("rank", "银趴排行榜", True),
         ("rank", "IMPARTrank", True),
         ("rank", "impartRank尾巴", False),
-        ("rank", "/银趴排行榜", False),
+        ("rank", "/银趴排行榜", True),
         ("rank", "jj排行榜", False),
         ("rank", "牛牛rank", False),
         ("interaction", "日群友", True),
         ("interaction", "透 群主", True),
         ("interaction", "透群主尾巴", False),
-        ("interaction", "/日群友", False),
+        ("interaction", "/日群友", True),
     ],
 )
 def test_rank_and_interaction_regex_ranges(

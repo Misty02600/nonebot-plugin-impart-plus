@@ -24,6 +24,7 @@ from .core import (
 
 class PkOutcomeType(StrEnum):
     DISABLED = "disabled"
+    MISSING_TARGET = "missing_target"
     COOLING_DOWN = "cooling_down"
     SELF_TARGET = "self_target"
     USERS_CREATED = "users_created"
@@ -43,6 +44,8 @@ class PkOutcome:
 
 class GrowthOutcomeType(StrEnum):
     DISABLED = "disabled"
+    MISSING_TARGET = "missing_target"
+    SELF_TARGET = "self_target"
     COOLING_DOWN = "cooling_down"
     USER_CREATED = "user_created"
     WRONG_STATE = "wrong_state"
@@ -165,10 +168,13 @@ class GameApplication:
         self,
         scene_ref: SceneRef,
         attacker_ref: UserRef,
-        defender_ref: UserRef,
+        defender_ref: UserRef | None,
     ) -> PkOutcome:
         if not await self._data.is_scene_enabled(scene_ref):
             return PkOutcome(PkOutcomeType.DISABLED)
+
+        if defender_ref is None:
+            return PkOutcome(PkOutcomeType.MISSING_TARGET)
 
         if defender_ref == attacker_ref:
             return PkOutcome(PkOutcomeType.SELF_TARGET)
@@ -298,10 +304,17 @@ class GameApplication:
         self,
         scene_ref: SceneRef,
         user_ref: UserRef,
-        target_ref: UserRef,
+        target_ref: UserRef | None,
+        mode: GrowthMode,
     ) -> GrowthOutcome:
         if not await self._data.is_scene_enabled(scene_ref):
             return GrowthOutcome(GrowthOutcomeType.DISABLED)
+
+        if target_ref is None:
+            return GrowthOutcome(GrowthOutcomeType.MISSING_TARGET)
+
+        if target_ref == user_ref:
+            return GrowthOutcome(GrowthOutcomeType.SELF_TARGET)
 
         created_users = await self._create_missing_users(user_ref, target_ref)
         if created_users:
@@ -311,6 +324,10 @@ class GameApplication:
             )
 
         await self.penalties_and_resets()
+        current_length = await self._data.get_jj_length(target_ref)
+        if not supports_growth_mode(current_length, mode):
+            return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
+
         if not await self._cooldown.suo_cd_check(user_ref):
             remaining = round(
                 self._cooldown.suo_cd_time
@@ -320,8 +337,18 @@ class GameApplication:
             return GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=remaining)
 
         self._cooldown.suo_cd_data[user_ref] = time.time()
-        current_length = await self._data.get_jj_length(target_ref)
         random_num = get_random_num()
+        if mode is GrowthMode.DEPTH:
+            await self._data.set_jj_length(
+                target_ref,
+                growth_delta(random_num, mode),
+            )
+            return GrowthOutcome(
+                GrowthOutcomeType.COMPLETED,
+                random_num=random_num,
+                new_length=await self._data.get_jj_length(target_ref),
+            )
+
         status = await self._data.update_challenge_status(target_ref)
         if "is_challenging" in status:
             return GrowthOutcome(
@@ -329,7 +356,7 @@ class GameApplication:
                 random_num=random_num,
             )
 
-        await self._data.set_jj_length(target_ref, random_num)
+        await self._data.set_jj_length(target_ref, growth_delta(random_num, mode))
         new_length = await self._data.get_jj_length(target_ref)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
         if challenge_started:

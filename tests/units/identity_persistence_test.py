@@ -187,12 +187,22 @@ async def test_length_commands_initialize_missing_users_without_action(
     monkeypatch.setattr(app_module, "get_random_num", unexpected_random)
     monkeypatch.setattr(app_module.random, "random", unexpected_random)
 
+    missing_pk = await application.execute_pk(scene, pk_user, None)
+    assert missing_pk.type.value == "missing_target"
+    assert not await manager.has_user(pk_user)
+
     outcomes = [
         await application.grow_self(scene, grow_user, growth_mode.DEPTH),
-        await application.grow_target(scene, suo_user, suo_target),
+        await application.grow_target(
+            scene,
+            suo_user,
+            suo_target,
+            growth_mode.LENGTH,
+        ),
         await application.query_user(scene, query_user, query_target),
         await application.execute_pk(scene, pk_user, pk_target),
     ]
+
     expected_users = [
         (grow_user,),
         (suo_target,),
@@ -268,6 +278,107 @@ async def test_self_growth_applies_signed_direction_and_skips_depth_challenge(
     assert generated == 2
     assert calls == 1
     assert set(game_harness.cooldown.cd_data) == {length_user, depth_user}
+
+
+async def test_target_growth_enforces_boundaries_and_signed_direction(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.app import GrowthOutcomeType
+
+    manager = game_harness.manager
+    application = game_harness.application
+    cooldown = game_harness.cooldown
+    scene = game_harness.scene
+    mode = game_harness.growth_mode
+    user = UserRef("QQClient", "60")
+    other_user = UserRef("QQClient", "61")
+    length_target = UserRef("QQClient", "62")
+    depth_target = UserRef("QQClient", "63")
+    disabled = await application.grow_target(scene, user, None, mode.LENGTH)
+    await manager.set_scene_enabled(scene, True)
+
+    missing = await application.grow_target(scene, user, None, mode.LENGTH)
+    self_target = await application.grow_target(scene, user, user, mode.LENGTH)
+
+    assert disabled.type is GrowthOutcomeType.DISABLED
+    assert missing.type is GrowthOutcomeType.MISSING_TARGET
+    assert self_target.type is GrowthOutcomeType.SELF_TARGET
+    assert not await manager.has_user(user)
+    assert cooldown.suo_cd_data == {}
+
+    for current_user in (user, other_user, length_target, depth_target):
+        await manager.add_new_user(current_user)
+    await manager.set_jj_length(depth_target, -12.0)
+
+    generated = 0
+
+    def fixed_random() -> float:
+        nonlocal generated
+        generated += 1
+        return 1.25
+
+    monkeypatch.setattr(app_module, "get_random_num", fixed_random)
+    original_update = manager.update_challenge_status
+    challenge_calls = 0
+
+    async def track_challenge(user_ref) -> str:
+        nonlocal challenge_calls
+        challenge_calls += 1
+        return await original_update(user_ref)
+
+    monkeypatch.setattr(manager, "update_challenge_status", track_challenge)
+
+    wrong_length = await application.grow_target(
+        scene,
+        user,
+        depth_target,
+        mode.LENGTH,
+    )
+    wrong_depth = await application.grow_target(
+        scene,
+        user,
+        length_target,
+        mode.DEPTH,
+    )
+
+    assert wrong_length.type is GrowthOutcomeType.WRONG_STATE
+    assert wrong_depth.type is GrowthOutcomeType.WRONG_STATE
+    assert generated == 0
+    assert challenge_calls == 0
+    assert cooldown.suo_cd_data == {}
+
+    depth = await application.grow_target(
+        scene,
+        user,
+        depth_target,
+        mode.DEPTH,
+    )
+    shared_cooldown = await application.grow_target(
+        scene,
+        user,
+        length_target,
+        mode.LENGTH,
+    )
+    length = await application.grow_target(
+        scene,
+        other_user,
+        length_target,
+        mode.LENGTH,
+    )
+
+    assert (depth.type, depth.new_length) == (GrowthOutcomeType.COMPLETED, -3.25)
+    assert shared_cooldown.type is GrowthOutcomeType.COOLING_DOWN
+    assert (length.type, length.new_length) == (
+        GrowthOutcomeType.COMPLETED,
+        11.25,
+    )
+    assert generated == 2
+    assert challenge_calls == 1
+    assert set(cooldown.suo_cd_data) == {user, other_user}
 
 
 async def test_application_ranking_is_partitioned_by_namespace(

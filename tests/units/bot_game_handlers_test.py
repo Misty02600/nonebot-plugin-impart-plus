@@ -216,20 +216,22 @@ async def test_query_handler_uses_absolute_depth_for_negative_state(
 async def test_pk_handler_requires_and_uses_mention(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import game
     from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
 
-    calls: list[tuple[SceneRef, UserRef, UserRef]] = []
+    calls: list[tuple[SceneRef, UserRef, UserRef | None]] = []
 
     async def execute_pk(
         scene_ref: SceneRef,
         attacker_ref: UserRef,
-        defender_ref: UserRef,
+        defender_ref: UserRef | None,
     ) -> PkOutcome:
         calls.append((scene_ref, attacker_ref, defender_ref))
+        if defender_ref is None:
+            return PkOutcome(PkOutcomeType.MISSING_TARGET)
         return PkOutcome(
             PkOutcomeType.USERS_CREATED,
             created_users=(attacker_ref, defender_ref),
@@ -241,7 +243,7 @@ async def test_pk_handler_requires_and_uses_mention(
         await game.pk(
             cast(Matcher, matcher),
             make_ref_context(scene_id="12345"),
-            At("user", "67890"),
+            Match((At("user", "67890"), At("user", "12345")), True),
         )
 
     assert calls == [
@@ -255,39 +257,134 @@ async def test_pk_handler_requires_and_uses_mention(
     assert matcher.messages[0].startswith("你们还没有")
     assert "目前长度都是10cm喵" in matcher.messages[0]
 
+    missing_matcher = FinishingMatcherStub()
+    with pytest.raises(FinishedException):
+        await game.pk(
+            cast(Matcher, missing_matcher),
+            make_ref_context(scene_id="12345"),
+            Match((At("user", "unused"),), False),
+        )
+    assert calls[-1] == (make_scene_ref("12345"), make_user_ref(), None)
+    assert missing_matcher.messages == ["请at你要pk的目标"]
 
-async def test_suo_handler_defaults_to_self(
+
+async def test_target_growth_handler_requires_target_and_uses_mode(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import game
+    from nonebot_plugin_impart_plus.bot.matchers import TARGET_GROW_COMMAND
     from nonebot_plugin_impart_plus.impart.app import GrowthOutcome, GrowthOutcomeType
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
 
-    calls: list[tuple[SceneRef, UserRef, UserRef]] = []
+    calls: list[tuple[SceneRef, UserRef, UserRef | None, GrowthMode]] = []
 
     async def grow_target(
         scene_ref: SceneRef,
         user_ref: UserRef,
-        target_ref: UserRef,
+        target_ref: UserRef | None,
+        mode: GrowthMode,
     ) -> GrowthOutcome:
-        calls.append((scene_ref, user_ref, target_ref))
+        calls.append((scene_ref, user_ref, target_ref, mode))
+        if target_ref is None:
+            return GrowthOutcome(GrowthOutcomeType.MISSING_TARGET)
+        if target_ref == user_ref:
+            return GrowthOutcome(GrowthOutcomeType.SELF_TARGET)
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
             random_num=1.5,
-            new_length=11.5,
+            new_length=-3.5,
         )
 
     monkeypatch.setattr(game.game_app, "grow_target", grow_target)
-    matcher = FinishingMatcherStub()
 
+    missing_matcher = FinishingMatcherStub()
     with pytest.raises(FinishedException):
-        await game.suo(
+        await game.grow_target(
+            cast(Matcher, missing_matcher),
+            make_ref_context(scene_id="12345"),
+            TARGET_GROW_COMMAND.parse("嗦"),
+            Match((At("user", "unused"),), False),
+        )
+    assert missing_matcher.messages == ["请at你要嗦/舔的目标"]
+
+    self_messages: list[str] = []
+    for command in ("嗦", "舔"):
+        matcher = FinishingMatcherStub()
+        with pytest.raises(FinishedException):
+            await game.grow_target(
+                cast(Matcher, matcher),
+                make_ref_context(scene_id="12345"),
+                TARGET_GROW_COMMAND.parse(command),
+                Match((At("user", "10001"),), True),
+            )
+        self_messages.extend(matcher.messages)
+    assert self_messages[0].startswith("你嗦不到自己的")
+    assert self_messages[0].endswith("喵")
+    assert self_messages[1] == "你舔不到自己的小学喵"
+
+    matcher = FinishingMatcherStub()
+    with pytest.raises(FinishedException):
+        await game.grow_target(
             cast(Matcher, matcher),
             make_ref_context(scene_id="12345"),
-            Match(At("user", "unused"), False),
+            TARGET_GROW_COMMAND.parse("舔"),
+            Match((At("user", "67890"), At("user", "12345")), True),
         )
+    assert calls[-1] == (
+        make_scene_ref("12345"),
+        make_user_ref(),
+        make_user_ref("67890"),
+        GrowthMode.DEPTH,
+    )
+    assert matcher.messages == ["TA的小学很满意喵, 舔深了1.5cm喵, 目前深度为3.5cm喵"]
 
-    assert calls == [(make_scene_ref("12345"), make_user_ref(), make_user_ref())]
-    assert "你的" in matcher.messages[0]
+
+async def test_target_growth_handler_uses_mode_specific_failure_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_uniref import SceneRef, UserRef
+
+    from nonebot_plugin_impart_plus.bot.handlers import game
+    from nonebot_plugin_impart_plus.bot.matchers import TARGET_GROW_COMMAND
+    from nonebot_plugin_impart_plus.impart.app import GrowthOutcome, GrowthOutcomeType
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
+
+    outcome = GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
+
+    async def grow_target(
+        _: SceneRef,
+        __: UserRef,
+        ___: UserRef | None,
+        ____: GrowthMode,
+    ) -> GrowthOutcome:
+        return outcome
+
+    monkeypatch.setattr(game.game_app, "grow_target", grow_target)
+    cases = [
+        ("嗦", GrowthOutcome(GrowthOutcomeType.WRONG_STATE)),
+        ("舔", GrowthOutcome(GrowthOutcomeType.WRONG_STATE)),
+        ("舔", GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=12.5)),
+    ]
+    messages: list[str] = []
+    for command, current_outcome in cases:
+        outcome = current_outcome
+        matcher = FinishingMatcherStub()
+        with pytest.raises(FinishedException):
+            await game.grow_target(
+                cast(Matcher, matcher),
+                make_ref_context(scene_id="12345"),
+                TARGET_GROW_COMMAND.parse(command),
+                Match((At("user", "67890"),), True),
+            )
+        messages.extend(matcher.messages)
+
+    assert messages[0].startswith("TA没有")
+    assert messages[0].endswith("喵，嗦不了喵")
+    assert messages[1:] == [
+        "TA没有小学喵，舔不了喵",
+        "你已经舔不动了喵, 请等待12.5秒后再舔喵",
+    ]

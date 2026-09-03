@@ -14,7 +14,7 @@
 
 | 模块或路径 | 最终改动 |
 |---|---|
-| `bot/matchers.py` | 集中定义 Alconna grammar、matcher 与必要 dispatch，明确 command start、alias、compact、参数和传播策略 |
+| `bot/matchers.py` | 集中定义 Alconna grammar、matcher 与必要 dispatch；所有顶层 matcher 显式使用 NoneBot command start，并明确 alias、compact、参数和传播策略 |
 | `bot/handlers/` | 按 `game`、`interaction`、`records`、`control` 分组模块级 Handler，通过 Uninfo、UniRef 和 UniMessage 接入 NoneBot |
 | `impart/app.py`、`impart/core.py` | 保持游戏用例和纯规则独立，不接收 Event、Session、Alconna 结果或消息对象 |
 | `infra/` | 以 Ref 保存数据库与冷却身份，保留 SQLite、成员资料辅助和图片渲染等技术实现 |

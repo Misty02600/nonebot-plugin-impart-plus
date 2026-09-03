@@ -2,25 +2,31 @@
 
 from typing import Literal
 
-from arclet.alconna import Alconna, Args, CommandMeta, Option, Subcommand
+from arclet.alconna import Alconna, Args, CommandMeta, MultiVar, Option, Subcommand
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import At, on_alconna
 from nonebot_plugin_uninfo import ADMIN, GROUP, GUILD
 
 from ..impart.core import GrowthMode
 
-PK_COMMAND = Alconna("pk", Args["target", At])
+PK_COMMAND = Alconna("pk", Args["targets?", MultiVar(At)])
 
-SELF_GROW_COMMAND = Alconna(
-    {
-        "打胶": GrowthMode.LENGTH,
-        "开导": GrowthMode.LENGTH,
-        "开扣": GrowthMode.DEPTH,
-        "挖矿": GrowthMode.DEPTH,
-    }
+SELF_GROW_MODES = {
+    "打胶": GrowthMode.LENGTH,
+    "开导": GrowthMode.LENGTH,
+    "开扣": GrowthMode.DEPTH,
+    "挖矿": GrowthMode.DEPTH,
+}
+SELF_GROW_COMMAND = Alconna(f"{{action:{'|'.join(SELF_GROW_MODES)}}}")
+
+TARGET_GROW_MODES = {
+    "嗦": GrowthMode.LENGTH,
+    "舔": GrowthMode.DEPTH,
+}
+TARGET_GROW_COMMAND = Alconna(
+    f"{{action:{'|'.join(TARGET_GROW_MODES)}}}",
+    Args["targets?", MultiVar(At)],
 )
-
-SUO_COMMAND = Alconna("嗦牛子", Args["target?", At])
 
 INJECTION_QUERY_COMMAND = Alconna(
     "注入查询",
@@ -71,14 +77,13 @@ self_growth_matcher = on_alconna(
     SELF_GROW_COMMAND,
     rule=GROUP | GUILD,
     auto_send_output=False,
-    use_cmd_start=False,
+    use_cmd_start=True,
     priority=20,
     block=True,
 )
 
-suo_matcher = on_alconna(
-    SUO_COMMAND,
-    aliases={"嗦", "suo"},
+target_growth_matcher = on_alconna(
+    TARGET_GROW_COMMAND,
     rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=True,
@@ -90,7 +95,7 @@ rank_matcher = on_alconna(
     RANK_COMMAND,
     rule=GROUP | GUILD,
     auto_send_output=False,
-    use_cmd_start=False,
+    use_cmd_start=True,
     priority=20,
     block=True,
 )
@@ -100,7 +105,7 @@ interaction_matcher = on_alconna(
     aliases={"日"},
     rule=GROUP | GUILD,
     auto_send_output=False,
-    use_cmd_start=False,
+    use_cmd_start=True,
     priority=20,
     block=True,
 )
@@ -110,7 +115,7 @@ impart_matcher = on_alconna(
     aliases={"impart"},
     rule=GROUP | GUILD,
     auto_send_output=False,
-    use_cmd_start=False,
+    use_cmd_start=True,
     priority=1,
     block=False,
 )

@@ -12,18 +12,22 @@ require("nonebot_plugin_uniref")
 __plugin_meta__ = PluginMetadata(
     name="nonebot_plugin_impart_plus",
     usage="""impart功能说明:
+所有指令均遵循NoneBot的COMMAND_START配置
 [透|日][群友|管理|群主]
 群友可随机或@指定目标
-[pk|对决]
+[pk|对决] @用户
 通过random实现pk,胜方获取败方随机数/2的牛牛长度;
 初始胜率为50%,pk后胜方胜率-1%,败方胜率+1%
+必须@其他用户, 多个@只取第一个
 <牛牛长度超过25时会触发神秘任务>
 [打胶|开导]
 增加自己长度
 [开扣|挖矿]
 增加自己深度
-[嗦牛子|嗦]
-增加@用户长度(若未@则为自己)
+[嗦] @用户
+增加其他正值用户长度
+[舔] @用户
+增加其他非正值用户深度
 [银趴|impart][查询]
 查询@用户长度或深度(若未@则为自己)
 [银趴|impart][排行榜|排名|榜单|rank]
