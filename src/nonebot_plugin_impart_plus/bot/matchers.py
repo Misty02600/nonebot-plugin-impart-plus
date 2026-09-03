@@ -7,9 +7,18 @@ from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import At, on_alconna
 from nonebot_plugin_uninfo import ADMIN, GROUP, GUILD
 
+from ..impart.core import GrowthMode
+
 PK_COMMAND = Alconna("pk", Args["target", At])
 
-GROW_COMMAND = Alconna("打胶")
+SELF_GROW_COMMAND = Alconna(
+    {
+        "打胶": GrowthMode.LENGTH,
+        "开导": GrowthMode.LENGTH,
+        "开扣": GrowthMode.DEPTH,
+        "挖矿": GrowthMode.DEPTH,
+    }
+)
 
 SUO_COMMAND = Alconna("嗦牛子", Args["target?", At])
 
@@ -58,9 +67,8 @@ pk_matcher = on_alconna(
     block=False,
 )
 
-grow_matcher = on_alconna(
-    GROW_COMMAND,
-    aliases={"开导"},
+self_growth_matcher = on_alconna(
+    SELF_GROW_COMMAND,
     rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=False,

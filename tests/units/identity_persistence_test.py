@@ -45,6 +45,35 @@ async def database_harness(tmp_path: Path):
         await engine.dispose()
 
 
+@pytest.fixture
+def game_harness(database_harness):
+    from nonebot_plugin_uniref import SceneKind, SceneRef, UserRef
+
+    from nonebot_plugin_impart_plus.impart.app import GameApplication
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
+    from nonebot_plugin_impart_plus.infra.cooldown import CooldownManager
+
+    cooldown = CooldownManager(
+        dj_cd_time=60,
+        pk_cd_time=60,
+        suo_cd_time=60,
+        fuck_cd_time=60,
+    )
+    return SimpleNamespace(
+        manager=database_harness.manager,
+        application=GameApplication(
+            database_harness.manager,
+            cooldown,
+            penalties_enabled=True,
+        ),
+        cooldown=cooldown,
+        scene=SceneRef("QQClient", SceneKind.GROUP, "100"),
+        user=UserRef("QQClient", "1"),
+        target=UserRef("QQClient", "2"),
+        growth_mode=GrowthMode,
+    )
+
+
 async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
     async with database_harness.engine.begin() as connection:
         schema, indexes = await connection.run_sync(_read_schema)
@@ -119,6 +148,126 @@ async def test_scene_switch_uses_full_scene_ref(database_harness) -> None:
         encode_ref(telegram_group): ("Telegram", "group"),
         encode_ref(qq_private): ("QQClient", "private"),
     }
+
+
+async def test_length_commands_initialize_missing_users_without_action(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+
+    manager = game_harness.manager
+    application = game_harness.application
+    cooldown = game_harness.cooldown
+    scene = game_harness.scene
+    growth_mode = game_harness.growth_mode
+    await manager.set_scene_enabled(scene, True)
+
+    grow_user = UserRef("QQClient", "10")
+    suo_user = UserRef("QQClient", "20")
+    suo_target = UserRef("QQClient", "21")
+    query_user = UserRef("QQClient", "30")
+    query_target = UserRef("QQClient", "31")
+    pk_user = UserRef("QQClient", "40")
+    pk_target = UserRef("QQClient", "41")
+    await manager.add_new_user(suo_user)
+    await manager.set_jj_length(suo_user, 2.0)
+    await manager.add_new_user(query_target)
+    await manager.set_jj_length(query_target, 3.0)
+
+    async def unexpected_penalty() -> None:
+        raise AssertionError("首次初始化不应执行全局惩罚")
+
+    def unexpected_random() -> float:
+        raise AssertionError("首次初始化不应消费随机数")
+
+    monkeypatch.setattr(manager, "punish_all_inactive_users", unexpected_penalty)
+    monkeypatch.setattr(app_module, "get_random_num", unexpected_random)
+    monkeypatch.setattr(app_module.random, "random", unexpected_random)
+
+    outcomes = [
+        await application.grow_self(scene, grow_user, growth_mode.DEPTH),
+        await application.grow_target(scene, suo_user, suo_target),
+        await application.query_user(scene, query_user, query_target),
+        await application.execute_pk(scene, pk_user, pk_target),
+    ]
+    expected_users = [
+        (grow_user,),
+        (suo_target,),
+        (query_user,),
+        (pk_user, pk_target),
+    ]
+
+    assert [outcome.type.value for outcome in outcomes] == [
+        "user_created",
+        "user_created",
+        "user_created",
+        "users_created",
+    ]
+    assert [outcome.created_users for outcome in outcomes] == expected_users
+    assert cooldown.cd_data == {}
+    assert cooldown.suo_cd_data == {}
+    assert cooldown.pk_cd_data == {}
+    for created_user in (user for users in expected_users for user in users):
+        assert await manager.has_user(created_user)
+        assert await manager.get_jj_length(created_user) == 10.0
+        assert await manager.get_win_probability(created_user) == 0.5
+    assert await manager.get_jj_length(suo_user) == 12.0
+    assert await manager.get_jj_length(query_target) == 13.0
+
+
+async def test_self_growth_applies_signed_direction_and_skips_depth_challenge(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+
+    manager = game_harness.manager
+    application = game_harness.application
+    scene = game_harness.scene
+    mode = game_harness.growth_mode
+    length_user = UserRef("QQClient", "50")
+    depth_user = UserRef("QQClient", "51")
+    wrong_state_user = UserRef("QQClient", "52")
+    await manager.set_scene_enabled(scene, True)
+    for user in (length_user, depth_user, wrong_state_user):
+        await manager.add_new_user(user)
+    await manager.set_jj_length(depth_user, -10.0)
+
+    generated = 0
+
+    def fixed_random() -> float:
+        nonlocal generated
+        generated += 1
+        return 1.25
+
+    monkeypatch.setattr(app_module, "get_random_num", fixed_random)
+
+    original_update = manager.update_challenge_status
+    calls = 0
+
+    async def track_challenge(user_ref) -> str:
+        nonlocal calls
+        calls += 1
+        return await original_update(user_ref)
+
+    monkeypatch.setattr(manager, "update_challenge_status", track_challenge)
+
+    length = await application.grow_self(scene, length_user, mode.LENGTH)
+    depth = await application.grow_self(scene, depth_user, mode.DEPTH)
+    wrong_state = await application.grow_self(scene, wrong_state_user, mode.DEPTH)
+
+    assert (length.type.value, length.new_length) == ("completed", 11.25)
+    assert (depth.type.value, depth.new_length) == ("completed", -1.25)
+    assert wrong_state.type.value == "wrong_state"
+    assert await manager.get_jj_length(wrong_state_user) == 10.0
+    assert generated == 2
+    assert calls == 1
+    assert set(game_harness.cooldown.cd_data) == {length_user, depth_user}
 
 
 async def test_application_ranking_is_partitioned_by_namespace(

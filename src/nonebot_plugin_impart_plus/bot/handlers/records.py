@@ -17,9 +17,10 @@ from nonebot_plugin_uniref import RefContext
 
 from ...impart.app import InjectionQueryType, RankingOutcomeType
 from ...infra.chart_renderer import draw_bar_chart
-from ..dependencies import game_app, plugin_config
+from ..dependencies import game_app
 from ..matchers import injection_query_matcher, rank_matcher
 from .shared import (
+    JJ_NAMES,
     NOT_ALLOWED_TEXT,
     get_user_or_none,
     user_at_target,
@@ -45,7 +46,7 @@ async def jjrank(
         await matcher.finish("目前记录的数据量小于5, 无法显示rank喵")
     if outcome.type is RankingOutcomeType.USER_CREATED:
         await matcher.finish(
-            f"你还没有创建{choice(plugin_config.jj_variable)}看不到rank喵, 咱帮你创建了喵, 目前长度是10cm喵",
+            f"你还没有创建{choice(JJ_NAMES)}看不到rank喵, 咱帮你创建了喵, 目前长度是10cm喵",
             at_sender=True,
         )
 

@@ -8,6 +8,8 @@ from nonebot_plugin_uninfo import Interface, Member, Uninfo, User
 NOT_ALLOWED_TEXT = (
     '当前未开启impart游戏, 请管理员发送"银趴开启", "银趴禁止"以开启/关闭该功能'
 )
+JJ_NAMES = ("牛子", "牛牛", "newnew")
+HOLE_NAME = "小学"
 
 
 def user_display_name(user: User | None, fallback: str) -> str:

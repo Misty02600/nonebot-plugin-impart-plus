@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 
 class Config(BaseModel):
-    jj_variable: list[str] = ["牛子", "牛牛", "newnew"]
     dj_cd_time: int = 300  # 打胶冷却时间
     pk_cd_time: int = 60  # pk冷却时间
     suo_cd_time: int = 300  # 嗦冷却时间

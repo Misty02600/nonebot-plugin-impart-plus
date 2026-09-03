@@ -10,12 +10,15 @@ from nonebot_plugin_uniref import SceneRef, UserRef
 from ..infra.cooldown import CooldownManager
 from ..infra.data_manager import DataManager
 from .core import (
+    GrowthMode,
     LengthState,
     PkResolution,
     classify_length,
     crossed_challenge_threshold,
+    growth_delta,
     resolve_pk,
     should_reverse_injection,
+    supports_growth_mode,
 )
 
 
@@ -31,6 +34,7 @@ class PkOutcomeType(StrEnum):
 class PkOutcome:
     type: PkOutcomeType
     remaining: float = 0
+    created_users: tuple[UserRef, ...] = ()
     resolution: PkResolution | None = None
     attacker_status: str = ""
     defender_status: str = ""
@@ -41,6 +45,7 @@ class GrowthOutcomeType(StrEnum):
     DISABLED = "disabled"
     COOLING_DOWN = "cooling_down"
     USER_CREATED = "user_created"
+    WRONG_STATE = "wrong_state"
     CHALLENGING = "challenging"
     COMPLETED = "completed"
 
@@ -49,6 +54,7 @@ class GrowthOutcomeType(StrEnum):
 class GrowthOutcome:
     type: GrowthOutcomeType
     remaining: float = 0
+    created_users: tuple[UserRef, ...] = ()
     random_num: float = 0
     new_length: float = 0
     challenge_started: bool = False
@@ -63,6 +69,7 @@ class QueryOutcomeType(StrEnum):
 @dataclass(frozen=True, slots=True)
 class QueryOutcome:
     type: QueryOutcomeType
+    created_users: tuple[UserRef, ...] = ()
     length: float = 0
     state: LengthState = LengthState.NORMAL
 
@@ -143,16 +150,37 @@ class GameApplication:
         if self._penalties_enabled:
             await self._data.punish_all_inactive_users()
 
+    async def _create_missing_users(
+        self,
+        *user_refs: UserRef,
+    ) -> tuple[UserRef, ...]:
+        created_users: list[UserRef] = []
+        for user_ref in dict.fromkeys(user_refs):
+            if not await self._data.has_user(user_ref):
+                await self._data.add_new_user(user_ref)
+                created_users.append(user_ref)
+        return tuple(created_users)
+
     async def execute_pk(
         self,
         scene_ref: SceneRef,
         attacker_ref: UserRef,
         defender_ref: UserRef,
     ) -> PkOutcome:
-        await self.penalties_and_resets()
         if not await self._data.is_scene_enabled(scene_ref):
             return PkOutcome(PkOutcomeType.DISABLED)
 
+        if defender_ref == attacker_ref:
+            return PkOutcome(PkOutcomeType.SELF_TARGET)
+
+        created_users = await self._create_missing_users(attacker_ref, defender_ref)
+        if created_users:
+            return PkOutcome(
+                PkOutcomeType.USERS_CREATED,
+                created_users=created_users,
+            )
+
+        await self.penalties_and_resets()
         if not await self._cooldown.pkcd_check(attacker_ref):
             remaining = round(
                 self._cooldown.pk_cd_time
@@ -162,68 +190,67 @@ class GameApplication:
             return PkOutcome(PkOutcomeType.COOLING_DOWN, remaining=remaining)
 
         self._cooldown.pk_cd_data.update({attacker_ref: time.time()})
-        if defender_ref == attacker_ref:
-            return PkOutcome(PkOutcomeType.SELF_TARGET)
-
-        if await self._data.has_user(attacker_ref) and await self._data.has_user(
-            defender_ref
-        ):
-            win_roll = random.random()
-            win_probability = await self._data.get_win_probability(attacker_ref)
-            resolution = resolve_pk(
-                win_probability,
-                win_roll=win_roll,
-                random_num=get_random_num(),
+        win_roll = random.random()
+        win_probability = await self._data.get_win_probability(attacker_ref)
+        resolution = resolve_pk(
+            win_probability,
+            win_roll=win_roll,
+            random_num=get_random_num(),
+        )
+        if resolution.won:
+            await self._data.set_win_probability(attacker_ref, -0.01)
+            await self._data.set_win_probability(defender_ref, 0.01)
+            await self._data.set_jj_length(
+                attacker_ref,
+                resolution.random_num / 2,
             )
-            if resolution.won:
-                await self._data.set_win_probability(attacker_ref, -0.01)
-                await self._data.set_win_probability(defender_ref, 0.01)
-                await self._data.set_jj_length(
-                    attacker_ref,
-                    resolution.random_num / 2,
-                )
-                await self._data.set_jj_length(
-                    defender_ref,
-                    -resolution.random_num,
-                )
-            else:
-                await self._data.set_win_probability(attacker_ref, 0.01)
-                await self._data.set_win_probability(defender_ref, -0.01)
-                await self._data.set_jj_length(
-                    attacker_ref,
-                    -resolution.random_num,
-                )
-                await self._data.set_jj_length(
-                    defender_ref,
-                    resolution.random_num / 2,
-                )
-
-            attacker_status = await self._data.update_challenge_status(attacker_ref)
-            defender_status = await self._data.update_challenge_status(defender_ref)
-            probability = await self._data.get_win_probability(attacker_ref)
-            return PkOutcome(
-                PkOutcomeType.COMPLETED,
-                resolution=resolution,
-                attacker_status=attacker_status,
-                defender_status=defender_status,
-                attacker_probability=probability,
+            await self._data.set_jj_length(
+                defender_ref,
+                -resolution.random_num,
+            )
+        else:
+            await self._data.set_win_probability(attacker_ref, 0.01)
+            await self._data.set_win_probability(defender_ref, -0.01)
+            await self._data.set_jj_length(
+                attacker_ref,
+                -resolution.random_num,
+            )
+            await self._data.set_jj_length(
+                defender_ref,
+                resolution.random_num / 2,
             )
 
-        if not await self._data.has_user(attacker_ref):
-            await self._data.add_new_user(attacker_ref)
-        if not await self._data.has_user(defender_ref):
-            await self._data.add_new_user(defender_ref)
-        del self._cooldown.pk_cd_data[attacker_ref]
-        return PkOutcome(PkOutcomeType.USERS_CREATED)
+        attacker_status = await self._data.update_challenge_status(attacker_ref)
+        defender_status = await self._data.update_challenge_status(defender_ref)
+        probability = await self._data.get_win_probability(attacker_ref)
+        return PkOutcome(
+            PkOutcomeType.COMPLETED,
+            resolution=resolution,
+            attacker_status=attacker_status,
+            defender_status=defender_status,
+            attacker_probability=probability,
+        )
 
     async def grow_self(
         self,
         scene_ref: SceneRef,
         user_ref: UserRef,
+        mode: GrowthMode,
     ) -> GrowthOutcome:
-        await self.penalties_and_resets()
         if not await self._data.is_scene_enabled(scene_ref):
             return GrowthOutcome(GrowthOutcomeType.DISABLED)
+
+        created_users = await self._create_missing_users(user_ref)
+        if created_users:
+            return GrowthOutcome(
+                GrowthOutcomeType.USER_CREATED,
+                created_users=created_users,
+            )
+
+        await self.penalties_and_resets()
+        current_length = await self._data.get_jj_length(user_ref)
+        if not supports_growth_mode(current_length, mode):
+            return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
         if not await self._cooldown.cd_check(user_ref):
             remaining = round(
@@ -234,12 +261,18 @@ class GameApplication:
             return GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=remaining)
 
         self._cooldown.cd_data[user_ref] = time.time()
-        if not await self._data.has_user(user_ref):
-            await self._data.add_new_user(user_ref)
-            return GrowthOutcome(GrowthOutcomeType.USER_CREATED)
-
-        current_length = await self._data.get_jj_length(user_ref)
         random_num = get_random_num()
+        if mode is GrowthMode.DEPTH:
+            await self._data.set_jj_length(
+                user_ref,
+                growth_delta(random_num, mode),
+            )
+            return GrowthOutcome(
+                GrowthOutcomeType.COMPLETED,
+                random_num=random_num,
+                new_length=await self._data.get_jj_length(user_ref),
+            )
+
         status = await self._data.update_challenge_status(user_ref)
         if "is_challenging" in status:
             return GrowthOutcome(
@@ -247,7 +280,7 @@ class GameApplication:
                 random_num=random_num,
             )
 
-        await self._data.set_jj_length(user_ref, random_num)
+        await self._data.set_jj_length(user_ref, growth_delta(random_num, mode))
         new_length = await self._data.get_jj_length(user_ref)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
         if challenge_started:
@@ -267,10 +300,17 @@ class GameApplication:
         user_ref: UserRef,
         target_ref: UserRef,
     ) -> GrowthOutcome:
-        await self.penalties_and_resets()
         if not await self._data.is_scene_enabled(scene_ref):
             return GrowthOutcome(GrowthOutcomeType.DISABLED)
 
+        created_users = await self._create_missing_users(user_ref, target_ref)
+        if created_users:
+            return GrowthOutcome(
+                GrowthOutcomeType.USER_CREATED,
+                created_users=created_users,
+            )
+
+        await self.penalties_and_resets()
         if not await self._cooldown.suo_cd_check(user_ref):
             remaining = round(
                 self._cooldown.suo_cd_time
@@ -280,11 +320,6 @@ class GameApplication:
             return GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=remaining)
 
         self._cooldown.suo_cd_data[user_ref] = time.time()
-        if not await self._data.has_user(target_ref):
-            await self._data.add_new_user(target_ref)
-            del self._cooldown.suo_cd_data[user_ref]
-            return GrowthOutcome(GrowthOutcomeType.USER_CREATED)
-
         current_length = await self._data.get_jj_length(target_ref)
         random_num = get_random_num()
         status = await self._data.update_challenge_status(target_ref)
@@ -309,15 +344,21 @@ class GameApplication:
     async def query_user(
         self,
         scene_ref: SceneRef,
-        user_ref: UserRef,
+        requester_ref: UserRef,
+        target_ref: UserRef,
     ) -> QueryOutcome:
-        await self.penalties_and_resets()
         if not await self._data.is_scene_enabled(scene_ref):
             return QueryOutcome(QueryOutcomeType.DISABLED)
-        if not await self._data.has_user(user_ref):
-            await self._data.add_new_user(user_ref)
-            return QueryOutcome(QueryOutcomeType.USER_CREATED)
-        length = await self._data.get_jj_length(user_ref)
+
+        created_users = await self._create_missing_users(requester_ref, target_ref)
+        if created_users:
+            return QueryOutcome(
+                QueryOutcomeType.USER_CREATED,
+                created_users=created_users,
+            )
+
+        await self.penalties_and_resets()
+        length = await self._data.get_jj_length(target_ref)
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=length,

@@ -12,6 +12,11 @@ class LengthState(StrEnum):
     GIRL = "girl"
 
 
+class GrowthMode(StrEnum):
+    LENGTH = "length"
+    DEPTH = "depth"
+
+
 @dataclass(frozen=True, slots=True)
 class UserGameState:
     length: float
@@ -46,6 +51,18 @@ def classify_length(length: float) -> LengthState:
     if length > 0:
         return LengthState.NEAR_GIRL
     return LengthState.GIRL
+
+
+def supports_growth_mode(length: float, mode: GrowthMode) -> bool:
+    if mode is GrowthMode.LENGTH:
+        return length > 0
+    return length <= 0
+
+
+def growth_delta(amount: float, mode: GrowthMode) -> float:
+    if mode is GrowthMode.LENGTH:
+        return amount
+    return -amount
 
 
 def evaluate_user_state(state: UserGameState) -> StateEvaluation:

@@ -42,19 +42,22 @@ def test_impart_command_group(
         assert subcommand in result.subcommands
 
 
-@pytest.mark.parametrize(
-    ("message", "matched"),
-    [
-        ("打胶", True),
-        ("开导", True),
-        ("/打胶", False),
-        ("打胶尾巴", False),
-    ],
-)
-def test_growth_command_preserves_full_match(message: str, matched: bool):
-    from nonebot_plugin_impart_plus.bot.matchers import GROW_COMMAND
+def test_self_growth_command_maps_header_to_mode():
+    from nonebot_plugin_impart_plus.bot.matchers import SELF_GROW_COMMAND
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
 
-    assert GROW_COMMAND.parse(message).matched is matched
+    expected = {
+        "打胶": GrowthMode.LENGTH,
+        "开导": GrowthMode.LENGTH,
+        "开扣": GrowthMode.DEPTH,
+        "挖矿": GrowthMode.DEPTH,
+    }
+    for message, mode in expected.items():
+        result = SELF_GROW_COMMAND.parse(message)
+        assert result.matched is True
+        assert result.header_match.result is mode
+    assert SELF_GROW_COMMAND.parse("/打胶").matched is False
+    assert SELF_GROW_COMMAND.parse("打胶尾巴").matched is False
 
 
 def test_query_subcommand_extracts_typed_target():
