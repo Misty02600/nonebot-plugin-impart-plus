@@ -4,26 +4,28 @@ from random import choice
 
 from nonebot.matcher import Matcher
 from nonebot_plugin_alconna import At, Match
-from nonebot_plugin_uninfo import Uninfo
+from nonebot_plugin_uniref import RefContext
 
 from ...impart.app import GrowthOutcomeType, PkOutcome, PkOutcomeType, QueryOutcomeType
 from ...impart.core import LengthState
-from ..context import legacy_scene_id
 from ..dependencies import botname, game_app, plugin_config
 from ..matchers import grow_matcher, pk_matcher, query_matcher, suo_matcher
-from .shared import NOT_ALLOWED_TEXT
+from .shared import NOT_ALLOWED_TEXT, user_at_target
 
 
 @pk_matcher.handle()
 async def pk(
     matcher: Matcher,
-    session: Uninfo,
+    refs: RefContext,
     target: At,
 ) -> None:
+    scene_ref = refs.scene_ref
+    user_ref = refs.user_ref
+    target_ref = refs.build_user_ref(user_at_target(target))
     outcome = await game_app.execute_pk(
-        legacy_scene_id(session),
-        session.user.id,
-        target.target,
+        scene_ref,
+        user_ref,
+        target_ref,
     )
 
     if outcome.type is PkOutcomeType.DISABLED:
@@ -122,10 +124,15 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
 
 
 @grow_matcher.handle()
-async def dajiao(matcher: Matcher, session: Uninfo) -> None:
+async def dajiao(
+    matcher: Matcher,
+    refs: RefContext,
+) -> None:
+    scene_ref = refs.scene_ref
+    user_ref = refs.user_ref
     outcome = await game_app.grow_self(
-        legacy_scene_id(session),
-        session.user.id,
+        scene_ref,
+        user_ref,
     )
     if outcome.type is GrowthOutcomeType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
@@ -160,16 +167,18 @@ async def dajiao(matcher: Matcher, session: Uninfo) -> None:
 @suo_matcher.handle()
 async def suo(
     matcher: Matcher,
-    session: Uninfo,
+    refs: RefContext,
     target: Match[At],
 ) -> None:
-    mentioned = target.result.target if target.available else None
-    target_id = int(mentioned or session.user.id)
+    scene_ref = refs.scene_ref
+    user_ref = refs.user_ref
+    mentioned = user_at_target(target.result) if target.available else None
+    target_ref = refs.build_user_ref(mentioned) if mentioned else user_ref
     pronoun = "TA" if mentioned else "你"
     outcome = await game_app.grow_target(
-        legacy_scene_id(session),
-        session.user.id,
-        target_id,
+        scene_ref,
+        user_ref,
+        target_ref,
     )
 
     if outcome.type is GrowthOutcomeType.DISABLED:
@@ -205,15 +214,17 @@ async def suo(
 @query_matcher.handle()
 async def queryjj(
     matcher: Matcher,
-    session: Uninfo,
+    refs: RefContext,
     target: Match[At],
 ) -> None:
-    mentioned = target.result.target if target.available else None
-    target_id = int(mentioned or session.user.id)
+    scene_ref = refs.scene_ref
+    user_ref = refs.user_ref
+    mentioned = user_at_target(target.result) if target.available else None
+    target_ref = refs.build_user_ref(mentioned) if mentioned else user_ref
     pronoun = "TA" if mentioned else "你"
     outcome = await game_app.query_user(
-        legacy_scene_id(session),
-        target_id,
+        scene_ref,
+        target_ref,
     )
 
     if outcome.type is QueryOutcomeType.DISABLED:

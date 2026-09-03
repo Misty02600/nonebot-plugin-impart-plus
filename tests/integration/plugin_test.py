@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from nonebot import get_plugin
+from nonebot.plugin import inherit_supported_adapters
 from nonebug import App
 
 
@@ -28,6 +29,20 @@ def test_plugin_metadata(app: App):
     assert pk is not None
     assert get_plugin("nonebot_plugin_alconna") is not None
     assert get_plugin("nonebot_plugin_uninfo") is not None
+    assert get_plugin("nonebot_plugin_uniref") is not None
+    assert __plugin_meta__.supported_adapters == inherit_supported_adapters(
+        "nonebot_plugin_alconna",
+        "nonebot_plugin_uninfo",
+        "nonebot_plugin_uniref",
+    )
+    assert __plugin_meta__.supported_adapters == {
+        "nonebot.adapters.discord",
+        "nonebot.adapters.feishu",
+        "nonebot.adapters.milky",
+        "nonebot.adapters.onebot.v11",
+        "nonebot.adapters.qq",
+        "nonebot.adapters.telegram",
+    }
 
 
 def test_alconna_matcher_registration(app: App):

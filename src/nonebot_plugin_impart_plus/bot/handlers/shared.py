@@ -1,8 +1,8 @@
 """Handler 共享文案与用户目录辅助函数。"""
 
+from nonebot.exception import SkippedException
+from nonebot_plugin_alconna import At
 from nonebot_plugin_uninfo import Interface, Member, Uninfo, User
-
-from ..context import member_parent_scene_id
 
 NOT_ALLOWED_TEXT = (
     '当前未开启impart游戏, 请管理员发送"银趴开启", "银趴禁止"以开启/关闭该功能'
@@ -25,6 +25,12 @@ def member_has_role(member: Member, role_id: str) -> bool:
     return any(role.id == role_id for role in member.roles)
 
 
+def user_at_target(target: At) -> str:
+    if target.flag != "user":
+        raise SkippedException
+    return target.target
+
+
 async def get_user_or_none(interface: Interface, user_id: str) -> User | None:
     try:
         return await interface.get_user(user_id)
@@ -40,7 +46,7 @@ async def get_member_or_none(
     try:
         return await interface.get_member(
             session.scene.type,
-            member_parent_scene_id(session),
+            session.scene.parent.id if session.scene.parent else session.scene.id,
             user_id,
         )
     except Exception:
@@ -54,7 +60,7 @@ async def get_members_or_empty(
     try:
         return await interface.get_members(
             session.scene.type,
-            member_parent_scene_id(session),
+            session.scene.parent.id if session.scene.parent else session.scene.id,
         )
     except Exception:
         return []

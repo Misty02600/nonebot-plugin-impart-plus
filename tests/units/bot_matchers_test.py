@@ -1,7 +1,5 @@
 import pytest
 
-from .bot_test_utils import make_session
-
 
 @pytest.mark.parametrize(
     ("message", "enabled", "subcommand", "matched"),
@@ -75,21 +73,6 @@ def test_query_subcommand_extracts_typed_target():
     assert result.all_matched_args["target"].target == "67890"
     assert "query" in result.subcommands
     assert query_matcher.block is True
-
-
-@pytest.mark.parametrize(
-    ("scene_type", "expected"),
-    [
-        (0, False),
-        (1, True),
-        (2, True),
-        (3, True),
-    ],
-)
-def test_public_scene_scope(scene_type: int, expected: bool):
-    from nonebot_plugin_impart_plus.bot.context import public_scene
-
-    assert public_scene(make_session(scene_type)) is expected
 
 
 @pytest.mark.parametrize(

@@ -4,7 +4,14 @@ import pytest
 from nonebot.exception import FinishedException
 from nonebot.matcher import Matcher
 
-from .bot_test_utils import FinishingMatcherStub, MatcherStub, make_session
+from .bot_test_utils import (
+    FinishingMatcherStub,
+    MatcherStub,
+    make_ref_context,
+    make_scene_ref,
+    make_session,
+    make_user_ref,
+)
 
 
 async def test_interaction_with_mention_skips_member_enumeration(
@@ -12,6 +19,7 @@ async def test_interaction_with_mention_skips_member_enumeration(
 ):
     from nonebot_plugin_alconna import At, CommandResult, Match, Text, UniMessage
     from nonebot_plugin_uninfo import Interface, Member, User
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
@@ -21,19 +29,22 @@ async def test_interaction_with_mention_skips_member_enumeration(
         InteractionResult,
     )
 
-    app_calls: list[tuple[int, int]] = []
-    complete_calls: list[tuple[int, int, float]] = []
+    app_calls: list[tuple[SceneRef, UserRef]] = []
+    complete_calls: list[tuple[UserRef, UserRef, float]] = []
 
-    async def prepare_interaction(scene_id: int, user_id: int) -> InteractionGuard:
-        app_calls.append((scene_id, user_id))
+    async def prepare_interaction(
+        scene_ref: SceneRef,
+        user_ref: UserRef,
+    ) -> InteractionGuard:
+        app_calls.append((scene_ref, user_ref))
         return InteractionGuard(InteractionGuardType.ALLOWED)
 
     async def complete_interaction(
-        user_id: int,
-        target_id: int,
+        user_ref: UserRef,
+        target_ref: UserRef,
         random_value: float,
     ) -> InteractionResult:
-        complete_calls.append((user_id, target_id, random_value))
+        complete_calls.append((user_ref, target_ref, random_value))
         return InteractionResult(
             reversed=False,
             ejaculation=2.5,
@@ -78,6 +89,7 @@ async def test_interaction_with_mention_skips_member_enumeration(
         cast(Matcher, matcher),
         make_session(1, "12345"),
         cast(Interface, InterfaceStub()),
+        make_ref_context(scene_id="12345"),
         CommandResult(
             result=INTERACTION_COMMAND.parse(
                 UniMessage([Text("透群友 "), At("user", "67890")]),
@@ -86,8 +98,8 @@ async def test_interaction_with_mention_skips_member_enumeration(
         Match(At("user", "67890"), True),
     )
 
-    assert app_calls == [(12345, 10001)]
-    assert complete_calls == [(10001, 67890, 0.75)]
+    assert app_calls == [(make_scene_ref("12345"), make_user_ref())]
+    assert complete_calls == [(make_user_ref(), make_user_ref("67890"), 0.75)]
     assert len(matcher.messages) == 1
     assert "目标(67890)" in matcher.messages[0]
     from nonebot_plugin_alconna import AUTO, Image, Text, UniMessage
@@ -103,6 +115,7 @@ async def test_interaction_without_member_capability_requests_mention(
 ):
     from nonebot_plugin_alconna import At, CommandResult, Match
     from nonebot_plugin_uninfo import Interface, Member
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
@@ -111,9 +124,9 @@ async def test_interaction_without_member_capability_requests_mention(
         InteractionGuardType,
     )
 
-    released: list[int] = []
+    released: list[UserRef] = []
 
-    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+    async def prepare_interaction(_: SceneRef, __: UserRef) -> InteractionGuard:
         return InteractionGuard(InteractionGuardType.ALLOWED)
 
     class InterfaceStub:
@@ -137,11 +150,12 @@ async def test_interaction_without_member_capability_requests_mention(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
+            make_ref_context(scene_id="12345"),
             CommandResult(result=INTERACTION_COMMAND.parse("透群友")),
             Match(At("user", "unused"), False),
         )
 
-    assert released == [10001]
+    assert released == [make_user_ref()]
     assert matcher.messages == ["请@指定目标"]
 
 
@@ -149,10 +163,11 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from nonebot_plugin_uninfo import Member, Role, User
+    from nonebot_plugin_uniref import UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
 
-    async def get_length(_: int) -> float:
+    async def get_length(_: UserRef) -> float:
         return 10.0
 
     monkeypatch.setattr(interaction.game_app, "get_length", get_length)
@@ -162,18 +177,26 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
         Member(User(id="30003"), roles=[Role("ADMINISTRATOR", 10)]),
     ]
 
-    owner = interaction.select_interaction_target("群主", members, 10001)
-    admin = interaction.select_interaction_target("管理", members, 10001)
+    owner = interaction.select_interaction_target(
+        "群主",
+        members,
+        "10001",
+    )
+    admin = interaction.select_interaction_target(
+        "管理",
+        members,
+        "10001",
+    )
 
-    assert owner == 20002
-    assert admin == 30003
+    assert owner == "20002"
+    assert admin == "30003"
 
     owner_matcher = MatcherStub()
     await interaction.send_interaction_prompt(
         "群主",
         "发起者",
         cast(Matcher, owner_matcher),
-        10001,
+        make_user_ref(),
         0.75,
     )
     admin_matcher = MatcherStub()
@@ -181,7 +204,7 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
         "管理",
         "发起者",
         cast(Matcher, admin_matcher),
-        10001,
+        make_user_ref(),
         0.75,
     )
 
@@ -203,6 +226,7 @@ async def test_role_target_not_found_uses_role_message(
 ) -> None:
     from nonebot_plugin_alconna import At, CommandResult, Match
     from nonebot_plugin_uninfo import Interface, Member, Role, User
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
@@ -211,9 +235,9 @@ async def test_role_target_not_found_uses_role_message(
         InteractionGuardType,
     )
 
-    released: list[int] = []
+    released: list[UserRef] = []
 
-    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+    async def prepare_interaction(_: SceneRef, __: UserRef) -> InteractionGuard:
         return InteractionGuard(InteractionGuardType.ALLOWED)
 
     class InterfaceStub:
@@ -237,11 +261,12 @@ async def test_role_target_not_found_uses_role_message(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
+            make_ref_context(scene_id="12345"),
             CommandResult(result=INTERACTION_COMMAND.parse(command)),
             Match(At("user", "unused"), False),
         )
 
-    assert released == [10001]
+    assert released == [make_user_ref()]
     assert matcher.messages == [expected]
 
 
@@ -259,6 +284,7 @@ async def test_role_target_self_uses_global_self_message(
 ) -> None:
     from nonebot_plugin_alconna import At, CommandResult, Match
     from nonebot_plugin_uninfo import Interface, Member, Role, User
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
@@ -267,9 +293,9 @@ async def test_role_target_self_uses_global_self_message(
         InteractionGuardType,
     )
 
-    released: list[int] = []
+    released: list[UserRef] = []
 
-    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+    async def prepare_interaction(_: SceneRef, __: UserRef) -> InteractionGuard:
         return InteractionGuard(InteractionGuardType.ALLOWED)
 
     class InterfaceStub:
@@ -293,11 +319,12 @@ async def test_role_target_self_uses_global_self_message(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
+            make_ref_context(scene_id="12345"),
             CommandResult(result=INTERACTION_COMMAND.parse(command)),
             Match(At("user", "unused"), False),
         )
 
-    assert released == [10001]
+    assert released == [make_user_ref()]
     assert matcher.messages == ["你透你自己?"]
 
 
@@ -306,6 +333,7 @@ async def test_explicit_self_target_uses_global_self_message(
 ) -> None:
     from nonebot_plugin_alconna import At, CommandResult, Match, Text, UniMessage
     from nonebot_plugin_uninfo import Interface, Member
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
@@ -314,9 +342,9 @@ async def test_explicit_self_target_uses_global_self_message(
         InteractionGuardType,
     )
 
-    released: list[int] = []
+    released: list[UserRef] = []
 
-    async def prepare_interaction(_: int, __: int) -> InteractionGuard:
+    async def prepare_interaction(_: SceneRef, __: UserRef) -> InteractionGuard:
         return InteractionGuard(InteractionGuardType.ALLOWED)
 
     class InterfaceStub:
@@ -341,6 +369,7 @@ async def test_explicit_self_target_uses_global_self_message(
             cast(Matcher, matcher),
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
+            make_ref_context(scene_id="12345"),
             CommandResult(
                 result=INTERACTION_COMMAND.parse(
                     UniMessage([Text("透群友 "), target]),
@@ -349,5 +378,5 @@ async def test_explicit_self_target_uses_global_self_message(
             Match(target, True),
         )
 
-    assert released == [10001]
+    assert released == [make_user_ref()]
     assert matcher.messages == ["你透你自己?"]

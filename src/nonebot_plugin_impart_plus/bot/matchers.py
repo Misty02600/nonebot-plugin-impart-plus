@@ -3,9 +3,7 @@
 from arclet.alconna import Alconna, Args, CommandMeta, Option, Subcommand
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import At, on_alconna
-from nonebot_plugin_uninfo import ADMIN
-
-from .context import public_scene
+from nonebot_plugin_uninfo import ADMIN, GROUP, GUILD
 
 PK_COMMAND = Alconna("pk", Args["target", At])
 
@@ -52,7 +50,7 @@ IMPART_COMMAND = Alconna(
 pk_matcher = on_alconna(
     PK_COMMAND,
     aliases={"对决"},
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=True,
     priority=20,
@@ -62,7 +60,7 @@ pk_matcher = on_alconna(
 grow_matcher = on_alconna(
     GROW_COMMAND,
     aliases={"开导"},
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=False,
     priority=20,
@@ -72,7 +70,7 @@ grow_matcher = on_alconna(
 suo_matcher = on_alconna(
     SUO_COMMAND,
     aliases={"嗦", "suo"},
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=True,
     priority=20,
@@ -81,7 +79,7 @@ suo_matcher = on_alconna(
 
 rank_matcher = on_alconna(
     RANK_COMMAND,
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=False,
     priority=20,
@@ -91,7 +89,7 @@ rank_matcher = on_alconna(
 interaction_matcher = on_alconna(
     INTERACTION_COMMAND,
     aliases={"日"},
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=False,
     priority=1,
@@ -119,7 +117,7 @@ interaction_owner_matcher = interaction_matcher.dispatch(
 impart_matcher = on_alconna(
     IMPART_COMMAND,
     aliases={"impart"},
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=False,
     priority=1,
@@ -148,7 +146,7 @@ help_matcher = impart_matcher.dispatch(
 injection_query_matcher = on_alconna(
     INJECTION_QUERY_COMMAND,
     aliases={"摄入查询", "射入查询"},
-    rule=public_scene,
+    rule=GROUP | GUILD,
     auto_send_output=False,
     use_cmd_start=True,
     priority=20,

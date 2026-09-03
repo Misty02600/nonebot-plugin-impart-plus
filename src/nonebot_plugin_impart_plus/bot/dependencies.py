@@ -17,7 +17,6 @@ cooldown = CooldownManager(
     pk_cd_time=plugin_config.pk_cd_time,
     suo_cd_time=plugin_config.suo_cd_time,
     fuck_cd_time=plugin_config.fuck_cd_time,
-    superusers=frozenset(driver.config.superusers),
 )
 
 data_manager = DataManager(async_session)

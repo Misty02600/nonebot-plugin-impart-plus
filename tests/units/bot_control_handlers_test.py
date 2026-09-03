@@ -3,7 +3,7 @@ from typing import cast
 import pytest
 from nonebot.matcher import Matcher
 
-from .bot_test_utils import MatcherStub, make_session
+from .bot_test_utils import MatcherStub, make_ref_context, make_scene_ref
 
 
 @pytest.mark.parametrize(
@@ -18,25 +18,24 @@ async def test_toggle_handler_uses_uninfo_scene(
     enabled: bool,
     reply: str,
 ):
-    from nonebot_plugin_uninfo import SceneType
+    from nonebot_plugin_uniref import SceneRef
 
     from nonebot_plugin_impart_plus.bot.handlers import control
 
-    calls: list[tuple[int, bool]] = []
+    calls: list[tuple[SceneRef, bool]] = []
 
-    async def set_group_enabled(scene_id: int, value: bool) -> None:
-        calls.append((scene_id, value))
+    async def set_scene_enabled(scene_ref: SceneRef, value: bool) -> None:
+        calls.append((scene_ref, value))
 
-    monkeypatch.setattr(control.game_app, "set_group_enabled", set_group_enabled)
+    monkeypatch.setattr(control.game_app, "set_scene_enabled", set_scene_enabled)
     matcher = MatcherStub()
-
     await control.toggle_module(
         cast(Matcher, matcher),
-        make_session(SceneType.GROUP, "12345"),
+        make_ref_context(scene_id="12345"),
         enabled,
     )
 
-    assert calls == [(12345, enabled)]
+    assert calls == [(make_scene_ref("12345"), enabled)]
     assert matcher.messages == [reply]
 
 

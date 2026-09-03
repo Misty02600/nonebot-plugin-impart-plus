@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import sqlalchemy as sa
 from nonebot import require
 from sqlalchemy import String
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -24,9 +23,10 @@ class Base(DeclarativeBase):
 class UserData(Base):
     """用户数据表"""
 
-    __tablename__ = "userdata"
+    __tablename__ = "user_data"
 
-    userid: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_ref: Mapped[str] = mapped_column(String, primary_key=True)
+    user_namespace: Mapped[str] = mapped_column(String, index=True)
     jj_length: Mapped[float]
     last_masturbation_time: Mapped[int] = mapped_column(default=0)
     win_probability: Mapped[float] = mapped_column(default=0.5)
@@ -36,12 +36,14 @@ class UserData(Base):
     is_zero_or_neg: Mapped[bool] = mapped_column(default=False)
 
 
-class GroupData(Base):
-    """群数据表"""
+class SceneData(Base):
+    """场景开关数据表"""
 
-    __tablename__ = "groupdata"
+    __tablename__ = "scene_data"
 
-    groupid: Mapped[int] = mapped_column(primary_key=True, index=True)
+    scene_ref: Mapped[str] = mapped_column(String, primary_key=True)
+    scene_namespace: Mapped[str] = mapped_column(String, index=True)
+    scene_type: Mapped[str] = mapped_column(String, index=True)
     allow: Mapped[bool]
 
 
@@ -51,49 +53,11 @@ class EjaculationData(Base):
     __tablename__ = "ejaculation_data"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    userid: Mapped[int] = mapped_column(index=True)
+    user_ref: Mapped[str] = mapped_column(String, index=True)
     date: Mapped[str] = mapped_column(String(20))
     volume: Mapped[float]
 
 
-async def check_and_add_column():
-    """检查是否存在win_probability、is_challenging、challenge_completed列, 若无则添加"""
-    async with engine.begin() as conn:
-        result = await conn.execute(sa.text("PRAGMA table_info(userdata)"))
-        columns = [row[1] for row in result]
-        if "win_probability" not in columns:
-            await conn.execute(
-                sa.text(
-                    "ALTER TABLE userdata ADD COLUMN win_probability FLOAT DEFAULT 0.5"
-                )
-            )
-        if "is_challenging" not in columns:
-            await conn.execute(
-                sa.text(
-                    "ALTER TABLE userdata ADD COLUMN is_challenging BOOLEAN DEFAULT FALSE"
-                )
-            )
-        if "challenge_completed" not in columns:
-            await conn.execute(
-                sa.text(
-                    "ALTER TABLE userdata ADD COLUMN challenge_completed BOOLEAN DEFAULT FALSE"
-                )
-            )
-        if "is_near_zero" not in columns:
-            await conn.execute(
-                sa.text(
-                    "ALTER TABLE userdata ADD COLUMN is_near_zero BOOLEAN DEFAULT FALSE"
-                )
-            )
-        if "is_zero_or_neg" not in columns:
-            await conn.execute(
-                sa.text(
-                    "ALTER TABLE userdata ADD COLUMN is_zero_or_neg BOOLEAN DEFAULT FALSE"
-                )
-            )
-
-
-async def init_db():
+async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await check_and_add_column()

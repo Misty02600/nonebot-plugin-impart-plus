@@ -1,12 +1,13 @@
 """插件入口。"""
 
 from nonebot import require
-from nonebot.plugin import PluginMetadata
+from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 from .config import Config
 
 require("nonebot_plugin_alconna")
 require("nonebot_plugin_uninfo")
+require("nonebot_plugin_uniref")
 
 __plugin_meta__ = PluginMetadata(
     name="nonebot_plugin_impart_plus",
@@ -35,7 +36,11 @@ __plugin_meta__ = PluginMetadata(
     type="application",
     homepage="https://github.com/Misty02600/nonebot_plugin_impart_plus",
     config=Config,
-    supported_adapters={"~onebot.v11"},
+    supported_adapters=inherit_supported_adapters(
+        "nonebot_plugin_alconna",
+        "nonebot_plugin_uninfo",
+        "nonebot_plugin_uniref",
+    ),
     extra={
         "priority": 20,
     },

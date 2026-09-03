@@ -12,25 +12,32 @@ from nonebot_plugin_alconna import (
     Match,
     UniMessage,
 )
-from nonebot_plugin_uninfo import QryItrface, Uninfo
+from nonebot_plugin_uninfo import QryItrface
+from nonebot_plugin_uniref import RefContext
 
 from ...impart.app import InjectionQueryType, RankingOutcomeType
 from ...infra.chart_renderer import draw_bar_chart
-from ..context import legacy_scene_id
 from ..dependencies import game_app, plugin_config
 from ..matchers import injection_query_matcher, rank_matcher
-from .shared import NOT_ALLOWED_TEXT, get_user_or_none, user_display_name
+from .shared import (
+    NOT_ALLOWED_TEXT,
+    get_user_or_none,
+    user_at_target,
+    user_display_name,
+)
 
 
 @rank_matcher.handle()
 async def jjrank(
     matcher: Matcher,
-    session: Uninfo,
+    refs: RefContext,
     interface: QryItrface,
 ) -> None:
+    scene_ref = refs.scene_ref
+    user_ref = refs.user_ref
     outcome = await game_app.query_ranking(
-        legacy_scene_id(session),
-        int(session.user.id),
+        scene_ref,
+        user_ref,
     )
     if outcome.type is RankingOutcomeType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
@@ -44,23 +51,19 @@ async def jjrank(
 
     top5 = outcome.ranking[:5]
     last5 = outcome.ranking[-5:]
-    top5users = [
-        await get_user_or_none(interface, str(item["userid"])) for item in top5
-    ]
-    last5users = [
-        await get_user_or_none(interface, str(item["userid"])) for item in last5
-    ]
+    top5users = [await get_user_or_none(interface, item.user.id) for item in top5]
+    last5users = [await get_user_or_none(interface, item.user.id) for item in last5]
     top5names = [
-        user_display_name(user, str(item["userid"]))
+        user_display_name(user, item.user.id)
         for user, item in zip(top5users, top5, strict=True)
     ]
     last5names = [
-        user_display_name(user, str(item["userid"]))
+        user_display_name(user, item.user.id)
         for user, item in zip(last5users, last5, strict=True)
     ]
-    data = {top5names[i]: top5[i]["jj_length"] for i in range(len(top5))}
+    data = {top5names[i]: top5[i].length for i in range(len(top5))}
     for i in range(len(last5)):
-        data[last5names[i]] = last5[i]["jj_length"]
+        data[last5names[i]] = last5[i].length
     img_bytes = await draw_bar_chart.draw_bar_chart(data)
     reply = f"你的排名为{outcome.index + 1}喵"
     await cast(AlconnaMatcher, matcher).finish(
@@ -73,16 +76,18 @@ async def jjrank(
 @injection_query_matcher.handle()
 async def query_injection(
     matcher: Matcher,
-    session: Uninfo,
+    refs: RefContext,
     command_result: CommandResult,
     target: Match[At],
 ) -> None:
-    mentioned = target.result.target if target.available else None
-    object_id = mentioned or session.user.id
+    scene_ref = refs.scene_ref
+    user_ref = refs.user_ref
+    mentioned = user_at_target(target.result) if target.available else None
+    object_ref = refs.build_user_ref(mentioned) if mentioned else user_ref
     replay = "该用户" if mentioned else "您"
     result = await game_app.query_injection(
-        legacy_scene_id(session),
-        int(object_id),
+        scene_ref,
+        object_ref,
         history="history" in command_result.result.options,
     )
     if result.type is InjectionQueryType.DISABLED:

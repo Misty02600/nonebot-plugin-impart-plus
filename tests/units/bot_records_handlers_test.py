@@ -4,13 +4,19 @@ import pytest
 from nonebot.exception import FinishedException
 from nonebot.matcher import Matcher
 
-from .bot_test_utils import FinishingMatcherStub, make_session
+from .bot_test_utils import (
+    FinishingMatcherStub,
+    make_ref_context,
+    make_scene_ref,
+    make_user_ref,
+)
 
 
 async def test_injection_query_reads_typed_target_and_history_option(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import records
     from nonebot_plugin_impart_plus.bot.matchers import INJECTION_QUERY_COMMAND
@@ -19,15 +25,15 @@ async def test_injection_query_reads_typed_target_and_history_option(
         InjectionQueryType,
     )
 
-    calls: list[tuple[int, int, bool]] = []
+    calls: list[tuple[SceneRef, UserRef, bool]] = []
 
     async def query_injection(
-        scene_id: int,
-        user_id: int,
+        scene_ref: SceneRef,
+        user_ref: UserRef,
         *,
         history: bool,
     ) -> InjectionQueryResult:
-        calls.append((scene_id, user_id, history))
+        calls.append((scene_ref, user_ref, history))
         return InjectionQueryResult(InjectionQueryType.HISTORY_TEXT, total=8.5)
 
     monkeypatch.setattr(records.game_app, "query_injection", query_injection)
@@ -36,7 +42,7 @@ async def test_injection_query_reads_typed_target_and_history_option(
     with pytest.raises(FinishedException):
         await records.query_injection(
             cast(Matcher, matcher),
-            make_session(1, "12345"),
+            make_ref_context(scene_id="12345"),
             CommandResult(result=INJECTION_QUERY_COMMAND.parse("注入查询 历史")),
             Match(
                 At("user", "67890"),
@@ -44,7 +50,7 @@ async def test_injection_query_reads_typed_target_and_history_option(
             ),
         )
 
-    assert calls == [(12345, 67890, True)]
+    assert calls == [(make_scene_ref("12345"), make_user_ref("67890"), True)]
     assert matcher.messages == ["该用户历史总被注射量为8.5ml"]
 
 
@@ -52,22 +58,28 @@ async def test_rank_uses_uninfo_user_directory(
     monkeypatch: pytest.MonkeyPatch,
 ):
     from nonebot_plugin_uninfo import Interface, User
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import records
     from nonebot_plugin_impart_plus.impart.app import (
+        RankingEntry,
         RankingOutcome,
         RankingOutcomeType,
     )
 
     ranking = [
-        {"userid": user_id, "jj_length": float(user_id)} for user_id in range(1, 11)
+        RankingEntry(make_user_ref(str(user_id)), float(user_id))
+        for user_id in range(1, 11)
     ]
-    app_calls: list[tuple[int, int]] = []
+    app_calls: list[tuple[SceneRef, UserRef]] = []
     user_calls: list[str] = []
     chart_data: list[dict[str, float]] = []
 
-    async def query_ranking(scene_id: int, user_id: int) -> RankingOutcome:
-        app_calls.append((scene_id, user_id))
+    async def query_ranking(
+        scene_ref: SceneRef,
+        user_ref: UserRef,
+    ) -> RankingOutcome:
+        app_calls.append((scene_ref, user_ref))
         return RankingOutcome(
             RankingOutcomeType.COMPLETED,
             ranking=ranking,
@@ -90,11 +102,11 @@ async def test_rank_uses_uninfo_user_directory(
     with pytest.raises(FinishedException):
         await records.jjrank(
             cast(Matcher, matcher),
-            make_session(1, "12345"),
+            make_ref_context(scene_id="12345"),
             cast(Interface, InterfaceStub()),
         )
 
-    assert app_calls == [(12345, 10001)]
+    assert app_calls == [(make_scene_ref("12345"), make_user_ref())]
     assert user_calls == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
     assert chart_data[0]["用户1"] == 1.0
     assert chart_data[0]["用户10"] == 10.0
@@ -119,6 +131,7 @@ async def test_injection_history_chart_uses_unimessage_image(
         Text,
         UniMessage,
     )
+    from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import records
     from nonebot_plugin_impart_plus.bot.matchers import INJECTION_QUERY_COMMAND
@@ -128,8 +141,8 @@ async def test_injection_history_chart_uses_unimessage_image(
     )
 
     async def query_injection(
-        _: int,
-        __: int,
+        _: SceneRef,
+        __: UserRef,
         *,
         history: bool,
     ) -> InjectionQueryResult:
@@ -150,7 +163,7 @@ async def test_injection_history_chart_uses_unimessage_image(
     with pytest.raises(FinishedException):
         await records.query_injection(
             cast(Matcher, matcher),
-            make_session(1, "12345"),
+            make_ref_context(scene_id="12345"),
             CommandResult(result=INJECTION_QUERY_COMMAND.parse("注入查询 历史")),
             Match(At("user", "unused"), False),
         )

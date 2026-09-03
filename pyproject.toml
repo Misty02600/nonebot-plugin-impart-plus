@@ -13,6 +13,7 @@ dependencies = [
   "nonebot-plugin-apscheduler>=0.4.0,<1.0.0",
   "nonebot-plugin-localstore>=0.7.0,<1.0.0",
   "nonebot-plugin-uninfo>=0.11.1,<0.12.0",
+  "nonebot-plugin-uniref>=0.4.0,<0.5.0",
   "nonebot2>=2.5.0,<3.0.0",
   "pillow>=10.2.0,<13.0.0",
   "sqlalchemy>=2.0.20,<3.0.0",

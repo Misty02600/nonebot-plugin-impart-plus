@@ -4,10 +4,9 @@ from typing import cast
 
 from nonebot.matcher import Matcher
 from nonebot_plugin_alconna import AUTO, AlconnaMatcher, UniMessage
-from nonebot_plugin_uninfo import Uninfo
+from nonebot_plugin_uniref import RefContext
 
 from ... import __plugin_meta__
-from ..context import legacy_scene_id
 from ..dependencies import game_app
 from ..matchers import help_matcher, toggle_matcher
 
@@ -15,10 +14,10 @@ from ..matchers import help_matcher, toggle_matcher
 @toggle_matcher.handle()
 async def toggle_module(
     matcher: Matcher,
-    session: Uninfo,
+    refs: RefContext,
     enabled: bool,
 ) -> None:
-    await game_app.set_group_enabled(legacy_scene_id(session), enabled)
+    await game_app.set_scene_enabled(refs.scene_ref, enabled)
     await matcher.finish("功能已开启喵" if enabled else "功能已禁用喵")
 
 
