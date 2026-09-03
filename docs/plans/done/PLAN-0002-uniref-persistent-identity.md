@@ -39,10 +39,10 @@
 
 - 现有开发环境的旧 `impart.db` 不受支持，运行当前代码前需要由维护者删除；代码不会自动迁移或删除。
 - UniRef 0.4 的 QQAPI 群成员和频道用户 Ref 使用复合完整 ID；排行榜资料查询不解析该私有格式，当前可能退回 Ref ID 展示，等待上游公开的 Ref 资料查询入口。
-- OneBot V11 以外 Adapter 的真实事件、权限、成员目录和消息导出矩阵继续由 PLAN-0001 跟踪，不属于持久化身份实现。
+- OneBot V11 以外 Adapter 只保持理论兼容边界，不维护真实事件、权限、成员目录或消息导出矩阵。
 
 ## 相关文档
 
 - [当前项目架构](../../architecture/overview.md)
-- [PLAN-0001：迁移 Alconna 跨平台接入层](../todo/PLAN-0001-alconna-multiplatform-migration.md)
+- [PLAN-0001：迁移 Alconna 跨平台接入层](PLAN-0001-alconna-multiplatform-migration.md)
 - [UniRef v0.4.0](https://github.com/Misty02600/nonebot-plugin-uniref/tree/v0.4.0)

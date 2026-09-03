@@ -2,7 +2,7 @@
 
 ## 先建立一个印象
 
-`nonebot_plugin_impart_plus` 是面向 NoneBot2 群聊与频道场景的互动游戏插件。管理员先为场景开启功能，成员再通过命令创建和改变长度、进行 PK、与群友互动，以及查询排行榜和注入记录。bot 接入使用 Alconna、Uninfo、UniRef 和 UniMessage，metadata 通过 `inherit_supported_adapters()` 动态继承三项接入依赖的 Adapter 交集。
+`nonebot_plugin_impart_plus` 是面向 NoneBot2 群聊与频道场景的互动游戏插件。管理员先为场景开启功能，成员再通过命令创建和改变长度、进行 PK、与群友互动，以及查询排行榜和注入记录。bot 接入使用 Alconna、Uninfo、UniRef 和 UniMessage，metadata 通过 `inherit_supported_adapters()` 动态继承三项接入依赖的 Adapter 交集；实际实现与回归验收优先保证 OneBot V11，其他 Adapter 仅保持理论兼容边界。
 
 当前 `feature` 使用粗粒度传统分层：bot 接收入站事件并生成回复，`impart/app.py` 编排完整游戏用例，`impart/core.py` 保存框架无关的纯规则，infra 封装数据库、冷却和图表等具体技术。这里记录当前代码事实，不把 `main` 分支的新增玩法视为既定目标。
 
@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 群开关与帮助 | `银趴` 根命令把开启/开始、禁止/关闭直接解析为一个布尔参数，帮助/介绍保留独立子命令；compact 允许有/无空格，开关限管理员、群主或超级用户 | 一个 toggle dispatch 和 Handler 持久化场景级 `allow` 状态；帮助 dispatch 保留独立权限与优先级；完整帮助文本来自 `PluginMetadata.usage` | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/control.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/control.py) |
 | 长度成长与查询 | `打胶/开导` 增加本人长度，`嗦牛子/嗦/suo` 增加本人或被 `@` 用户长度；`银趴/impart` 根命令下的 `查询` 子命令显示本人或被 `@` 用户的长度状态 | 查询使用独立 dispatch 并在匹配后阻断传播；应用层处理冷却、创建用户、状态读取和保存，bot 只生成原有回复 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
-| PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者战力判定胜负，并调整双方长度和内部战力值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
+| PK 与登神挑战 | `pk/对决` 需要 `@` 对手；按发起者胜率判定胜负，并调整双方长度和内部胜率值 | 保持原有多次独立数据库提交；纯胜负与增量计算位于 core | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
 | 群友互动 | `透` 为根命令、`日` 为 alias，群友/管理/群主解析为同一个必填目标类型参数；其后可带 At，compact 允许有/无空格 | Uninfo 提供成员、角色、昵称与头像；群友使用 At 指定目标或随机选择，管理和群主忽略 At 并只按角色自动选择；找不到角色时返回对应提示，最终目标为发起者时统一拒绝；应用层处理冷却、反透和注入写入 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 排行榜与注入查询 | 在当前 `UserRef.namespace` 内显示长度前五、后五和本人排名；查询当天或历史注入量 | DataManager 通过 namespace 索引分榜，应用层返回类型化 Ref 条目，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 | `Config` | 配置四类冷却时长、不活跃惩罚和长度别名 | 只描述插件启动配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
@@ -42,7 +42,7 @@
 
 ## 数据和状态放在哪里
 
-- `UserData` 以编码 `user_ref` 为主键，保存 `user_namespace` 查询投影、长度、最后活动时间、内部战力，以及挑战、xnn 临界区和非正长度标记。
+- `UserData` 以编码 `user_ref` 为主键，保存 `user_namespace` 查询投影、长度、最后活动时间、内部胜率，以及挑战、xnn 临界区和非正长度标记。
 - `SceneData` 以编码 `scene_ref` 为主键，保存 `scene_namespace`、`scene_type` 查询投影和场景开关。
 - `EjaculationData` 按编码 UserRef 和日期保存注入量；同一天的记录累加到同一数值。
 - SQLite 文件位于 `nonebot-plugin-localstore` 提供的插件数据目录，文件名为 `impart.db`。启动时只按当前 v1 模型建表，不探测或升级旧 schema。
@@ -51,20 +51,21 @@
 
 ## 当前稳定状态语义
 
-- 新用户初始长度为 `10.0`，内部战力为 `0.5`。
-- `25 <= length < 30` 会进入登神挑战并把内部战力乘以 `0.8`；挑战期间禁止打胶和嗦。
-- 挑战中跌到 `length < 25` 会退出挑战、恢复内部战力系数并额外减少 5；达到 `length >= 30` 会完成挑战。
+- 新用户初始长度为 `10.0`，内部胜率为 `0.5`。
+- `25 <= length < 30` 会进入登神挑战并把内部胜率乘以 `0.8`；挑战期间禁止打胶和嗦。
+- 挑战中跌到 `length < 25` 会退出挑战、恢复内部胜率系数并额外减少 5；达到 `length >= 30` 会完成挑战。
 - `0 < length <= 5` 被标记为 xnn 临界区，`length <= 0` 显示为女孩子状态；当前没有与负长度对应的独立成长、PK 或群友互动命令体系。
-- PK 只使用发起者自身的内部战力判定胜负；胜者内部战力减 `0.01`，败者增加 `0.01`。双方长度和战力继续通过多次独立数据库提交更新。
+- PK 只使用发起者自身的内部胜率判定胜负；胜者内部胜率减 `0.01`，败者增加 `0.01`。双方长度和胜率继续通过多次独立数据库提交更新。
 - 发起者处于 `0 < length <= 5` 时有 50% 概率被反透，这一范围同时包含当前的 XNN 与 NEAR_GIRL；`length <= 0` 时必定成为被注入方，`length > 5` 时不会反透。注入记录本身不会改变长度。
 
 ## 当前质量边界与维护风险
 
-- 当前测试覆盖插件与 10 个 Alconna matcher 注册、严格 grammar、Uninfo 场景/成员/角色、Ref Handler 参数、namespace schema/排行榜、冷却隔离、能力降级和 UniMessage 文本/图片结构；OneBot 以外 Adapter 的完整事件 fixture 仍待补齐。
+- 当前测试覆盖插件与 10 个 Alconna matcher 注册、严格 grammar、Uninfo 场景/成员/角色、Ref Handler 参数、namespace schema/排行榜、冷却隔离、能力降级和 UniMessage 文本/图片结构；这些聚焦测试是当前 OneBot V11 验收边界，不计划增加 Adapter 事件级 fixture。
+- 英文根命令 alias `impart` 只接受小写；排行榜自身的 `rank` 正则仍保持大小写不敏感。上游 `IMPART帮助` 等大小写变体不再作为兼容入口。
 - `bot/handlers/` 已按 `game`、`interaction`、`records`、`control` 拆分；群友、管理、群主共享一个互动 matcher 和 `yinpa` Handler，由必填 `kind` 参数选择目标策略；其他业务 Handler 仍与 matcher 一一对应。跨功能共享只保留未开启文案与用户目录辅助函数，`game.py` 因 PK 分支文案仍是其中最大的模块。
 - PK 和挑战结算继续由多个 `DataManager` 方法分别提交；中途异常可能留下双方状态只更新一部分的结果。
 - `get_jj_length()` 和 `get_win_probability()` 使用真假值回退默认值，持久化的精确 `0` 与“没有查询结果”不能被区分。
-- 用户文案已使用“战力”，内部字段和计算仍沿用 `win_probability`；后续设计需要明确战力是展示名称还是新的数值语义。
+- 用户文案与底层字段均保留“胜率”语义；当前 PK 直接使用发起者的 `win_probability` 判定，查询暂不展示该值，双方胜率归一化延后为独立玩法改动。
 - UniRef 0.4 的 QQAPI 群成员和频道用户使用复合完整 `UserRef.id`；排行榜当前不能据此可靠查询 Uninfo 用户资料，查询失败时退回 Ref ID 展示，不拆解上游私有格式，等待 UniRef 提供 Ref 到资料的公开查询入口。
-- Discord 的群主身份不能从普通角色权限可靠推导；Uninfo 0.11.1 的 `OWNER` 映射尚不足以证明真实 Guild owner。准确的上游角色映射和真实 Adapter fixture 是进入 NoneBot 插件市场前的发布闸门，本插件不添加 Discord 专用查询分支。
+- Discord 的群主身份不能从普通角色权限可靠推导；Uninfo 0.11.1 的 `OWNER` 映射尚不足以证明真实 Guild owner。该限制仅作为理论兼容边界记录，不是当前发布闸门，本插件也不添加 Discord 专用查询分支。
 - 当前 Ref schema 不兼容旧开发数据库，也没有迁移、回填、v2 表或 legacy 分支；首次进入 NoneBot 插件市场前直接重建开发数据库，发布后再建立正式迁移策略。

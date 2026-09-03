@@ -60,18 +60,18 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
     if "challenge_started_low_win" in outcome.attacker_status:
         uid_msg += (
             f"\n{botname}检测到你的{choice(plugin_config.jj_variable)}长度超过25cm，已为你开启✨“登神长阶”✨"
-            f"\n你现在的战力变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与他人pk吧!"
+            f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与他人pk吧!"
         )
     elif "challenge_success_high_win" in outcome.attacker_status:
         uid_msg += (
             f"\n🎉恭喜你完成登神挑战🎉\n你的{choice(plugin_config.jj_variable)}长度已超过30cm，授予你🎊“牛々の神”🎊称号"
-            f"\n你的战力已恢复，“打胶”与“嗦”指令已重新开放，切记不忘初心，继续冲击更高的境界喵！"
+            f"\n你的胜率已恢复，“打胶”与“嗦”指令已重新开放，切记不忘初心，继续冲击更高的境界喵！"
         )
 
     if "challenge_failed_high_win" in outcome.defender_status:
         uid_msg += (
             f"\n由于你对决的胜利，{botname}检测到TA的{choice(plugin_config.jj_variable)}长度已不足25cm，很遗憾，TA的登神挑战失败，{botname}替TA感谢你的鞭策喵！"
-            f"\nTA的{choice(plugin_config.jj_variable)}长度缩短了5cm喵，战力已恢复，“打胶”与“嗦”指令已重新开放喵！"
+            f"\nTA的{choice(plugin_config.jj_variable)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
         )
     elif "challenge_completed_reduce" in outcome.defender_status:
         uid_msg += (
@@ -83,7 +83,7 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
     elif "length_zero_or_negative" in outcome.defender_status:
         uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成女孩子了喵！"
 
-    probability_msg = f"\n你的战力现在为{outcome.attacker_probability:.0%}喵"
+    probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
     await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
 
 
@@ -96,7 +96,7 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
     if "challenge_failed_high_win" in outcome.attacker_status:
         uid_msg += (
             "\n很遗憾，登神挑战失败，别气馁啦！"
-            f"\n你的{choice(plugin_config.jj_variable)}长度缩短了5cm喵，战力已恢复，“打胶”与“嗦”指令已重新开放喵！"
+            f"\n你的{choice(plugin_config.jj_variable)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
         )
     elif "challenge_completed_reduce" in outcome.attacker_status:
         uid_msg += (
@@ -111,15 +111,15 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
     if "challenge_started_low_win" in outcome.defender_status:
         uid_msg += (
             f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{choice(plugin_config.jj_variable)}长度超过25cm，已为TA开启✨“登神长阶”✨"
-            f"\n现在TA的战力变为当前的80%，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与群友pk吧！"
+            f"\n现在TA的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与群友pk吧！"
         )
     elif "challenge_success_high_win" in outcome.defender_status:
         uid_msg += (
             f"\n🎉恭喜你帮助TA完成登神挑战🎉\nTA的{choice(plugin_config.jj_variable)}长度超过30cm，授予TA🎊“牛々の神”🎊称号"
-            "\nTA的战力已恢复，“打胶”与“嗦”指令已重新开放，请提醒TA不忘初心，继续冲击更高的境界喵！"
+            "\nTA的胜率已恢复，“打胶”与“嗦”指令已重新开放，请提醒TA不忘初心，继续冲击更高的境界喵！"
         )
 
-    probability_msg = f"\n你的战力现在为{outcome.attacker_probability:.0%}喵"
+    probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
     await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
 
 
@@ -155,7 +155,7 @@ async def dajiao(
         await matcher.finish(
             f"打胶结束喵, 你的{choice(plugin_config.jj_variable)}很满意喵, 长了{outcome.random_num}cm喵"
             f"\n由于你无休止的打胶，触犯到了神秘的禁忌，{botname}检测到你的{choice(plugin_config.jj_variable)}长度超过25cm，已为你开启✨“登神长阶”✨"
-            f"\n你现在的战力变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与他人pk吧！",
+            f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与他人pk吧！",
             at_sender=True,
         )
     await matcher.finish(
@@ -202,7 +202,7 @@ async def suo(
         await matcher.finish(
             f"{pronoun}的{choice(plugin_config.jj_variable)}很满意喵, 嗦长了{outcome.random_num}cm喵"
             f"\n由于{pronoun}无休止的嗦与被嗦，触犯到了神秘的禁忌，{botname}检测到{pronoun}的{choice(plugin_config.jj_variable)}长度超过25cm，"
-            f"\n已为{pronoun}开启✨“登神长阶”✨，{pronoun}现在的战力变为80%，且无法使用“打胶”与“嗦”指令，请以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与他人pk吧！",
+            f"\n已为{pronoun}开启✨“登神长阶”✨，{pronoun}现在的胜率变为80%，且无法使用“打胶”与“嗦”指令，请以将{choice(plugin_config.jj_variable)}长度提升至30cm为目标与他人pk吧！",
             at_sender=True,
         )
     await matcher.finish(

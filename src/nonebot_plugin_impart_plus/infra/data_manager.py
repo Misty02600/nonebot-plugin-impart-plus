@@ -41,7 +41,7 @@ class DataManager:
         self._session_factory = session_factory
 
     async def update_challenge_status(self, user_ref: UserRef) -> str:
-        """根据用户当前状态更新挑战状态与战力。"""
+        """根据用户当前状态更新挑战状态与胜率。"""
         encoded = encode_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
@@ -132,7 +132,7 @@ class DataManager:
             await session.commit()
 
     async def get_win_probability(self, user_ref: UserRef) -> float:
-        """返回用户当前战力。"""
+        """返回用户当前胜率。"""
         encoded = encode_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
@@ -145,7 +145,7 @@ class DataManager:
         user_ref: UserRef,
         probability_change: float,
     ) -> None:
-        """在数据库内累加用户战力。"""
+        """在数据库内累加用户胜率。"""
         encoded = encode_ref(user_ref)
         async with self._session_factory() as session:
             current_probability = await self.get_win_probability(user_ref)

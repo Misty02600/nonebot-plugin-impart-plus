@@ -14,7 +14,7 @@ def test_plugin_metadata(app: App):
 
     assert __plugin_meta__.name == "nonebot_plugin_impart_plus"
     assert __plugin_meta__.description == "NoneBot2 银趴插件 Plus"
-    assert "初始战力为50%" in __plugin_meta__.usage
+    assert "初始胜率为50%" in __plugin_meta__.usage
     assert "[银趴|impart][开启|禁止|帮助]" in __plugin_meta__.usage
     assert __plugin_meta__.type == "application"
     assert nonebot_plugin_impart_plus.__file__ is not None
