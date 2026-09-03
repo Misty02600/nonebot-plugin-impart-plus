@@ -169,45 +169,37 @@ def test_rank_and_interaction_regex_ranges(
 
 
 @pytest.mark.parametrize(
-    ("message", "subcommand"),
+    ("message", "kind"),
     [
-        ("透群友", "member"),
-        ("日 群友", "member"),
-        ("透管理", "admin"),
-        ("日 管理", "admin"),
-        ("透群主", "owner"),
-        ("日 群主", "owner"),
+        ("透群友", "群友"),
+        ("透管理", "管理"),
+        ("透群主", "群主"),
     ],
 )
-def test_interaction_uses_distinct_subcommands(
+def test_interaction_extracts_target_kind(
     message: str,
-    subcommand: str,
+    kind: str,
 ) -> None:
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
 
     result = INTERACTION_COMMAND.parse(message)
 
     assert result.matched is True
-    assert subcommand in result.subcommands
+    assert result.all_matched_args["kind"] == kind
 
 
-@pytest.mark.parametrize(
-    ("kind", "matched"),
-    [
-        ("群友", True),
-        ("管理", False),
-        ("群主", False),
-    ],
-)
-def test_only_member_subcommand_accepts_target(kind: str, matched: bool) -> None:
+def test_interaction_requires_kind_and_accepts_target() -> None:
     from nonebot_plugin_alconna import At, Text, UniMessage
 
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
 
     result = INTERACTION_COMMAND.parse(
-        UniMessage([Text(f"透{kind} "), At("user", "67890")]),
+        UniMessage([Text("透管理 "), At("user", "67890")]),
     )
 
-    assert result.matched is matched
-    if matched:
-        assert result.all_matched_args["target"].target == "67890"
+    assert result.matched is True
+    assert result.all_matched_args == {
+        "kind": "管理",
+        "target": At("user", "67890"),
+    }
+    assert INTERACTION_COMMAND.parse("透").matched is False

@@ -1,5 +1,6 @@
 """Handler 共享文案与用户目录辅助函数。"""
 
+from nonebot import logger
 from nonebot.exception import SkippedException
 from nonebot_plugin_alconna import At
 from nonebot_plugin_uninfo import Interface, Member, Uninfo, User
@@ -62,5 +63,10 @@ async def get_members_or_empty(
             session.scene.type,
             session.scene.parent.id if session.scene.parent else session.scene.id,
         )
-    except Exception:
+    except Exception as error:
+        logger.opt(exception=error).warning(
+            "获取成员列表失败: adapter={}, scene_type={}",
+            session.adapter,
+            session.scene.type.name,
+        )
         return []

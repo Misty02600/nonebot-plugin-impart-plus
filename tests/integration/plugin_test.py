@@ -50,29 +50,23 @@ def test_alconna_matcher_registration(app: App):
     from nonebot_plugin_alconna import AlconnaMatcher
 
     from nonebot_plugin_impart_plus.bot import handlers
+    from nonebot_plugin_impart_plus.bot.matchers import (
+        impart_matcher,
+        interaction_matcher,
+    )
 
     plugin = get_plugin("nonebot_plugin_impart_plus")
 
     assert plugin is not None
-    assert len(plugin.matcher) == 13
+    assert len(plugin.matcher) == 10
     assert all(issubclass(matcher, AlconnaMatcher) for matcher in plugin.matcher)
 
     dispatch_matchers = {
         matcher.basepath: matcher
         for matcher in plugin.matcher
-        if matcher.basepath in {"member", "admin", "owner", "enabled", "query", "help"}
+        if matcher.basepath in {"enabled", "query", "help"}
     }
-    assert set(dispatch_matchers) == {
-        "member",
-        "admin",
-        "owner",
-        "enabled",
-        "query",
-        "help",
-    }
-    assert dispatch_matchers["member"].priority == 20
-    assert dispatch_matchers["admin"].priority == 20
-    assert dispatch_matchers["owner"].priority == 20
+    assert set(dispatch_matchers) == {"enabled", "query", "help"}
     assert dispatch_matchers["enabled"].priority == 10
     assert dispatch_matchers["query"].priority == 20
     assert dispatch_matchers["help"].priority == 20
@@ -81,14 +75,16 @@ def test_alconna_matcher_registration(app: App):
     assert len(dispatch_matchers["help"].permission.checkers) == 0
     assert all(matcher.block for matcher in dispatch_matchers.values())
 
-    parents = [matcher for matcher in plugin.matcher if matcher.priority == 1]
-    assert len(parents) == 2
-    assert all(parent.block is False for parent in parents)
-    assert all(len(parent.handlers) == 3 for parent in parents)
+    assert interaction_matcher.priority == 20
+    assert interaction_matcher.block is True
+    assert len(interaction_matcher.handlers) == 1
+    assert impart_matcher.priority == 1
+    assert impart_matcher.block is False
+    assert len(impart_matcher.handlers) == 3
     assert all(
         len(matcher.handlers) == 1
         for matcher in plugin.matcher
-        if matcher not in parents
+        if matcher is not impart_matcher
     )
     assert not hasattr(handlers, "Impart")
     assert not hasattr(handlers, "impart")

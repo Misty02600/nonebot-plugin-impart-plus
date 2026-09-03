@@ -13,7 +13,7 @@ __plugin_meta__ = PluginMetadata(
     name="nonebot_plugin_impart_plus",
     usage="""impart功能说明:
 [透|日][群友|管理|群主]
-群友可随机或@指定目标,管理和群主按成员身份自动选择
+群友可随机或@指定目标
 [pk|对决]
 通过random实现pk,胜方获取败方随机数/2的牛牛长度;
 初始战力为50%,pk后胜方战力-1%,败方战力+1%

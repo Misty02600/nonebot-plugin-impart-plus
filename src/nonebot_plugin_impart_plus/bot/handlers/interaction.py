@@ -9,7 +9,6 @@ from nonebot_plugin_alconna import (
     AUTO,
     AlconnaMatcher,
     At,
-    CommandResult,
     Match,
     UniMessage,
 )
@@ -18,11 +17,7 @@ from nonebot_plugin_uniref import RefContext, UserRef
 
 from ...impart.app import InteractionGuardType
 from ..dependencies import botname, game_app
-from ..matchers import (
-    interaction_admin_matcher,
-    interaction_member_matcher,
-    interaction_owner_matcher,
-)
+from ..matchers import interaction_matcher
 from .shared import (
     NOT_ALLOWED_TEXT,
     get_member_or_none,
@@ -87,20 +82,22 @@ async def send_interaction_prompt(
     await matcher.send(message)
 
 
-@interaction_member_matcher.handle()
-@interaction_admin_matcher.handle()
-@interaction_owner_matcher.handle()
+@interaction_matcher.handle()
 async def yinpa(
     matcher: Matcher,
     session: Uninfo,
     interface: QryItrface,
     refs: RefContext,
-    command_result: CommandResult,
+    kind: str,
     target: Match[At],
 ) -> None:
     scene_ref = refs.scene_ref
     user_ref = refs.user_ref
     uid = session.user.id
+    mentioned = (
+        user_at_target(target.result) if kind == "群友" and target.available else None
+    )
+
     guard = await game_app.prepare_interaction(scene_ref, user_ref)
     if guard.type is InteractionGuardType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
@@ -114,20 +111,13 @@ async def yinpa(
         session.member,
         user_display_name(session.user, session.user.id),
     )
-    subcommands = command_result.result.subcommands
-    if "owner" in subcommands:
-        kind = "群主"
-    elif "admin" in subcommands:
-        kind = "管理"
-    else:
-        kind = "群友"
-    mentioned = user_at_target(target.result) if target.available else None
     members: list[Member] = []
     if mentioned is None:
         members = await get_members_or_empty(interface, session)
         if not members:
             game_app.release_interaction_cooldown(user_ref)
             await matcher.finish("请@指定目标" if kind == "群友" else f"没找到{kind}")
+    random_nn = game_app.roll_interaction()
     lucky_user = mentioned or select_interaction_target(kind, members, uid)
     if lucky_user is None:
         game_app.release_interaction_cooldown(user_ref)
@@ -137,7 +127,6 @@ async def yinpa(
     if lucky_user == uid:
         game_app.release_interaction_cooldown(user_ref)
         await matcher.finish("你透你自己?")
-    random_nn = game_app.roll_interaction()
     if mentioned is None:
         await send_interaction_prompt(
             kind,

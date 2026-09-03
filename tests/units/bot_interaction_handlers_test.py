@@ -1,4 +1,5 @@
 from typing import cast
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from nonebot.exception import FinishedException
@@ -17,12 +18,11 @@ from .bot_test_utils import (
 async def test_interaction_with_mention_skips_member_enumeration(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, CommandResult, Match, Text, UniMessage
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member, User
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
-    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -90,11 +90,7 @@ async def test_interaction_with_mention_skips_member_enumeration(
         make_session(1, "12345"),
         cast(Interface, InterfaceStub()),
         make_ref_context(scene_id="12345"),
-        CommandResult(
-            result=INTERACTION_COMMAND.parse(
-                UniMessage([Text("透群友 "), At("user", "67890")]),
-            )
-        ),
+        "群友",
         Match(At("user", "67890"), True),
     )
 
@@ -110,15 +106,44 @@ async def test_interaction_with_mention_skips_member_enumeration(
     assert matcher.options[0]["fallback"] is AUTO
 
 
+async def test_non_user_mention_skips_before_interaction_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot.exception import SkippedException
+    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_uninfo import Interface
+
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+
+    prepare_interaction = AsyncMock()
+    monkeypatch.setattr(
+        interaction.game_app,
+        "prepare_interaction",
+        prepare_interaction,
+    )
+    target = At("role", "67890")
+
+    with pytest.raises(SkippedException):
+        await interaction.yinpa(
+            cast(Matcher, MatcherStub()),
+            make_session(1, "12345"),
+            cast(Interface, object()),
+            make_ref_context(scene_id="12345"),
+            "群友",
+            Match(target, True),
+        )
+
+    prepare_interaction.assert_not_awaited()
+
+
 async def test_interaction_without_member_capability_requests_mention(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
-    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -151,7 +176,7 @@ async def test_interaction_without_member_capability_requests_mention(
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
             make_ref_context(scene_id="12345"),
-            CommandResult(result=INTERACTION_COMMAND.parse("透群友")),
+            "群友",
             Match(At("user", "unused"), False),
         )
 
@@ -212,24 +237,118 @@ async def test_interaction_selects_uninfo_owner_and_admin_roles(
     assert admin_matcher.messages == ["现在咱将随机抽取一位幸运管理\n送给发起者色色！"]
 
 
+async def test_automatic_target_rolls_before_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_uninfo import Interface, Member, User
+
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+
+    class SelectionReached(Exception):
+        pass
+
+    calls: list[str] = []
+    prepare_interaction = AsyncMock(
+        return_value=InteractionGuard(InteractionGuardType.ALLOWED)
+    )
+
+    def roll_interaction() -> float:
+        calls.append("roll")
+        return 0.75
+
+    def select_interaction_target(
+        kind: str,
+        available_members: list[Member],
+        uid: str,
+    ) -> None:
+        calls.append("select")
+        assert kind == "群友"
+        assert available_members
+        assert uid == "10001"
+        raise SelectionReached
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            return [Member(User(id="20002"))]
+
+    monkeypatch.setattr(
+        interaction.game_app,
+        "prepare_interaction",
+        prepare_interaction,
+    )
+    monkeypatch.setattr(interaction.game_app, "roll_interaction", roll_interaction)
+    monkeypatch.setattr(
+        interaction,
+        "select_interaction_target",
+        select_interaction_target,
+    )
+
+    with pytest.raises(SelectionReached):
+        await interaction.yinpa(
+            cast(Matcher, MatcherStub()),
+            make_session(1, "12345"),
+            cast(Interface, InterfaceStub()),
+            make_ref_context(scene_id="12345"),
+            "群友",
+            Match(At("user", "unused"), False),
+        )
+
+    assert calls == ["roll", "select"]
+
+
+async def test_member_query_exception_is_logged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uninfo import Interface, Member
+
+    from nonebot_plugin_impart_plus.bot.handlers import shared
+
+    failure = RuntimeError("member query failed")
+
+    class InterfaceStub:
+        async def get_members(self, *_: object) -> list[Member]:
+            raise failure
+
+    session = make_session(1, "12345")
+    logger = Mock()
+    monkeypatch.setattr(shared, "logger", logger)
+
+    members = await shared.get_members_or_empty(
+        cast(Interface, InterfaceStub()),
+        session,
+    )
+
+    assert members == []
+    logger.opt.assert_called_once_with(exception=failure)
+    logger.opt.return_value.warning.assert_called_once_with(
+        "获取成员列表失败: adapter={}, scene_type={}",
+        session.adapter,
+        session.scene.type.name,
+    )
+
+
 @pytest.mark.parametrize(
-    ("command", "expected"),
+    ("kind", "expected"),
     [
-        ("透群主", "没找到群主"),
-        ("透管理", "没找到管理"),
+        ("群主", "没找到群主"),
+        ("管理", "没找到管理"),
     ],
 )
-async def test_role_target_not_found_uses_role_message(
+async def test_role_target_ignores_mention_and_uses_role_message(
     monkeypatch: pytest.MonkeyPatch,
-    command: str,
+    kind: str,
     expected: str,
 ) -> None:
-    from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member, Role, User
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
-    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -262,8 +381,8 @@ async def test_role_target_not_found_uses_role_message(
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
             make_ref_context(scene_id="12345"),
-            CommandResult(result=INTERACTION_COMMAND.parse(command)),
-            Match(At("user", "unused"), False),
+            kind,
+            Match(At("user", "67890"), True),
         )
 
     assert released == [make_user_ref()]
@@ -271,23 +390,22 @@ async def test_role_target_not_found_uses_role_message(
 
 
 @pytest.mark.parametrize(
-    ("command", "role"),
+    ("kind", "role"),
     [
-        ("透群主", "OWNER"),
-        ("透管理", "ADMINISTRATOR"),
+        ("群主", "OWNER"),
+        ("管理", "ADMINISTRATOR"),
     ],
 )
 async def test_role_target_self_uses_global_self_message(
     monkeypatch: pytest.MonkeyPatch,
-    command: str,
+    kind: str,
     role: str,
 ) -> None:
-    from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member, Role, User
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
-    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -320,7 +438,7 @@ async def test_role_target_self_uses_global_self_message(
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
             make_ref_context(scene_id="12345"),
-            CommandResult(result=INTERACTION_COMMAND.parse(command)),
+            kind,
             Match(At("user", "unused"), False),
         )
 
@@ -331,12 +449,11 @@ async def test_role_target_self_uses_global_self_message(
 async def test_explicit_self_target_uses_global_self_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from nonebot_plugin_alconna import At, CommandResult, Match, Text, UniMessage
+    from nonebot_plugin_alconna import At, Match
     from nonebot_plugin_uninfo import Interface, Member
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import interaction
-    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
     from nonebot_plugin_impart_plus.impart.app import (
         InteractionGuard,
         InteractionGuardType,
@@ -370,11 +487,7 @@ async def test_explicit_self_target_uses_global_self_message(
             make_session(1, "12345"),
             cast(Interface, InterfaceStub()),
             make_ref_context(scene_id="12345"),
-            CommandResult(
-                result=INTERACTION_COMMAND.parse(
-                    UniMessage([Text("透群友 "), target]),
-                )
-            ),
+            "群友",
             Match(target, True),
         )
 

@@ -45,7 +45,7 @@ NoneBot 2.5.0 的 `inherit_supported_adapters(*names)` 会展开 `~` 缩写并�
 
 ### 跨平台能力边界
 
-Uninfo 0.11.1 能为 OneBot V11 和 Discord 枚举成员；Telegram fetcher 没有 `query_members`，因此当前“随机群友”无法在 Telegram 保持原行为。Discord 可以枚举成员，但“群主/管理”与 OneBot 的 owner/admin 角色并非同一模型，需要单独验证角色映射。
+Uninfo 0.11.1 能为 OneBot V11 和 Discord 枚举成员；Telegram fetcher 没有 `query_members`，因此当前“随机群友”无法在 Telegram 保持原行为。Discord 可以枚举成员，但该版本通过普通 Role 的 Administrator 与 Manage Guild 权限位推导 `OWNER`，不能代替 Guild 的真实 `owner_id`。准确的上游角色映射和真实 Adapter fixture 是进入 NoneBot 插件市场前的发布闸门，本插件不添加 Discord 专用查询分支。
 
 UniRef 0.4 的 QQAPI 群成员和频道用户把群/Guild 坐标保存在复合完整 `UserRef.id` 中，不能直接作为 Uninfo 的局部用户 ID 查询资料，也不应由本插件拆解上游私有格式。当前排行榜资料查询失败时退回 Ref ID 展示；后续等待 UniRef 提供 Ref 到 Uninfo 实体的公开查询入口，再补齐对应 Adapter fixture。
 
@@ -70,8 +70,9 @@ Adapter event
 - 当前事件回复不构造 `Target`；只有未来出现事件外主动发送时才使用。
 - Alconna matcher 切片本身不改变 SQLite 主键类型；完成这些切片后按 PLAN-0002 使用 UniRef 重构 v1 身份 schema，完成身份隔离后才把 metadata 改为三插件支持交集。
 - PLAN-0002 使用 UniRef 0.4 的单一 `RefContext` 约束 Handler：上下文本身无法建立时跳过当前 Handler；当前 Ref 属性与 Alconna At 目标在 Handler 开头、业务副作用前求值，不增加 matcher 级 Ref 预检，事件传播沿用各命令现有的 `block` 设置。
+- Alconna `At` 允许 user、role 和 channel；群友互动在申请冷却前只接受 user At，其他类型沿用依赖跳过语义且不写入冷却；管理和群主忽略附带的 At，仍按成员角色选择目标。
 - 插件发布到 NoneBot 插件市场前，数据库始终按全新 v1 处理，不编写迁移兼容代码。
-- 第一轮不修改玩法、提示语、随机调用次序、冷却时机和数据提交边界。
+- 第一轮不修改有效命令的玩法、提示语、随机调用次序、冷却时机和数据提交边界；类型不适用的 At 在业务副作用前跳过。
 
 ### 迁移与测试顺序
 
@@ -101,7 +102,7 @@ Adapter event
    - 覆盖默认本人、显式目标、`@全体`、PK 必须有目标、历史选项、别名与参数失败输出。
 8. `refactor: 迁移排行榜与群友互动命令`
    - 排行榜昵称查询和群成员选择通过狭窄 MemberDirectory helper。
-   - 群友允许显式 At，并在缺少成员枚举时要求指定目标；管理和群主不接受 At，只从成员角色自动选择，无法取得对应角色时返回“没找到管理/群主”。
+   - 群友使用显式 At，并在缺少成员枚举时要求指定目标；管理和群主忽略附带的 At，只从成员角色自动选择，无法取得对应角色时返回“没找到管理/群主”。
 9. `test: 验证排行榜与群友互动命令`
    - 覆盖成员列表、owner/admin 选择、找不到目标、反透、图片输出和 Adapter 降级。
 10. `refactor: 使用UniMessage统一回复`
@@ -111,10 +112,10 @@ Adapter event
     - 测试 UniMessage segment 结构；保留 OneBot 行为测试，并为当前三插件交集中的 Adapter 增加最小渲染测试。
 12. `refactor: 优化银趴与互动命令结构`
     - `银趴` 作为根命令，开启/开始和禁止/关闭映射为一个布尔参数，查询与帮助/介绍保留子命令；使用三个 dispatch 保持开关权限及查询、帮助公开访问相互独立。
-    - `透` 作为互动根命令、`日` 作为 alias，群友、管理、群主使用独立子命令；只有群友子命令接受可选 At。
+    - `透` 作为互动根命令、`日` 作为 alias，群友、管理、群主映射为一个必填 `kind` 参数，其后共享可选 At；只有群友使用 At，管理和群主忽略它。
     - 根命令使用 compact，同时接受有空格和无空格形式；不注册旧版动作前置 shortcut。
 13. `test: 验证分组命令语法`
-    - 覆盖根命令 alias、子命令 alias、dispatch path、权限边界、有/无空格，并验证旧格式不再匹配。
+    - 覆盖根命令 alias、子命令 alias、互动 kind 映射、群开关 dispatch path、权限边界、有/无空格，并验证旧格式不再匹配。
 14. `refactor: 按功能组织模块级Handler`
     - 删除无状态 `Impart` 类和单例；command grammar 与 matcher 策略共同归属 `matchers.py`，handler 按 `game`、`interaction`、`records`、`control` 归入 `handlers/`，生命周期归属 `bot/__init__.py`。
     - 只把跨功能复用的未开启文案与用户目录辅助函数放进 `handlers/shared.py`；定时任务直接调用 application service，不创建无业务价值的 Handler 包装。
@@ -140,7 +141,7 @@ Adapter event
 | `嗦牛子/嗦/suo` | `use_cmd_start=True`；可选 `At` | 无目标默认本人，`AtAll` 与额外参数不匹配 |
 | 银趴查询 | `银趴/impart` + `查询` 子命令；可选 `At` | compact 支持有/无空格；无目标默认本人，不再接受独立 `查询` 或 `/查询` |
 | 排行榜别名 | `银趴/impart` + `排行榜/排名/榜单/rank` 精确命令头 | 无前缀、英文大小写不敏感，不接收尾随内容 |
-| 日/透系列 | `透` 根命令 + `日` alias + 群友/管理/群主子命令 | compact 支持 `透群友`/`透 群友`；仅群友接受可选 At，管理和群主拒绝指定目标及任意黏连尾巴 |
+| 日/透系列 | `透` 根命令 + `日` alias + 群友/管理/群主 kind 参数 | compact 支持 `透群友`/`透 群友`；三种 kind 后均可解析可选 At，群友使用目标，管理和群主忽略目标；其他黏连尾巴不匹配 |
 | 银趴开关与帮助 | `银趴` 根命令 + 布尔开关参数 + 帮助子命令 | 开启/开始映射 `True`，禁止/关闭映射 `False`；compact 支持有/无空格，dispatch 分离管理员权限，不兼容动作前置旧格式 |
 | 注入查询系列 | `use_cmd_start=True`；可选 `At` + 历史 Option | “历史/全部”是正式选项，不再按任意文本子串判断 |
 
@@ -149,7 +150,7 @@ Adapter event
 - 2026-08-30：迁移实现先于对应测试，但每个命令切片迁移后立即补测试。
 - 2026-08-30：Alconna 迁移不得顺带修改游戏规则、数据库提交顺序、冷却时机或文案。
 - 2026-08-30：UniRef 持久化身份不与 matcher 迁移强行绑定，在接入切片后作为独立计划实施。
-- 2026-09-03 · D-002：只有群友允许显式 At；管理和群主只能按成员角色自动选择，找不到时分别回复“没找到管理”“没找到群主”。最终目标等于发起者时统一回复“你透你自己?”并释放冷却；管理员优先选择其他人，只有发起者自己时再进入统一自我目标判断。
+- 2026-09-03 · D-002：只有群友使用显式 At；管理和群主忽略附带的 At，只按成员角色自动选择，找不到时分别回复“没找到管理”“没找到群主”。最终目标等于发起者时统一回复“你透你自己?”并释放冷却；管理员优先选择其他人，只有发起者自己时再进入统一自我目标判断。
 - 2026-08-31 · D-003：命令使用原生 command start、无前缀设置、alias、子命令、Option 与 typed Args 明确定义 grammar；不提供旧格式 shortcut、任意尾随文本或消息内 At 扫描兼容。
 - 2026-08-31 · D-001：不把支持范围限制为 OneBot V11；完成 UniRef v1 身份重构后，使用 NoneBot `inherit_supported_adapters()` 直接继承 Alconna、Uninfo、UniRef 三插件支持集合的交集，不手写 Adapter 名单。
 - 2026-08-31 · D-004：UniMessage 发送统一采用 `fallback="auto"`，尽量导出为当前 Adapter 可发送的表现。
@@ -157,13 +158,14 @@ Adapter event
 - 2026-09-02：`银趴` 的开启/禁止及其 alias 共享权限和执行逻辑，直接解析为一个布尔参数并共用 toggle dispatch；帮助仍使用独立子命令。
 - 2026-09-02：通用词“查询”并入 `银趴/impart` 根命令，使用 `查询` 子命令和独立 dispatch，不增加“状态”“长度” alias；移除独立 `查询`、`/查询` 入口，匹配后允许阻断传播。
 - 2026-08-31：`Impart` 类没有实例状态，不承担应用服务职责；迁移稳定后删除该命名空间类，改用模块级装饰器 handler。当前命令数量较少，grammar 与 matcher 一一对应，因此合并保存在 `matchers.py`，不再单设 `commands.py`。
-- 2026-09-03：群友、管理、群主因参数结构不同使用三个 dispatch matcher，但共同复用一个 `yinpa` Handler 和互动用例；其他业务 Handler 保持与 matcher 一一对应。接入代码按 `game`、`interaction`、`records`、`control` 功能拆分，共享模块只容纳跨功能辅助函数和文案。
+- 2026-09-03：群友、管理、群主属于同一互动动作，使用一个必填 `kind` 参数、一个 matcher 和一个 `yinpa` Handler；可选 At 统一由 grammar 接收，再由 Handler 只应用于群友目标。其他业务 Handler 保持与 matcher 一一对应。接入代码按 `game`、`interaction`、`records`、`control` 功能拆分，共享模块只容纳跨功能辅助函数和文案。
+- 2026-09-03 · D-005：Discord 群主角色准确性和真实 Adapter fixture 是插件市场发布门槛；等待或推动上游按真实 owner 身份提供角色，不在本插件增加 Discord 专用查询分支。
 
 ## 实施进度
 
 | 状态 | 当前工作项 | 结果或下一步 |
 |---|---|---|
-| 进行中 | 验证跨 Adapter 实际事件 | grammar/matcher、Ref 身份、动态 Adapter 交集和通用消息边界已完成；继续补充六个 Adapter 的权限、成员目录与消息 fixture |
+| 进行中 | 验证跨 Adapter 实际事件 | grammar/matcher、Ref 身份、动态 Adapter 交集和通用消息边界已完成；互动输入副作用顺序、随机调用顺序和成员查询异常日志已收敛，继续补充六个 Adapter 的权限、成员目录与消息 fixture |
 
 ## 完成标准与验证
 
@@ -172,9 +174,9 @@ Adapter event
 | 插件加载 | Alconna、Uninfo 和所有 matcher 正常注册，无重复命令 | 插件加载测试、matcher 数量与命令解析自检 |
 | 使用 command start 的命令及别名 | 读取 `COMMAND_START`；主命令和 alias 的无前缀、`/` 前缀行为符合声明 | Alconna parser test + NoneBug 行为测试 |
 | 无前缀命令 | 仅匹配结构化 grammar，`/` 前缀和未声明尾随内容不触发 | Alconna parser 参数化测试 |
-| `At`、无目标、`AtAll`、自己 | PK 必填 At；可选 At 命令按声明默认本人；未声明消息段解析失败 | 参数化 parser 与行为测试 |
+| user/role/channel `At`、无目标、`AtAll`、自己 | PK 必填 user At；可选 At 命令按声明默认本人；群友互动的非 user At 在申请冷却前跳过，管理和群主忽略 At；未声明消息段解析失败 | 参数化 parser、Handler 副作用与行为测试 |
 | 群未开启、冷却、用户创建、挑战状态 | application 的调用与回复未改变 | NoneBug + fake DataManager/Cooldown |
-| 管理权限 | OneBot 现有 owner/admin/superuser 行为保持；新平台按 D-001 与已确认的显式 At 降级策略 | 各 Adapter 权限 fixture 或明确的未覆盖说明 |
+| 管理权限 | OneBot 现有 owner/admin/superuser 行为保持；新平台按 D-001 与已确认的显式 At 降级策略；Discord 只有真实 `owner_id` 对应成员成为群主目标 | 各 Adapter 权限 fixture；Discord 覆盖 owner、仅 Administrator、Administrator + Manage Guild、仅 Manage Guild 四类成员 |
 | 无成员枚举平台的互动命令 | 群友无 At 时要求指定目标；管理和群主返回各自未找到提示，不允许通过 At 绕过角色选择 | MemberDirectory capability fake + 行为测试 |
 | 文本、at sender、PNG | UniMessage 可导出并发送；无法原样导出时使用 `auto` fallback | segment 单测与各支持 Adapter 行为测试 |
 | 依赖加载顺序 | Alconna、Uninfo、UniRef 均在继承支持集合前完成 `require()` | 插件加载测试 |
