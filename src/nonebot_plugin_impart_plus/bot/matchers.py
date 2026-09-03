@@ -15,8 +15,6 @@ GROW_COMMAND = Alconna("打胶")
 
 SUO_COMMAND = Alconna("嗦牛子", Args["target?", At])
 
-QUERY_COMMAND = Alconna("查询", Args["target?", At])
-
 INJECTION_QUERY_COMMAND = Alconna(
     "注入查询",
     Args["target?", At],
@@ -33,8 +31,20 @@ INTERACTION_COMMAND = Alconna(
 
 IMPART_COMMAND = Alconna(
     "银趴",
-    Subcommand("开启", alias=["开始"], dest="enable"),
-    Subcommand("禁止", alias=["关闭"], dest="disable"),
+    Args[
+        "enabled?",
+        {
+            "开启": True,
+            "开始": True,
+            "禁止": False,
+            "关闭": False,
+        },
+    ],
+    Subcommand(
+        "查询",
+        Args["target?", At],
+        dest="query",
+    ),
     Subcommand("帮助", alias=["介绍"], dest="help"),
     meta=CommandMeta(compact=True),
 )
@@ -69,15 +79,6 @@ suo_matcher = on_alconna(
     block=True,
 )
 
-query_matcher = on_alconna(
-    QUERY_COMMAND,
-    rule=public_scene,
-    auto_send_output=False,
-    use_cmd_start=True,
-    priority=20,
-    block=False,
-)
-
 rank_matcher = on_alconna(
     RANK_COMMAND,
     rule=public_scene,
@@ -107,17 +108,16 @@ impart_matcher = on_alconna(
     block=False,
 )
 
-enable_matcher = impart_matcher.dispatch(
-    "enable",
+toggle_matcher = impart_matcher.dispatch(
+    "enabled",
     permission=SUPERUSER | ADMIN(),
     priority=9,
     block=True,
 )
 
-disable_matcher = impart_matcher.dispatch(
-    "disable",
-    permission=SUPERUSER | ADMIN(),
-    priority=9,
+query_matcher = impart_matcher.dispatch(
+    "query",
+    priority=19,
     block=True,
 )
 

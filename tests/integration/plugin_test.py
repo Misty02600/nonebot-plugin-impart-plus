@@ -39,20 +39,20 @@ def test_alconna_matcher_registration(app: App):
     plugin = get_plugin("nonebot_plugin_impart_plus")
 
     assert plugin is not None
-    assert len(plugin.matcher) == 11
+    assert len(plugin.matcher) == 10
     assert all(issubclass(matcher, AlconnaMatcher) for matcher in plugin.matcher)
 
     dispatch_matchers = {
         matcher.basepath: matcher
         for matcher in plugin.matcher
-        if matcher.basepath in {"enable", "disable", "help"}
+        if matcher.basepath in {"enabled", "query", "help"}
     }
-    assert set(dispatch_matchers) == {"enable", "disable", "help"}
-    assert dispatch_matchers["enable"].priority == 10
-    assert dispatch_matchers["disable"].priority == 10
+    assert set(dispatch_matchers) == {"enabled", "query", "help"}
+    assert dispatch_matchers["enabled"].priority == 10
+    assert dispatch_matchers["query"].priority == 20
     assert dispatch_matchers["help"].priority == 20
-    assert len(dispatch_matchers["enable"].permission.checkers) == 2
-    assert len(dispatch_matchers["disable"].permission.checkers) == 2
+    assert len(dispatch_matchers["enabled"].permission.checkers) == 2
+    assert len(dispatch_matchers["query"].permission.checkers) == 0
     assert len(dispatch_matchers["help"].permission.checkers) == 0
     assert all(matcher.block for matcher in dispatch_matchers.values())
 

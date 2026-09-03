@@ -4,29 +4,43 @@ from .bot_test_utils import make_session
 
 
 @pytest.mark.parametrize(
-    ("message", "subcommand", "matched"),
+    ("message", "enabled", "subcommand", "matched"),
     [
-        ("银趴帮助", "help", True),
-        ("银趴 帮助", "help", True),
-        ("impart介绍", "help", True),
-        ("银趴开启", "enable", True),
-        ("银趴 禁止", "disable", True),
-        ("开始银趴", "", False),
-        ("关闭impart", "", False),
-        ("银趴帮助尾巴", "", False),
-        ("/银趴帮助", "", False),
+        ("银趴帮助", None, "help", True),
+        ("银趴 帮助", None, "help", True),
+        ("impart介绍", None, "help", True),
+        ("银趴开启", True, None, True),
+        ("银趴 开始", True, None, True),
+        ("银趴禁止", False, None, True),
+        ("银趴 关闭", False, None, True),
+        ("银趴查询", None, "query", True),
+        ("银趴 查询", None, "query", True),
+        ("impart状态", None, None, False),
+        ("银趴长度", None, None, False),
+        ("开始银趴", None, None, False),
+        ("关闭impart", None, None, False),
+        ("查询", None, None, False),
+        ("/查询", None, None, False),
+        ("银趴帮助尾巴", None, None, False),
+        ("银趴开启尾巴", None, None, False),
+        ("银趴查询尾巴", None, None, False),
+        ("/银趴帮助", None, None, False),
+        ("/银趴查询", None, None, False),
     ],
 )
 def test_impart_command_group(
     message: str,
-    subcommand: str,
+    enabled: bool | None,
+    subcommand: str | None,
     matched: bool,
 ):
     from nonebot_plugin_impart_plus.bot.matchers import IMPART_COMMAND
 
     result = IMPART_COMMAND.parse(message)
     assert result.matched is matched
-    if matched:
+    if enabled is not None:
+        assert result.all_matched_args["enabled"] is enabled
+    if subcommand is not None:
         assert subcommand in result.subcommands
 
 
@@ -45,19 +59,22 @@ def test_growth_command_preserves_full_match(message: str, matched: bool):
     assert GROW_COMMAND.parse(message).matched is matched
 
 
-@pytest.mark.parametrize(
-    ("message", "matched"),
-    [
-        ("查询", True),
-        ("/查询", True),
-        ("查询尾巴", False),
-        ("/查询 尾巴", False),
-    ],
-)
-def test_query_command_uses_command_start(message: str, matched: bool):
-    from nonebot_plugin_impart_plus.bot.matchers import QUERY_COMMAND
+def test_query_subcommand_extracts_typed_target():
+    from nonebot_plugin_alconna import At, Text, UniMessage
 
-    assert QUERY_COMMAND.parse(message).matched is matched
+    from nonebot_plugin_impart_plus.bot.matchers import (
+        IMPART_COMMAND,
+        query_matcher,
+    )
+
+    result = IMPART_COMMAND.parse(
+        UniMessage([Text("银趴查询 "), At("user", "67890")]),
+    )
+
+    assert result.matched is True
+    assert result.all_matched_args["target"].target == "67890"
+    assert "query" in result.subcommands
+    assert query_matcher.block is True
 
 
 @pytest.mark.parametrize(

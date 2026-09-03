@@ -29,11 +29,11 @@ async def test_toggle_handler_uses_uninfo_scene(
 
     monkeypatch.setattr(control.game_app, "set_group_enabled", set_group_enabled)
     matcher = MatcherStub()
-    handler = control.enable_module if enabled else control.disable_module
 
-    await handler(
+    await control.toggle_module(
         cast(Matcher, matcher),
         make_session(SceneType.GROUP, "12345"),
+        enabled,
     )
 
     assert calls == [(12345, enabled)]

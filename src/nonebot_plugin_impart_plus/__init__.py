@@ -21,7 +21,7 @@ __plugin_meta__ = PluginMetadata(
 增加自己长度
 [嗦牛子|嗦]
 增加@用户长度(若未@则为自己)
-[查询]
+[银趴|impart][查询]
 查询@用户长度(若未@则为自己)
 [银趴|impart][排行榜|排名|榜单|rank]
 输出倒数五位/前五位/自己的排名
@@ -29,7 +29,7 @@ __plugin_meta__ = PluginMetadata(
 查询@用户被透注入的量(后接<历史/全部>可查看总被摄入的量)(若未@则为自己)
 [银趴|impart][开启|禁止|帮助]
 由管理员|群主|SUPERUSERS开启或者关闭impart
-子命令前的空格可以省略，例如<银趴开启>, <银趴 帮助>
+子命令前的空格可以省略，例如<银趴开启>, <银趴 查询>
 """,
     description="NoneBot2 银趴插件 Plus",
     type="application",
