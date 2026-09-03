@@ -86,6 +86,9 @@ async def pk(
             _created_user_message(outcome.created_users, user_ref, target_ref),
             at_sender=True,
         )
+    if outcome.type is PkOutcomeType.WORLD_MISMATCH:
+        name = choice(JJ_NAMES) if outcome.mode is GrowthMode.LENGTH else HOLE_NAME
+        await matcher.finish(f"你只能和有{name}的人pk！", at_sender=True)
 
     if outcome.resolution is None:
         return
@@ -98,6 +101,16 @@ async def pk(
 async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
     resolution = outcome.resolution
     if resolution is None:
+        return
+    if outcome.mode is GrowthMode.DEPTH:
+        uid_msg = (
+            f"对决胜利喵, 你的{HOLE_NAME}加深了{resolution.length_increase}cm喵, "
+            f"对面则在你{HOLE_NAME}的深暗压迫下变浅了{resolution.length_decrease}cm喵"
+        )
+        await matcher.finish(
+            f"{uid_msg}\n你的胜率现在为{outcome.attacker_probability:.0%}喵",
+            at_sender=True,
+        )
         return
     uid_msg = f"对决胜利喵, 你的{choice(JJ_NAMES)}增加了{resolution.length_increase}cm喵, 对面则在你的阴影笼罩下减小了{resolution.length_decrease}cm喵"
 
@@ -134,6 +147,16 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
 async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
     resolution = outcome.resolution
     if resolution is None:
+        return
+    if outcome.mode is GrowthMode.DEPTH:
+        uid_msg = (
+            f"对决失败喵, 在对面{HOLE_NAME}的深暗压迫下你的{HOLE_NAME}"
+            f"变浅了{resolution.length_decrease}cm喵, 对面加深了{resolution.length_increase}cm喵"
+        )
+        await matcher.finish(
+            f"{uid_msg}\n你的胜率现在为{outcome.attacker_probability:.0%}喵",
+            at_sender=True,
+        )
         return
     uid_msg = f"对决失败喵, 在对面{choice(JJ_NAMES)}的阴影笼罩下你的{choice(JJ_NAMES)}减小了{resolution.length_decrease}cm喵, 对面增加了{resolution.length_increase}cm喵"
 

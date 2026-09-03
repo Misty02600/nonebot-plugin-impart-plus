@@ -28,12 +28,14 @@ class PkOutcomeType(StrEnum):
     COOLING_DOWN = "cooling_down"
     SELF_TARGET = "self_target"
     USERS_CREATED = "users_created"
+    WORLD_MISMATCH = "world_mismatch"
     COMPLETED = "completed"
 
 
 @dataclass(frozen=True, slots=True)
 class PkOutcome:
     type: PkOutcomeType
+    mode: GrowthMode = GrowthMode.LENGTH
     remaining: float = 0
     created_users: tuple[UserRef, ...] = ()
     resolution: PkResolution | None = None
@@ -186,6 +188,12 @@ class GameApplication:
                 created_users=created_users,
             )
 
+        attacker_length = await self._data.get_jj_length(attacker_ref)
+        defender_length = await self._data.get_jj_length(defender_ref)
+        mode = GrowthMode.LENGTH if attacker_length > 0 else GrowthMode.DEPTH
+        if not supports_growth_mode(defender_length, mode):
+            return PkOutcome(PkOutcomeType.WORLD_MISMATCH, mode=mode)
+
         await self.penalties_and_resets()
         if not await self._cooldown.pkcd_check(attacker_ref):
             remaining = round(
@@ -203,27 +211,28 @@ class GameApplication:
             win_roll=win_roll,
             random_num=get_random_num(),
         )
+        direction = 1 if mode is GrowthMode.LENGTH else -1
         if resolution.won:
             await self._data.set_win_probability(attacker_ref, -0.01)
             await self._data.set_win_probability(defender_ref, 0.01)
             await self._data.set_jj_length(
                 attacker_ref,
-                resolution.random_num / 2,
+                direction * resolution.random_num / 2,
             )
             await self._data.set_jj_length(
                 defender_ref,
-                -resolution.random_num,
+                -direction * resolution.random_num,
             )
         else:
             await self._data.set_win_probability(attacker_ref, 0.01)
             await self._data.set_win_probability(defender_ref, -0.01)
             await self._data.set_jj_length(
                 attacker_ref,
-                -resolution.random_num,
+                -direction * resolution.random_num,
             )
             await self._data.set_jj_length(
                 defender_ref,
-                resolution.random_num / 2,
+                direction * resolution.random_num / 2,
             )
 
         attacker_status = await self._data.update_challenge_status(attacker_ref)
@@ -231,6 +240,7 @@ class GameApplication:
         probability = await self._data.get_win_probability(attacker_ref)
         return PkOutcome(
             PkOutcomeType.COMPLETED,
+            mode=mode,
             resolution=resolution,
             attacker_status=attacker_status,
             defender_status=defender_status,

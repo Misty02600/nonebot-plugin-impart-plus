@@ -228,6 +228,84 @@ async def test_length_commands_initialize_missing_users_without_action(
     assert await manager.get_jj_length(query_target) == 13.0
 
 
+async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.app import PkOutcomeType
+
+    manager = game_harness.manager
+    application = game_harness.application
+    cooldown = game_harness.cooldown
+    scene = game_harness.scene
+    mode = game_harness.growth_mode
+    positive = (UserRef("QQClient", "50"), UserRef("QQClient", "51"))
+    negative_win = (UserRef("QQClient", "52"), UserRef("QQClient", "53"))
+    negative_loss = (UserRef("QQClient", "54"), UserRef("QQClient", "55"))
+    await manager.set_scene_enabled(scene, True)
+    for user in (*positive, *negative_win, *negative_loss):
+        await manager.add_new_user(user)
+    for user in (*negative_win, *negative_loss):
+        await manager.set_jj_length(user, -20.0)
+
+    penalty_calls = 0
+
+    async def track_penalty() -> None:
+        nonlocal penalty_calls
+        penalty_calls += 1
+
+    win_rolls = iter((0.0, 0.0, 1.0))
+    win_roll_calls = 0
+
+    def fixed_win_roll() -> float:
+        nonlocal win_roll_calls
+        win_roll_calls += 1
+        return next(win_rolls)
+
+    growth_roll_calls = 0
+
+    def fixed_growth_roll() -> float:
+        nonlocal growth_roll_calls
+        growth_roll_calls += 1
+        return 1.25
+
+    monkeypatch.setattr(manager, "punish_all_inactive_users", track_penalty)
+    monkeypatch.setattr(app_module.random, "random", fixed_win_roll)
+    monkeypatch.setattr(app_module, "get_random_num", fixed_growth_roll)
+
+    mixed_positive = await application.execute_pk(scene, positive[0], negative_win[0])
+    mixed_negative = await application.execute_pk(scene, negative_win[0], positive[0])
+
+    assert mixed_positive.type is PkOutcomeType.WORLD_MISMATCH
+    assert mixed_positive.mode is mode.LENGTH
+    assert mixed_negative.type is PkOutcomeType.WORLD_MISMATCH
+    assert mixed_negative.mode is mode.DEPTH
+    assert penalty_calls == win_roll_calls == growth_roll_calls == 0
+    assert cooldown.pk_cd_data == {}
+    assert await manager.get_jj_length(positive[0]) == 10.0
+    assert await manager.get_jj_length(negative_win[0]) == -10.0
+
+    positive_result = await application.execute_pk(scene, *positive)
+    negative_win_result = await application.execute_pk(scene, *negative_win)
+    negative_loss_result = await application.execute_pk(scene, *negative_loss)
+
+    assert positive_result.mode is mode.LENGTH
+    assert negative_win_result.mode is mode.DEPTH
+    assert negative_loss_result.mode is mode.DEPTH
+    assert await manager.get_jj_length(positive[0]) == 10.625
+    assert await manager.get_jj_length(positive[1]) == 8.75
+    assert await manager.get_jj_length(negative_win[0]) == -10.625
+    assert await manager.get_jj_length(negative_win[1]) == -8.75
+    assert await manager.get_jj_length(negative_loss[0]) == -8.75
+    assert await manager.get_jj_length(negative_loss[1]) == -10.625
+    assert await manager.get_win_probability(negative_loss[0]) == 0.51
+    assert await manager.get_win_probability(negative_loss[1]) == 0.49
+    assert penalty_calls == win_roll_calls == growth_roll_calls == 3
+
+
 async def test_self_growth_applies_signed_direction_and_skips_depth_challenge(
     game_harness,
     monkeypatch: pytest.MonkeyPatch,

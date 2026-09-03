@@ -268,6 +268,82 @@ async def test_pk_handler_requires_and_uses_mention(
     assert missing_matcher.messages == ["请at你要pk的目标"]
 
 
+async def test_pk_handler_renders_world_specific_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_uniref import SceneRef, UserRef
+
+    from nonebot_plugin_impart_plus.bot.handlers import game
+    from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode, PkResolution
+
+    current_mode = GrowthMode.LENGTH
+
+    async def execute_pk(
+        _: SceneRef,
+        __: UserRef,
+        ___: UserRef | None,
+    ) -> PkOutcome:
+        return PkOutcome(PkOutcomeType.WORLD_MISMATCH, mode=current_mode)
+
+    monkeypatch.setattr(game.game_app, "execute_pk", execute_pk)
+    monkeypatch.setattr(game, "choice", lambda _: "牛牛")
+    mismatch_messages: list[str] = []
+    for mode in (GrowthMode.LENGTH, GrowthMode.DEPTH):
+        current_mode = mode
+        matcher = FinishingMatcherStub()
+        with pytest.raises(FinishedException):
+            await game.pk(
+                cast(Matcher, matcher),
+                make_ref_context(scene_id="12345"),
+                Match((At("user", "67890"),), True),
+            )
+        mismatch_messages.extend(matcher.messages)
+
+    assert mismatch_messages[0] == "你只能和有牛牛的人pk！"
+    assert mismatch_messages[1] == "你只能和有小学的人pk！"
+
+    outcomes = (
+        PkOutcome(
+            PkOutcomeType.COMPLETED,
+            mode=GrowthMode.LENGTH,
+            resolution=PkResolution(True, 1.5, 0.75, 1.5),
+            attacker_probability=0.49,
+        ),
+        PkOutcome(
+            PkOutcomeType.COMPLETED,
+            mode=GrowthMode.DEPTH,
+            resolution=PkResolution(True, 1.5, 0.75, 1.5),
+            defender_status="length_near_zero",
+            attacker_probability=0.49,
+        ),
+        PkOutcome(
+            PkOutcomeType.COMPLETED,
+            mode=GrowthMode.DEPTH,
+            resolution=PkResolution(False, 1.5, 0.75, 1.5),
+            attacker_status="length_near_zero",
+            attacker_probability=0.51,
+        ),
+    )
+    result_messages: list[str] = []
+    for handler, outcome in zip(
+        (game._handle_pk_win, game._handle_pk_win, game._handle_pk_loss),
+        outcomes,
+        strict=True,
+    ):
+        matcher = FinishingMatcherStub()
+        with pytest.raises(FinishedException):
+            await handler(cast(Matcher, matcher), outcome)
+        result_messages.extend(matcher.messages)
+
+    assert result_messages == [
+        "对决胜利喵, 你的牛牛增加了0.75cm喵, 对面则在你的阴影笼罩下减小了1.5cm喵\n你的胜率现在为49%喵",
+        "对决胜利喵, 你的小学加深了0.75cm喵, 对面则在你小学的深暗压迫下变浅了1.5cm喵\n你的胜率现在为49%喵",
+        "对决失败喵, 在对面小学的深暗压迫下你的小学变浅了1.5cm喵, 对面加深了0.75cm喵\n你的胜率现在为51%喵",
+    ]
+
+
 async def test_target_growth_handler_requires_target_and_uses_mode(
     monkeypatch: pytest.MonkeyPatch,
 ):
