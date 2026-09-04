@@ -65,8 +65,7 @@ def _create_early_legacy_database(path: Path) -> None:
             """
             CREATE TABLE userdata (
                 userid INTEGER PRIMARY KEY,
-                jj_length FLOAT NOT NULL,
-                last_masturbation_time INTEGER NOT NULL
+                jj_length FLOAT NOT NULL
             );
             CREATE TABLE groupdata (
                 groupid INTEGER PRIMARY KEY,
@@ -78,7 +77,7 @@ def _create_early_legacy_database(path: Path) -> None:
                 date VARCHAR(20) NOT NULL,
                 volume FLOAT NOT NULL
             );
-            INSERT INTO userdata VALUES (30001, 11.5, 9876);
+            INSERT INTO userdata VALUES (30001, 11.5);
             """
         )
 
@@ -152,7 +151,6 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
             user.user_ref: (
                 user.user_namespace,
                 user.jj_length,
-                user.last_masturbation_time,
                 user.win_probability,
                 user.is_challenging,
                 user.challenge_completed,
@@ -164,7 +162,6 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
             encode_ref(UserRef("QQClient", "10001")): (
                 "QQClient",
                 26.5,
-                1234,
                 0.4,
                 True,
                 False,
@@ -174,7 +171,6 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
             encode_ref(UserRef("QQClient", "10002")): (
                 "QQClient",
                 -8.25,
-                5678,
                 0.6,
                 False,
                 True,
@@ -242,7 +238,6 @@ async def test_defaults_old_columns_and_skips_non_empty_target(
                     user_ref=encode_ref(UserRef("QQClient", "existing")),
                     user_namespace="QQClient",
                     jj_length=10.0,
-                    last_masturbation_time=1,
                     win_probability=0.5,
                 )
             )

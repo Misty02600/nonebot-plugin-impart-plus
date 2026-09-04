@@ -81,7 +81,7 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
         user_columns = _require_columns(
             connection,
             "userdata",
-            {"userid", "jj_length", "last_masturbation_time"},
+            {"userid", "jj_length"},
         )
         _require_columns(connection, "groupdata", {"groupid", "allow"})
         _require_columns(
@@ -100,7 +100,6 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
         selected_user_columns = (
             "userid",
             "jj_length",
-            "last_masturbation_time",
             *(name for name in optional_user_columns if name in user_columns),
         )
         user_rows = connection.execute(
@@ -112,7 +111,6 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
                 "user_ref": encode_ref(UserRef(_QQ_NAMESPACE, str(row["userid"]))),
                 "user_namespace": _QQ_NAMESPACE,
                 "jj_length": float(row["jj_length"]),
-                "last_masturbation_time": int(row["last_masturbation_time"]),
                 "win_probability": float(
                     _optional_value(
                         row,

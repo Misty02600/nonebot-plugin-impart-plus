@@ -26,7 +26,6 @@ class UserData(Model):
         index=True,
     )
     jj_length: Mapped[float]
-    last_masturbation_time: Mapped[int] = mapped_column(default=0)
     win_probability: Mapped[float] = mapped_column(default=0.5)
     is_challenging: Mapped[bool] = mapped_column(default=False)
     challenge_completed: Mapped[bool] = mapped_column(default=False)

@@ -78,7 +78,6 @@ def upgrade(name: str = "") -> None:
         sa.Column("user_ref", sa.String(length=255), nullable=False),
         sa.Column("user_namespace", sa.String(length=128), nullable=False),
         sa.Column("jj_length", sa.Float(), nullable=False),
-        sa.Column("last_masturbation_time", sa.Integer(), nullable=False),
         sa.Column("win_probability", sa.Float(), nullable=False),
         sa.Column("is_challenging", sa.Boolean(), nullable=False),
         sa.Column("challenge_completed", sa.Boolean(), nullable=False),

@@ -90,11 +90,7 @@ def game_harness(database_harness):
     )
     return SimpleNamespace(
         manager=database_harness.manager,
-        application=GameApplication(
-            database_harness.manager,
-            cooldown,
-            penalties_enabled=True,
-        ),
+        application=GameApplication(database_harness.manager, cooldown),
         cooldown=cooldown,
         scene=SceneRef("QQClient", SceneKind.GROUP, "100"),
         user=UserRef("QQClient", "1"),
@@ -130,6 +126,7 @@ async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
     assert set(schema) == {user_table, scene_table, ejaculation_table}
     assert {"user_ref", "user_namespace"} <= schema[user_table]
     assert "userid" not in schema[user_table]
+    assert "last_masturbation_time" not in schema[user_table]
     assert {"scene_ref", "scene_namespace", "scene_type"} <= schema[scene_table]
     assert "groupid" not in schema[scene_table]
     assert "user_ref" in schema[ejaculation_table]
@@ -281,13 +278,9 @@ async def test_gameplay_commands_initialize_missing_users_without_action(
     await manager.add_new_user(query_target)
     await manager.set_jj_length(query_target, 3.0)
 
-    async def unexpected_penalty() -> None:
-        raise AssertionError("首次初始化不应执行全局惩罚")
-
     def unexpected_random() -> float:
         raise AssertionError("首次初始化不应消费随机数")
 
-    monkeypatch.setattr(manager, "punish_all_inactive_users", unexpected_penalty)
     monkeypatch.setattr(app_module, "get_random_num", unexpected_random)
     monkeypatch.setattr(app_module.random, "random", unexpected_random)
 
@@ -439,12 +432,6 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     for user in (*negative_win, *negative_loss):
         await manager.set_jj_length(user, -20.0)
 
-    penalty_calls = 0
-
-    async def track_penalty() -> None:
-        nonlocal penalty_calls
-        penalty_calls += 1
-
     win_rolls = iter((0.0, 0.0, 1.0))
     win_roll_calls = 0
 
@@ -460,7 +447,6 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
         growth_roll_calls += 1
         return 1.25
 
-    monkeypatch.setattr(manager, "punish_all_inactive_users", track_penalty)
     monkeypatch.setattr(app_module.random, "random", fixed_win_roll)
     monkeypatch.setattr(app_module, "get_random_num", fixed_growth_roll)
 
@@ -471,7 +457,7 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert mixed_positive.mode is mode.LENGTH
     assert mixed_negative.type is PkOutcomeType.WORLD_MISMATCH
     assert mixed_negative.mode is mode.DEPTH
-    assert penalty_calls == win_roll_calls == growth_roll_calls == 0
+    assert win_roll_calls == growth_roll_calls == 0
     assert cooldown.pk_cd_data == {}
     assert await manager.get_jj_length(positive[0]) == 10.0
     assert await manager.get_jj_length(negative_win[0]) == -10.0
@@ -491,7 +477,7 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert await manager.get_jj_length(negative_loss[1]) == -10.625
     assert await manager.get_win_probability(negative_loss[0]) == 0.51
     assert await manager.get_win_probability(negative_loss[1]) == 0.49
-    assert penalty_calls == win_roll_calls == growth_roll_calls == 3
+    assert win_roll_calls == growth_roll_calls == 3
 
 
 async def test_self_growth_applies_signed_direction_and_checks_both_challenges(
@@ -790,7 +776,7 @@ async def test_application_ranking_is_partitioned_by_namespace(
         suo_cd_time=60,
         fuck_cd_time=60,
     )
-    application = GameApplication(manager, cooldown, penalties_enabled=False)
+    application = GameApplication(manager, cooldown)
     qq_scene = SceneRef("QQClient", SceneKind.GROUP, "100")
     telegram_scene = SceneRef("Telegram", SceneKind.GROUP, "100")
     qq_users = [UserRef("QQClient", str(index)) for index in range(6)]

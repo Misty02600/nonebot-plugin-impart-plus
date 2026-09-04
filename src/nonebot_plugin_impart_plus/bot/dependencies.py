@@ -24,5 +24,4 @@ data_manager = DataManager(get_session)
 game_app = GameApplication(
     data_manager,
     cooldown,
-    penalties_enabled=plugin_config.isalive,
 )

@@ -154,16 +154,9 @@ class GameApplication:
         self,
         data_manager: DataManager,
         cooldown: CooldownManager,
-        *,
-        penalties_enabled: bool,
     ) -> None:
         self._data = data_manager
         self._cooldown = cooldown
-        self._penalties_enabled = penalties_enabled
-
-    async def penalties_and_resets(self) -> None:
-        if self._penalties_enabled:
-            await self._data.punish_all_inactive_users()
 
     async def _create_missing_users(
         self,
@@ -209,7 +202,6 @@ class GameApplication:
         if not supports_growth_mode(defender_length, mode):
             return PkOutcome(PkOutcomeType.WORLD_MISMATCH, mode=mode)
 
-        await self.penalties_and_resets()
         if not await self._cooldown.pkcd_check(attacker_ref):
             remaining = round(
                 self._cooldown.pk_cd_time
@@ -278,7 +270,6 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        await self.penalties_and_resets()
         current_length = await self._data.get_jj_length(user_ref)
         if not supports_growth_mode(current_length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
@@ -334,7 +325,6 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        await self.penalties_and_resets()
         current_length = await self._data.get_jj_length(target_ref)
         if not supports_growth_mode(current_length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
@@ -386,7 +376,6 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        await self.penalties_and_resets()
         length = await self._data.get_jj_length(target_ref)
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
@@ -432,9 +421,6 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        await self.penalties_and_resets()
-        if not await self._data.is_scene_enabled(scene_ref):
-            return InteractionGuard(InteractionGuardType.DISABLED)
         if not await self._cooldown.fuck_cd_check(user_ref):
             remaining = round(
                 self._cooldown.fuck_cd_time
@@ -493,8 +479,6 @@ class GameApplication:
         lucky_user_ref: UserRef,
         resolution: InteractionResolution,
     ) -> InteractionResult:
-        await self._data.update_activity(lucky_user_ref)
-        await self._data.update_activity(user_ref)
         ejaculation = round(random.uniform(1, 100), 3)
         recipient = (
             user_ref
@@ -525,7 +509,6 @@ class GameApplication:
         *,
         history: bool,
     ) -> InjectionQueryResult:
-        await self.penalties_and_resets()
         if not await self._data.is_scene_enabled(scene_ref):
             return InjectionQueryResult(InjectionQueryType.DISABLED)
         data = await self._data.get_ejaculation_data(user_ref)

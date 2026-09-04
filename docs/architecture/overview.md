@@ -13,18 +13,18 @@
 | 核心能力或公开入口 | 对外含义 | 关键状态或副作用 | 主要实现位置 |
 |---|---|---|---|
 | 群开关与帮助 | `银趴` 根命令把开启/开始、禁止/关闭直接解析为一个布尔参数，帮助/介绍保留独立子命令；compact 允许有/无空格，开关限管理员、群主或超级用户 | 一个 toggle dispatch 和 Handler 持久化场景级 `allow` 状态；帮助 dispatch 保留独立权限与优先级；完整帮助文本来自 `PluginMetadata.usage`；与其他顶层命令一样从 NoneBot `COMMAND_START` 取得前缀 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/control.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/control.py) |
-| 长度与深度成长、查询 | `打胶/开导` 服务 `length > 0` 并增加本人长度，`开扣/挖矿` 服务 `length <= 0` 并增加绝对深度；`嗦` 只增加被 `@` 正值用户的长度，`舔` 只增加被 `@` 非正值用户的深度；`银趴/impart` 根命令下的 `查询` 子命令显示本人或被 `@` 用户的长度或深度状态 | 自我成长和目标成长分别各用一个 Alconna matcher；两者均由 Bracket Header 捕获 `action` 并通过对应映射取得 `GrowthMode`。目标成长必须 At 其他用户，允许多个 At 但严格只使用第一个，嗦与舔共享 `SUO_CD_TIME`；有效命令先初始化本次涉及的缺失用户，只有用户均已存在时才继续惩罚、世界检查、冷却与结算 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
-| 同世界 PK 与正负挑战 | `pk/对决` 必须 `@` 同世界其他用户；允许多个用户 At，但严格只使用第一个。正值双方结算长度，负值双方以相反方向结算深度，跨世界拒绝；胜负继续由发起者胜率判定 | 未提供目标时在场景开关检查后提示，第一个 At 是自己时拒绝；跨世界门禁早于不活跃惩罚和冷却。正负世界都按绝对量级评估挑战：正值使用“登神长阶”，负值使用“深渊试炼”；双方胜率、长度和状态仍通过多次独立提交更新 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
+| 长度与深度成长、查询 | `打胶/开导` 服务 `length > 0` 并增加本人长度，`开扣/挖矿` 服务 `length <= 0` 并增加绝对深度；`嗦` 只增加被 `@` 正值用户的长度，`舔` 只增加被 `@` 非正值用户的深度；`银趴/impart` 根命令下的 `查询` 子命令显示本人或被 `@` 用户的长度或深度状态 | 自我成长和目标成长分别各用一个 Alconna matcher；两者均由 Bracket Header 捕获 `action` 并通过对应映射取得 `GrowthMode`。目标成长必须 At 其他用户，允许多个 At 但严格只使用第一个，嗦与舔共享 `SUO_CD_TIME`；有效命令先初始化本次涉及的缺失用户，只有用户均已存在时才继续世界检查、冷却与结算 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
+| 同世界 PK 与正负挑战 | `pk/对决` 必须 `@` 同世界其他用户；允许多个用户 At，但严格只使用第一个。正值双方结算长度，负值双方以相反方向结算深度，跨世界拒绝；胜负继续由发起者胜率判定 | 未提供目标时在场景开关检查后提示，第一个 At 是自己时拒绝；跨世界门禁早于冷却。正负世界都按绝对量级评估挑战：正值使用“登神长阶”，负值使用“深渊试炼”；双方胜率、长度和状态仍通过多次独立提交更新 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
 | 群友互动 | `透/日/榨` 由同一个命令头解析，群友/管理/群主是必填目标类型；compact 允许有/无空格。正值用户主动透，非正值用户主动榨；动作与自身世界不匹配或 xnn 透触发反制时，由目标按其世界反透或反榨一次 | Uninfo 提供成员、角色、昵称与头像；群友使用首个 At 指定目标或随机选择，管理和群主忽略 At 并只按角色自动选择。core 一次确定实际动作、行动者、液体和接收者，application 在有效目标后记录共享冷却并把数量写给实际获得液体者；透与榨继续共用无类型注入总量 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
 | 排行榜与注入查询 | 在当前 `UserRef.namespace` 内显示长度前五、后五和本人排名；查询当天或历史注入量 | DataManager 通过 namespace 索引分榜，应用层返回类型化 Ref 条目，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
-| `Config` | 配置四类冷却时长和不活跃惩罚 | 牛牛与负值部位名称是代码内玩法常量，不属于部署配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
+| `Config` | 配置四类冷却时长 | 牛牛与负值部位名称是代码内玩法常量，不属于部署配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
 
 ## 逻辑组件与实现映射
 
 | 逻辑组件 | 当前职责 | 主要协作与边界 | 拥有的数据或状态 | 主要实现位置 |
 |---|---|---|---|---|
 | 插件入口与 bot 接入 | `matchers.py` 共同定义 grammar、matcher 和 dispatch；所有顶层 matcher 显式启用 `use_cmd_start=True`，由 NoneBot `COMMAND_START` 决定可用前缀；各 matcher 直接把 Uninfo `GROUP | GUILD` 作为公开场景 Rule checker；`handlers/` 用模块级装饰器按游戏、互动、记录、控制拆分事件处理 | Uninfo 解析场景、成员与权限；Handler 统一注入 UniRef `RefContext`，从属性取得当前 UserRef/SceneRef，并用 `build_user_ref()` 将 Alconna At 的用户 ID 限定到当前 identity family；身份上下文不适用时跳过当前 Handler，事件传播继续遵循 matcher 自身的 `block` 设置；UniMessage 发送回复 | 单次事件上下文；模块级机器人昵称 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/__init__.py) |
-| 应用用例 | 依次执行场景和命令语义检查、缺失用户初始化、全局惩罚、世界与 Ref 冷却检查、随机、core 计算和持久化，返回语义化 outcome | 身份参数只接受 `UserRef`/`SceneRef`；初始化 outcome 携带实际创建的 Ref，创建后不继续其他副作用；当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
+| 应用用例 | 依次执行场景和命令语义检查、缺失用户初始化、世界与 Ref 冷却检查、随机、core 计算和持久化，返回语义化 outcome | 身份参数只接受 `UserRef`/`SceneRef`；初始化 outcome 携带实际创建的 Ref，创建后不继续其他副作用；当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 核心规则 | 分类长度状态和正负成长模式，计算带符号成长增量、挑战、xnn、非正长度状态转换、PK 结果，以及互动的实际动作、行动者、液体和接收者 | 只依赖标准库；不导入 NoneBot、SQLAlchemy 或 Pillow；互动最多反制一次，目标自身不会再次触发反制 | 不持有运行状态 | [`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
 | 数据库与数据访问 | 三个模型继承 NoneBot ORM `Model`，由包内 Alembic migration 管理全新 v1 Ref schema；DataManager 执行游戏 CRUD，旧库导入器负责一次性复制上游数据 | NoneBot ORM 拥有 Engine、Session、默认数据库配置和 schema 生命周期；`default` extra 提供开箱即用的 SQLite 驱动，但不锁定后端，Bot 项目可通过 `SQLALCHEMY_DATABASE_URL` 和对应驱动改用其他数据库。模型显式使用默认 bind，不承诺 multidb 专用 bind。DataManager 独占日常 Ref codec 与 namespace/type 投影；编码 Ref 最长 255 字符、namespace 最长 128 字符，超限时在访问数据库前拒绝；每日互动总量通过条件更新和冲突重试维持并发累计。导入器只读取标准 LocalStore 旧库，将 OneBot V11 整数 ID 编码到 `QQClient`；目标任一业务表非空时即视为已有数据并跳过 | UserRef 用户状态、SceneRef 开关和按用户/日期唯一的互动总量 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py)、[`infra/legacy_import.py`](../../src/nonebot_plugin_impart_plus/infra/legacy_import.py)、[`migrations/`](../../src/nonebot_plugin_impart_plus/migrations/) |
 | 运行时与媒体基础设施 | 以 `UserRef` 保存四类冷却时间戳；使用 Pillow 和内置字体绘制图片 | 由 `bot/dependencies.py` 组装并提供给应用或 bot | 进程内 Ref 冷却字典；renderer 实例的调色板和字体路径 | [`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
@@ -33,22 +33,21 @@
 
 ## 运行时数据流
 
-1. NoneBot ORM 先完成 schema 启动检查或同步；随后插件在 APScheduler 启动前检查上游 LocalStore `nonebot_plugin_impart/impart.db`。源文件不存在、三个业务表任一非空或源库没有记录时跳过；只有目标全空且源库有数据时，才在一个目标 Session 中从同一个 SQLite 只读事务取得用户、群开关和注入记录快照并整体提交。多个 Bot 共用同一进程启动流程；不承诺多个 NoneBot 进程同时执行首次导入。
+1. NoneBot ORM 先完成 schema 启动检查或同步；随后插件启动时检查上游 LocalStore `nonebot_plugin_impart/impart.db`。源文件不存在、三个业务表任一非空或源库没有记录时跳过；只有目标全空且源库有数据时，才在一个目标 Session 中从同一个 SQLite 只读事务取得用户、群开关和注入记录快照并整体提交。多个 Bot 共用同一进程启动流程；不承诺多个 NoneBot 进程同时执行首次导入。
 2. 所有顶层 matcher 先把 NoneBot `COMMAND_START` 作为命令前缀，再由 Alconna 解析结构化命令、子命令、Option 与 At；Uninfo 提供场景、用户、成员和角色。
 3. Handler 注入 UniRef `RefContext`，在业务副作用前取得当前 UserRef/SceneRef，并通过 `build_user_ref()` 构造 Alconna At 目标；上下文本身无法建立时当前 Handler 被跳过，属性或目标构造失败则保留异常。
-4. `GameApplication` 先检查场景与命令语义；PK、嗦或舔缺少目标以及 At 自己时先返回，不创建用户或执行其他副作用。有效目标与打胶、开扣、查询所涉及的缺失用户会创建默认状态；只要这些长度相关用例发生创建就返回实际 Ref，不执行全局惩罚、冷却或结算。群友互动同样会在发起者首次创建后立即返回，但缺失目标会初始化为默认正值并继续本次互动。
-5. 用户均已存在时，application 检查正负世界；PK 双方跨世界时立即拒绝，同世界命令才继续执行不活跃惩罚与 Ref 冷却。成长命令在世界检查后先刷新相关挑战状态：挑战者使用本世界成长命令，或目标正在挑战时直接拒绝，不记录冷却、不调用成长随机数；其他路径保持既有冷却和随机顺序。互动先只检查共享冷却，由 bot 解析有效目标后再让 application 固定领域结果并记录冷却；透继续在随机选人前生成反制值，榨不生成反制值。需要纯计算时将普通数值传给 `impart/core.py`。
+4. `GameApplication` 先检查场景与命令语义；PK、嗦或舔缺少目标以及 At 自己时先返回，不创建用户或执行其他副作用。有效目标与打胶、开扣、查询所涉及的缺失用户会创建默认状态；只要这些长度相关用例发生创建就返回实际 Ref，不执行冷却或结算。群友互动同样会在发起者首次创建后立即返回，但缺失目标会初始化为默认正值并继续本次互动。
+5. 用户均已存在时，application 检查正负世界；PK 双方跨世界时立即拒绝，同世界命令才继续执行 Ref 冷却。成长命令在世界检查后先刷新相关挑战状态：挑战者使用本世界成长命令，或目标正在挑战时直接拒绝，不记录冷却、不调用成长随机数；其他路径保持既有冷却和随机顺序。互动先只检查共享冷却，由 bot 解析有效目标后再让 application 固定领域结果并记录冷却；透继续在随机选人前生成反制值，榨不生成反制值。需要纯计算时将普通数值传给 `impart/core.py`。
 6. application 调用 `DataManager` 方法保存变化；DataManager 通过 NoneBot ORM `get_session()` 取得生产会话并由每个方法管理自身提交。每日互动总量以 `(user_ref, date)` 唯一行保存，发生并发竞争时通过带旧值条件的更新或插入冲突重试，最后返回不包含 NoneBot 事件对象的 outcome。
 7. bot 根据 outcome 选择文案；需要图片时再调用 `ChartRenderer`，最后通过 UniMessage 以 AUTO fallback 发送。
 
 ## 数据和状态放在哪里
 
-- `UserData` 以编码 `user_ref` 为主键，保存 `user_namespace` 查询投影、长度、最后活动时间、内部胜率，以及挑战、xnn 临界区和非正长度标记。
+- `UserData` 以编码 `user_ref` 为主键，保存 `user_namespace` 查询投影、长度、内部胜率，以及挑战、xnn 临界区和非正长度标记。
 - `SceneData` 以编码 `scene_ref` 为主键，保存 `scene_namespace`、`scene_type` 查询投影和场景开关。
 - `EjaculationData` 按编码 UserRef 和日期保存透或榨产生的无类型互动总量；`(user_ref, date)` 唯一约束和条件更新重试保证同一天并发累加到同一行，记录归属实际获得液体者，公开查询继续称为“注入量”。
 - 数据库连接、Engine 和 Session 由 NoneBot ORM 管理；默认未配置时使用 `[default]` extra 提供的 SQLite，也可安装其他驱动并用 `SQLALCHEMY_DATABASE_URL` 切换默认连接。包内 generic migration 管理 schema；自动化在 SQLite 执行 migration、旧库导入和并发持久化测试，并为 PostgreSQL、MySQL 编译模型 DDL，但不连接这两种数据库做集成验证。
 - 打胶、PK、目标成长和群友互动冷却保存在 `CooldownManager` 的四个 UserRef 字典中；嗦与舔共享现有 `suo_cd_data`，进程重启后清空。所有用户使用相同冷却规则，不提供超级用户豁免。
-- 每日零点任务调用 application 的不活跃惩罚用例；开启惩罚时，相关命令在通过首次初始化前置条件后执行同一检查。
 
 ## 当前稳定状态语义
 

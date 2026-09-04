@@ -1,6 +1,5 @@
 """数据访问与现有状态更新流程。"""
 
-import random
 import time
 from collections.abc import Callable
 from typing import Any, cast
@@ -127,22 +126,8 @@ class DataManager:
                     user_ref=_encode_persistent_ref(user_ref),
                     user_namespace=user_ref.namespace,
                     jj_length=10.0,
-                    last_masturbation_time=int(time.time()),
                     win_probability=0.5,
                 )
-            )
-            await session.commit()
-
-    async def update_activity(self, user_ref: UserRef) -> None:
-        """更新用户活跃时间。"""
-        if not await self.has_user(user_ref):
-            await self.add_new_user(user_ref)
-        encoded = _encode_persistent_ref(user_ref)
-        async with self._session_factory() as session:
-            await session.execute(
-                update(UserData)
-                .where(UserData.user_ref == encoded)
-                .values(last_masturbation_time=int(time.time()))
             )
             await session.commit()
 
@@ -163,10 +148,7 @@ class DataManager:
             await session.execute(
                 update(UserData)
                 .where(UserData.user_ref == encoded)
-                .values(
-                    jj_length=round(current_length + length, 3),
-                    last_masturbation_time=int(time.time()),
-                )
+                .values(jj_length=round(current_length + length, 3))
             )
             await session.commit()
 
@@ -196,7 +178,6 @@ class DataManager:
                         current_probability + probability_change,
                         3,
                     ),
-                    last_masturbation_time=int(time.time()),
                 )
             )
             await session.commit()
@@ -323,19 +304,6 @@ class DataManager:
                 )
             )
             return result.scalar() or 0.0
-
-    async def punish_all_inactive_users(self) -> None:
-        """减少超过一天未活动且长度大于 1 的用户长度。"""
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(UserData).filter(
-                    UserData.last_masturbation_time < (time.time() - 86400),
-                    UserData.jj_length > 1,
-                )
-            )
-            for user in result.scalars():
-                user.jj_length = round(user.jj_length - random.random(), 3)
-            await session.commit()
 
     async def get_ranking(self, namespace: str) -> list[tuple[UserRef, float]]:
         """返回指定用户 namespace 内按长度降序排列的榜单。"""
