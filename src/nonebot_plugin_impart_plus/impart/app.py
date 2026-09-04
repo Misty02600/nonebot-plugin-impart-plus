@@ -1,5 +1,6 @@
 """游戏用例编排。"""
 
+import asyncio
 import random
 import time
 from dataclasses import dataclass, field
@@ -20,7 +21,6 @@ from .core import (
     crossed_challenge_threshold,
     growth_delta,
     resolve_interaction,
-    resolve_pk,
     supports_growth_mode,
 )
 
@@ -157,6 +157,7 @@ class GameApplication:
     ) -> None:
         self._data = data_manager
         self._cooldown = cooldown
+        self._state_lock = asyncio.Lock()
 
     async def _create_missing_users(
         self,
@@ -189,6 +190,14 @@ class GameApplication:
         if defender_ref == attacker_ref:
             return PkOutcome(PkOutcomeType.SELF_TARGET)
 
+        async with self._state_lock:
+            return await self._execute_pk(attacker_ref, defender_ref)
+
+    async def _execute_pk(
+        self,
+        attacker_ref: UserRef,
+        defender_ref: UserRef,
+    ) -> PkOutcome:
         created_users = await self._create_missing_users(attacker_ref, defender_ref)
         if created_users:
             return PkOutcome(
@@ -212,46 +221,20 @@ class GameApplication:
 
         self._cooldown.pk_cd_data.update({attacker_ref: time.time()})
         win_roll = random.random()
-        win_probability = await self._data.get_win_probability(attacker_ref)
-        resolution = resolve_pk(
-            win_probability,
+        random_num = get_random_num()
+        settlement = await self._data.settle_pk(
+            attacker_ref,
+            defender_ref,
             win_roll=win_roll,
-            random_num=get_random_num(),
+            random_num=random_num,
         )
-        direction = 1 if mode is GrowthMode.LENGTH else -1
-        if resolution.won:
-            await self._data.set_win_probability(attacker_ref, -0.01)
-            await self._data.set_win_probability(defender_ref, 0.01)
-            await self._data.set_jj_length(
-                attacker_ref,
-                direction * resolution.random_num / 2,
-            )
-            await self._data.set_jj_length(
-                defender_ref,
-                -direction * resolution.random_num,
-            )
-        else:
-            await self._data.set_win_probability(attacker_ref, 0.01)
-            await self._data.set_win_probability(defender_ref, -0.01)
-            await self._data.set_jj_length(
-                attacker_ref,
-                -direction * resolution.random_num,
-            )
-            await self._data.set_jj_length(
-                defender_ref,
-                direction * resolution.random_num / 2,
-            )
-
-        attacker_status = await self._data.update_challenge_status(attacker_ref)
-        defender_status = await self._data.update_challenge_status(defender_ref)
-        probability = await self._data.get_win_probability(attacker_ref)
         return PkOutcome(
             PkOutcomeType.COMPLETED,
-            mode=mode,
-            resolution=resolution,
-            attacker_status=attacker_status,
-            defender_status=defender_status,
-            attacker_probability=probability,
+            mode=settlement.mode,
+            resolution=settlement.resolution,
+            attacker_status=settlement.attacker.status,
+            defender_status=settlement.defender.status,
+            attacker_probability=settlement.attacker.final.win_probability,
         )
 
     async def grow_self(
@@ -263,6 +246,14 @@ class GameApplication:
         if not await self._data.is_scene_enabled(scene_ref):
             return GrowthOutcome(GrowthOutcomeType.DISABLED)
 
+        async with self._state_lock:
+            return await self._grow_self(user_ref, mode)
+
+    async def _grow_self(
+        self,
+        user_ref: UserRef,
+        mode: GrowthMode,
+    ) -> GrowthOutcome:
         created_users = await self._create_missing_users(user_ref)
         if created_users:
             return GrowthOutcome(
@@ -318,6 +309,15 @@ class GameApplication:
         if target_ref == user_ref:
             return GrowthOutcome(GrowthOutcomeType.SELF_TARGET)
 
+        async with self._state_lock:
+            return await self._grow_target(user_ref, target_ref, mode)
+
+    async def _grow_target(
+        self,
+        user_ref: UserRef,
+        target_ref: UserRef,
+        mode: GrowthMode,
+    ) -> GrowthOutcome:
         created_users = await self._create_missing_users(user_ref, target_ref)
         if created_users:
             return GrowthOutcome(

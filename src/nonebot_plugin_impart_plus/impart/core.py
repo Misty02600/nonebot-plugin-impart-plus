@@ -58,9 +58,24 @@ class StateEvaluation:
 @dataclass(frozen=True, slots=True)
 class PkResolution:
     won: bool
-    random_num: float
     length_increase: float
     length_decrease: float
+
+
+@dataclass(frozen=True, slots=True)
+class PkParticipantSettlement:
+    before: UserGameState
+    base: UserGameState
+    final: UserGameState
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
+class PkSettlement:
+    mode: GrowthMode
+    resolution: PkResolution
+    attacker: PkParticipantSettlement
+    defender: PkParticipantSettlement
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,17 +188,83 @@ def crossed_challenge_threshold(current_length: float, new_length: float) -> boo
     return abs(current_length) < 25 <= abs(new_length)
 
 
-def resolve_pk(
-    win_probability: float,
+def _apply_pk_delta(
+    state: UserGameState,
+    length_delta: float,
+    probability_delta: float,
+) -> UserGameState:
+    return replace(
+        state,
+        length=round(state.length + length_delta, 3),
+        win_probability=round(state.win_probability + probability_delta, 3),
+    )
+
+
+def resolve_pk_settlement(
+    attacker: UserGameState,
+    defender: UserGameState,
     *,
     win_roll: float,
     random_num: float,
-) -> PkResolution:
-    return PkResolution(
-        won=win_roll < win_probability,
-        random_num=random_num,
+) -> PkSettlement:
+    """按现有规则一次计算 PK 双方的完整最终状态。
+
+    Args:
+        attacker: 发起者结算前的完整游戏状态。
+        defender: 目标结算前的完整游戏状态。
+        win_roll: 已由应用层生成的胜负随机值。
+        random_num: 已由应用层生成的长度变化随机值。
+
+    Returns:
+        包含双方基础变化、挑战处理后状态和状态事件的纯结算结果。
+
+    Raises:
+        ValueError: 双方不属于同一个正负世界。
+    """
+    mode = GrowthMode.LENGTH if attacker.length > 0 else GrowthMode.DEPTH
+    if not supports_growth_mode(defender.length, mode):
+        raise ValueError("PK participants must belong to the same world")
+
+    resolution = PkResolution(
+        won=win_roll < attacker.win_probability,
         length_increase=round(random_num / 2, 3),
         length_decrease=random_num,
+    )
+    direction = 1 if mode is GrowthMode.LENGTH else -1
+    attacker_probability_delta = -0.01 if resolution.won else 0.01
+    attacker_length_delta = direction * (
+        random_num / 2 if resolution.won else -random_num
+    )
+    defender_length_delta = direction * (
+        -random_num if resolution.won else random_num / 2
+    )
+    attacker_base = _apply_pk_delta(
+        attacker,
+        attacker_length_delta,
+        attacker_probability_delta,
+    )
+    defender_base = _apply_pk_delta(
+        defender,
+        defender_length_delta,
+        -attacker_probability_delta,
+    )
+    attacker_evaluation = evaluate_user_state(attacker_base)
+    defender_evaluation = evaluate_user_state(defender_base)
+    return PkSettlement(
+        mode=mode,
+        resolution=resolution,
+        attacker=PkParticipantSettlement(
+            before=attacker,
+            base=attacker_base,
+            final=attacker_evaluation.state,
+            status=attacker_evaluation.status,
+        ),
+        defender=PkParticipantSettlement(
+            before=defender,
+            base=defender_base,
+            final=defender_evaluation.state,
+            status=defender_evaluation.status,
+        ),
     )
 
 

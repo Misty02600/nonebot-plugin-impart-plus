@@ -264,3 +264,43 @@ def test_challenge_threshold_and_titles_are_symmetric() -> None:
     assert not crossed_challenge_threshold(-25.0, -25.1)
     assert classify_length(30.0) is LengthState.GOD
     assert classify_length(-30.0) is LengthState.ABYSS_LORD
+
+
+def test_pk_settlement_applies_base_changes_before_challenge_updates() -> None:
+    from nonebot_plugin_impart_plus.impart.core import (
+        GrowthMode,
+        UserGameState,
+        resolve_pk_settlement,
+    )
+
+    attacker = UserGameState(25.1, 0.4, True, False, False, False)
+    defender = UserGameState(25.1, 0.5, False, False, False, False)
+
+    settlement = resolve_pk_settlement(
+        attacker,
+        defender,
+        win_roll=1.0,
+        random_num=0.5,
+    )
+
+    assert settlement.mode is GrowthMode.LENGTH
+    assert settlement.resolution.won is False
+    assert (
+        settlement.attacker.base.length,
+        settlement.attacker.base.win_probability,
+        settlement.attacker.status,
+        settlement.attacker.final.length,
+        settlement.attacker.final.win_probability,
+        settlement.attacker.final.is_challenging,
+    ) == (24.6, 0.41, "challenge_failed_high_win", 19.6, 0.5125, False)
+    assert (
+        settlement.defender.status,
+        settlement.defender.final.length,
+        settlement.defender.final.win_probability,
+        settlement.defender.final.is_challenging,
+    ) == (
+        "challenge_started_low_win",
+        25.35,
+        0.392,
+        True,
+    )

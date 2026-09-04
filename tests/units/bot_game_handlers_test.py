@@ -324,13 +324,13 @@ async def test_pk_handler_renders_world_specific_results(
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.LENGTH,
-            resolution=PkResolution(True, 1.5, 0.75, 1.5),
+            resolution=PkResolution(True, 0.75, 1.5),
             attacker_probability=0.49,
         ),
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.DEPTH,
-            resolution=PkResolution(True, 1.5, 0.75, 1.5),
+            resolution=PkResolution(True, 0.75, 1.5),
             attacker_status="challenge_started_low_win",
             defender_status="challenge_failed_high_win",
             attacker_probability=0.49,
@@ -338,7 +338,7 @@ async def test_pk_handler_renders_world_specific_results(
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.DEPTH,
-            resolution=PkResolution(False, 1.5, 0.75, 1.5),
+            resolution=PkResolution(False, 0.75, 1.5),
             attacker_status="challenge_completed_reduce",
             defender_status="challenge_success_high_win",
             attacker_probability=0.51,

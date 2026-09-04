@@ -10,7 +10,12 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..impart.core import UserGameState, evaluate_user_state
+from ..impart.core import (
+    PkSettlement,
+    UserGameState,
+    evaluate_user_state,
+    resolve_pk_settlement,
+)
 from .database import (
     PERSISTED_NAMESPACE_MAX_LENGTH,
     PERSISTED_REF_MAX_LENGTH,
@@ -63,6 +68,26 @@ def _decode_user_ref(encoded: str, expected_namespace: str) -> UserRef:
     return ref
 
 
+def _to_game_state(user: UserData) -> UserGameState:
+    return UserGameState(
+        length=user.jj_length,
+        win_probability=user.win_probability,
+        is_challenging=user.is_challenging,
+        challenge_completed=user.challenge_completed,
+        is_near_zero=user.is_near_zero,
+        is_zero_or_negative=user.is_zero_or_neg,
+    )
+
+
+def _apply_game_state(user: UserData, state: UserGameState) -> None:
+    user.jj_length = state.length
+    user.win_probability = state.win_probability
+    user.is_challenging = state.is_challenging
+    user.challenge_completed = state.challenge_completed
+    user.is_near_zero = state.is_near_zero
+    user.is_zero_or_neg = state.is_zero_or_negative
+
+
 class DataManager:
     def __init__(
         self,
@@ -81,26 +106,59 @@ class DataManager:
             if not user:
                 return "user_not_found"
 
-            evaluation = evaluate_user_state(
-                UserGameState(
-                    length=user.jj_length,
-                    win_probability=user.win_probability,
-                    is_challenging=user.is_challenging,
-                    challenge_completed=user.challenge_completed,
-                    is_near_zero=user.is_near_zero,
-                    is_zero_or_negative=user.is_zero_or_neg,
-                )
-            )
-            state = evaluation.state
-            user.jj_length = state.length
-            user.win_probability = state.win_probability
-            user.is_challenging = state.is_challenging
-            user.challenge_completed = state.challenge_completed
-            user.is_near_zero = state.is_near_zero
-            user.is_zero_or_neg = state.is_zero_or_negative
+            evaluation = evaluate_user_state(_to_game_state(user))
+            _apply_game_state(user, evaluation.state)
 
             await session.commit()
             return evaluation.status
+
+    async def settle_pk(
+        self,
+        attacker_ref: UserRef,
+        defender_ref: UserRef,
+        *,
+        win_roll: float,
+        random_num: float,
+    ) -> PkSettlement:
+        """在一个数据库事务中结算并保存 PK 双方状态。
+
+        Args:
+            attacker_ref: 发起者持久身份。
+            defender_ref: 目标持久身份。
+            win_roll: 本局固定的胜负随机值。
+            random_num: 本局固定的长度变化随机值。
+
+        Returns:
+            已成功提交的完整纯结算结果。
+
+        Raises:
+            LookupError: 任一参与者在事务中不存在。
+            ValueError: 双方在事务中不属于同一个正负世界。
+        """
+        attacker_key = _encode_persistent_ref(attacker_ref)
+        defender_key = _encode_persistent_ref(defender_ref)
+        async with self._session_factory() as session, session.begin():
+            result = await session.execute(
+                select(UserData).where(
+                    UserData.user_ref.in_((attacker_key, defender_key))
+                )
+            )
+            users = {user.user_ref: user for user in result.scalars()}
+            attacker = users.get(attacker_key)
+            defender = users.get(defender_key)
+            if attacker is None or defender is None:
+                raise LookupError("PK participant does not exist")
+
+            settlement = resolve_pk_settlement(
+                _to_game_state(attacker),
+                _to_game_state(defender),
+                win_roll=win_roll,
+                random_num=random_num,
+            )
+            _apply_game_state(attacker, settlement.attacker.final)
+            _apply_game_state(defender, settlement.defender.final)
+            await session.flush()
+        return settlement
 
     async def has_user(self, user_ref: UserRef) -> bool:
         encoded = _encode_persistent_ref(user_ref)

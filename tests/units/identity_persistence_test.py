@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from sqlalchemy import inspect, select
@@ -478,6 +479,106 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert await manager.get_win_probability(negative_loss[0]) == 0.51
     assert await manager.get_win_probability(negative_loss[1]) == 0.49
     assert win_roll_calls == growth_roll_calls == 3
+
+
+async def test_pk_settlement_rolls_back_both_users_after_flush(
+    database_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    manager = database_harness.manager
+    attacker = UserRef("QQClient", "pk-rollback-attacker")
+    defender = UserRef("QQClient", "pk-rollback-defender")
+    await manager.add_new_user(attacker)
+    await manager.add_new_user(defender)
+    original_flush = AsyncSession.flush
+
+    async def fail_after_flush(
+        session: AsyncSession,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        await original_flush(session, *args, **kwargs)
+        raise RuntimeError("injected flush failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(AsyncSession, "flush", fail_after_flush)
+        with pytest.raises(RuntimeError, match="injected flush failure"):
+            await manager.settle_pk(
+                attacker,
+                defender,
+                win_roll=0.0,
+                random_num=1.0,
+            )
+
+    assert await manager.get_jj_length(attacker) == 10.0
+    assert await manager.get_jj_length(defender) == 10.0
+    assert await manager.get_win_probability(attacker) == 0.5
+    assert await manager.get_win_probability(defender) == 0.5
+
+
+async def test_application_serializes_pk_with_a_shared_target(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    from nonebot_plugin_uniref import SceneRef, UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
+
+    manager = game_harness.manager
+    application = game_harness.application
+    scene = game_harness.scene
+    first_attacker = UserRef("QQClient", "pk-concurrent-first")
+    second_attacker = UserRef("QQClient", "pk-concurrent-second")
+    target = UserRef("QQClient", "pk-concurrent-target")
+    await manager.set_scene_enabled(scene, True)
+    for user in (first_attacker, second_attacker, target):
+        await manager.add_new_user(user)
+
+    original_execute = application._execute_pk
+    first_entered = asyncio.Event()
+    release_first = asyncio.Event()
+    execution_calls = 0
+
+    async def scene_enabled(_: SceneRef) -> bool:
+        return True
+
+    async def delayed_execute(
+        attacker_ref: UserRef,
+        defender_ref: UserRef,
+    ) -> PkOutcome:
+        nonlocal execution_calls
+        execution_calls += 1
+        if execution_calls == 1:
+            first_entered.set()
+            await release_first.wait()
+        return await original_execute(attacker_ref, defender_ref)
+
+    monkeypatch.setattr(manager, "is_scene_enabled", scene_enabled)
+    monkeypatch.setattr(application, "_execute_pk", delayed_execute)
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+
+    first = asyncio.create_task(application.execute_pk(scene, first_attacker, target))
+    await first_entered.wait()
+    second = asyncio.create_task(application.execute_pk(scene, second_attacker, target))
+    await asyncio.sleep(0)
+    calls_while_first_held_lock = execution_calls
+    release_first.set()
+    outcomes = await asyncio.gather(first, second)
+
+    assert calls_while_first_held_lock == 1
+    assert [outcome.type for outcome in outcomes] == [
+        PkOutcomeType.COMPLETED,
+        PkOutcomeType.COMPLETED,
+    ]
+    assert await manager.get_jj_length(target) == 8.0
+    assert await manager.get_win_probability(target) == 0.52
 
 
 async def test_self_growth_applies_signed_direction_and_checks_both_challenges(
