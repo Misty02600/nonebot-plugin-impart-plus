@@ -11,23 +11,6 @@
 
 </div>
 
-本项目的 Just recipes 需要 Just 1.56 或更高版本；Windows 下还需要 PowerShell 7，并通过 `pwsh` 命令调用。直接运行对应的 `uv`、`gh` 等命令不受 PowerShell 要求影响。
-
-## 🛠️ 开发与模板更新
-
-- `just sync`：同步全部开发依赖组。
-- `just lint`：只检查 Ruff lint 和格式，不修改文件；`just format` 才会应用修复和格式化。
-- `just test`、`just check`：运行 pytest 和 BasedPyright。
-- `just update-hooks`：更新 prek hook revisions，并保留七天 cooldown。
-- `just update-template`：只在干净工作树中运行 Copier 更新，并自动进入完整收尾验证。
-- `just finish-template-update`：解决 Copier 冲突或接管 Renovate PR 后，检查 `.rej`、刷新本地 lock，并重跑 hooks 与全部质量检查。
-
-Hosted Renovate 仍是常规模板升级入口。手工命令用于本地复现、冲突处理和恢复，不要编辑 `.copier-answers.yml` 或手工指定模板版本。
-
-## 🚀 发布
-
-待发布的源码通过 CI 后，在 `main` 分支运行 `just bump`。Commitizen 会创建版本提交和 annotated tag，Just 会将当前提交及其可达的 annotated tags 整体原子推送到 `origin`，由版本 tag 触发远端 release workflow。
-
 ## 📖 介绍
 
 `nonebot_plugin_impart_plus` 是面向 NoneBot2 群聊场景的互动插件，围绕群内数值成长、PK、状态挑战和群友互动提供完整玩法
@@ -129,4 +112,4 @@ Hosted Renovate 仍是常规模板升级入口。手工命令用于本地复现�
 
 ## ✨ 特别感谢
 
-- [`Special-Week/nonebot_plugin_impact`](https://github.com/Special-Week/nonebot_plugin_impact) 提供的玩法。
+- [`YuuzukiRin/nonebot_plugin_impart`](https://github.com/YuuzukiRin/nonebot_plugin_impart) 提供的玩法。
