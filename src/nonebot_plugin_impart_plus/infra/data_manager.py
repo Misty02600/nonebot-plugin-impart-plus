@@ -2,13 +2,44 @@
 
 import random
 import time
+from collections.abc import Callable
+from typing import Any, cast
 
 from nonebot_plugin_uniref import SceneRef, UserRef, decode_ref, encode_ref
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..impart.core import UserGameState, evaluate_user_state
-from .database import EjaculationData, SceneData, UserData
+from .database import (
+    PERSISTED_NAMESPACE_MAX_LENGTH,
+    PERSISTED_REF_MAX_LENGTH,
+    EjaculationData,
+    SceneData,
+    UserData,
+)
+
+_MAX_EJACULATION_WRITE_ATTEMPTS = 32
+
+
+def _validate_namespace(namespace: str) -> None:
+    if len(namespace) > PERSISTED_NAMESPACE_MAX_LENGTH:
+        raise ValueError(
+            "namespace exceeds the persistent limit of "
+            f"{PERSISTED_NAMESPACE_MAX_LENGTH} characters"
+        )
+
+
+def _encode_persistent_ref(ref: UserRef | SceneRef) -> str:
+    _validate_namespace(ref.namespace)
+    encoded = encode_ref(ref)
+    if len(encoded) > PERSISTED_REF_MAX_LENGTH:
+        raise ValueError(
+            "encoded Ref exceeds the persistent limit of "
+            f"{PERSISTED_REF_MAX_LENGTH} characters"
+        )
+    return encoded
 
 
 def _decode_user_ref(encoded: str, expected_namespace: str) -> UserRef:
@@ -36,13 +67,13 @@ def _decode_user_ref(encoded: str, expected_namespace: str) -> UserRef:
 class DataManager:
     def __init__(
         self,
-        session_factory: async_sessionmaker[AsyncSession],
+        session_factory: Callable[[], AsyncSession],
     ) -> None:
         self._session_factory = session_factory
 
     async def update_challenge_status(self, user_ref: UserRef) -> str:
         """根据用户当前状态更新挑战状态与胜率。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData).where(UserData.user_ref == encoded)
@@ -73,7 +104,7 @@ class DataManager:
             return evaluation.status
 
     async def has_user(self, user_ref: UserRef) -> bool:
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData).filter(UserData.user_ref == encoded)
@@ -81,7 +112,7 @@ class DataManager:
             return bool(result.scalar())
 
     async def is_challenging(self, user_ref: UserRef) -> bool:
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData.is_challenging).where(UserData.user_ref == encoded)
@@ -93,7 +124,7 @@ class DataManager:
         async with self._session_factory() as session:
             session.add(
                 UserData(
-                    user_ref=encode_ref(user_ref),
+                    user_ref=_encode_persistent_ref(user_ref),
                     user_namespace=user_ref.namespace,
                     jj_length=10.0,
                     last_masturbation_time=int(time.time()),
@@ -106,7 +137,7 @@ class DataManager:
         """更新用户活跃时间。"""
         if not await self.has_user(user_ref):
             await self.add_new_user(user_ref)
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             await session.execute(
                 update(UserData)
@@ -117,7 +148,7 @@ class DataManager:
 
     async def get_jj_length(self, user_ref: UserRef) -> float:
         """返回用户当前长度。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData.jj_length).filter(UserData.user_ref == encoded)
@@ -126,7 +157,7 @@ class DataManager:
 
     async def set_jj_length(self, user_ref: UserRef, length: float) -> None:
         """在数据库内累加用户长度。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             current_length = await self.get_jj_length(user_ref)
             await session.execute(
@@ -141,7 +172,7 @@ class DataManager:
 
     async def get_win_probability(self, user_ref: UserRef) -> float:
         """返回用户当前胜率。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData.win_probability).filter(UserData.user_ref == encoded)
@@ -154,7 +185,7 @@ class DataManager:
         probability_change: float,
     ) -> None:
         """在数据库内累加用户胜率。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             current_probability = await self.get_win_probability(user_ref)
             await session.execute(
@@ -171,7 +202,7 @@ class DataManager:
             await session.commit()
 
     async def is_scene_enabled(self, scene_ref: SceneRef) -> bool:
-        encoded = encode_ref(scene_ref)
+        encoded = _encode_persistent_ref(scene_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(SceneData.allow).filter(SceneData.scene_ref == encoded)
@@ -179,7 +210,7 @@ class DataManager:
             return result.scalar() or False
 
     async def set_scene_enabled(self, scene_ref: SceneRef, enabled: bool) -> None:
-        encoded = encode_ref(scene_ref)
+        encoded = _encode_persistent_ref(scene_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(SceneData).where(SceneData.scene_ref == encoded)
@@ -211,39 +242,68 @@ class DataManager:
         return time.strftime("%Y-%m-%d", time.localtime())
 
     async def insert_ejaculation(self, user_ref: UserRef, volume: float) -> None:
-        """插入一条注入记录。"""
-        encoded = encode_ref(user_ref)
+        """将一次注入量原子累加到用户的当日记录。
+
+        Args:
+            user_ref: 实际获得液体的用户身份。
+            volume: 本次需要累加的数量。
+
+        Raises:
+            ValueError: Ref 超出数据库的可移植长度边界。
+            RuntimeError: 连续并发冲突超过重试上限。
+        """
+        encoded = _encode_persistent_ref(user_ref)
         now_date = self.get_today()
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(EjaculationData.volume).filter(
-                    EjaculationData.user_ref == encoded,
-                    EjaculationData.date == now_date,
-                )
-            )
-            current_volume = result.scalar()
-            if current_volume is not None:
-                await session.execute(
-                    update(EjaculationData)
-                    .where(
+        for _ in range(_MAX_EJACULATION_WRITE_ATTEMPTS):
+            async with self._session_factory() as read_session:
+                result = await read_session.execute(
+                    select(EjaculationData.volume).where(
                         EjaculationData.user_ref == encoded,
                         EjaculationData.date == now_date,
                     )
-                    .values(volume=round(current_volume + volume, 3))
                 )
-            else:
-                session.add(
-                    EjaculationData(
-                        user_ref=encoded,
-                        date=now_date,
-                        volume=volume,
+                current_volume = result.scalar_one_or_none()
+
+            if current_volume is None:
+                async with self._session_factory() as insert_session:
+                    insert_session.add(
+                        EjaculationData(
+                            user_ref=encoded,
+                            date=now_date,
+                            volume=volume,
+                        )
                     )
+                    try:
+                        await insert_session.commit()
+                    except IntegrityError:
+                        await insert_session.rollback()
+                    else:
+                        return
+                continue
+
+            async with self._session_factory() as update_session:
+                result = cast(
+                    CursorResult[Any],
+                    await update_session.execute(
+                        update(EjaculationData)
+                        .where(
+                            EjaculationData.user_ref == encoded,
+                            EjaculationData.date == now_date,
+                            EjaculationData.volume == current_volume,
+                        )
+                        .values(volume=round(current_volume + volume, 3))
+                    ),
                 )
-            await session.commit()
+                if result.rowcount == 1:
+                    await update_session.commit()
+                    return
+                await update_session.rollback()
+
+        raise RuntimeError("failed to update daily volume due to concurrent writes")
 
     async def get_ejaculation_data(self, user_ref: UserRef) -> list[dict]:
         """获取一个用户的所有注入记录。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(EjaculationData).filter(EjaculationData.user_ref == encoded)
@@ -254,7 +314,7 @@ class DataManager:
 
     async def get_today_ejaculation_data(self, user_ref: UserRef) -> float:
         """获取用户当日注入量。"""
-        encoded = encode_ref(user_ref)
+        encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(EjaculationData.volume).filter(
@@ -279,6 +339,7 @@ class DataManager:
 
     async def get_ranking(self, namespace: str) -> list[tuple[UserRef, float]]:
         """返回指定用户 namespace 内按长度降序排列的榜单。"""
+        _validate_namespace(namespace)
         async with self._session_factory() as session:
             result = await session.execute(
                 select(UserData)

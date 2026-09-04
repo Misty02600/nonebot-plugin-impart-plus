@@ -9,7 +9,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 def _read_schema(
     connection: Connection,
-) -> tuple[dict[str, set[str]], dict[str, set[tuple[str, ...]]]]:
+) -> tuple[
+    dict[str, set[str]],
+    dict[str, set[tuple[str, ...]]],
+    dict[str, set[tuple[str, ...]]],
+]:
     inspector = inspect(connection)
     tables = {
         table: {column["name"] for column in inspector.get_columns(table)}
@@ -23,17 +27,42 @@ def _read_schema(
         }
         for table in inspector.get_table_names()
     }
-    return tables, indexes
+    unique_constraints = {
+        table: {
+            tuple(constraint["column_names"])
+            for constraint in inspector.get_unique_constraints(table)
+            if constraint["column_names"]
+        }
+        for table in inspector.get_table_names()
+    }
+    return tables, indexes, unique_constraints
 
 
 @pytest.fixture
 async def database_harness(tmp_path: Path):
+    from nonebot_plugin_orm import Model
+
     from nonebot_plugin_impart_plus.infra.data_manager import DataManager
-    from nonebot_plugin_impart_plus.infra.database import Base
+    from nonebot_plugin_impart_plus.infra.database import (
+        EjaculationData,
+        SceneData,
+        UserData,
+    )
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'identity.db'}")
+
+    def create_tables(connection: Connection) -> None:
+        Model.metadata.create_all(
+            connection,
+            tables=[
+                UserData.__table__,
+                SceneData.__table__,
+                EjaculationData.__table__,
+            ],
+        )
+
     async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+        await connection.run_sync(create_tables)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         yield SimpleNamespace(
@@ -75,19 +104,76 @@ def game_harness(database_harness):
 
 
 async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
-    async with database_harness.engine.begin() as connection:
-        schema, indexes = await connection.run_sync(_read_schema)
+    from sqlalchemy.dialects import mysql, postgresql, sqlite
+    from sqlalchemy.schema import CreateIndex, CreateTable
 
-    assert set(schema) == {"user_data", "scene_data", "ejaculation_data"}
-    assert {"user_ref", "user_namespace"} <= schema["user_data"]
-    assert "userid" not in schema["user_data"]
-    assert {"scene_ref", "scene_namespace", "scene_type"} <= schema["scene_data"]
-    assert "groupid" not in schema["scene_data"]
-    assert "user_ref" in schema["ejaculation_data"]
-    assert "userid" not in schema["ejaculation_data"]
-    assert ("user_namespace",) in indexes["user_data"]
-    assert ("scene_namespace",) in indexes["scene_data"]
-    assert ("scene_type",) in indexes["scene_data"]
+    from nonebot_plugin_impart_plus.infra.database import (
+        EjaculationData,
+        SceneData,
+        UserData,
+    )
+
+    async with database_harness.engine.begin() as connection:
+        schema, indexes, unique_constraints = await connection.run_sync(_read_schema)
+
+    user_table = UserData.__table__.name
+    scene_table = SceneData.__table__.name
+    ejaculation_table = EjaculationData.__table__.name
+    assert {
+        table.info["bind_key"]
+        for table in (
+            UserData.__table__,
+            SceneData.__table__,
+            EjaculationData.__table__,
+        )
+    } == {""}
+    assert set(schema) == {user_table, scene_table, ejaculation_table}
+    assert {"user_ref", "user_namespace"} <= schema[user_table]
+    assert "userid" not in schema[user_table]
+    assert {"scene_ref", "scene_namespace", "scene_type"} <= schema[scene_table]
+    assert "groupid" not in schema[scene_table]
+    assert "user_ref" in schema[ejaculation_table]
+    assert "userid" not in schema[ejaculation_table]
+    assert ("user_namespace",) in indexes[user_table]
+    assert ("scene_namespace",) in indexes[scene_table]
+    assert ("scene_type",) in indexes[scene_table]
+    assert ("user_ref", "date") in unique_constraints[ejaculation_table]
+
+    for dialect in (sqlite.dialect(), postgresql.dialect(), mysql.dialect()):
+        for table in (
+            UserData.__table__,
+            SceneData.__table__,
+            EjaculationData.__table__,
+        ):
+            str(CreateTable(table).compile(dialect=dialect))
+            for index in table.indexes:
+                str(CreateIndex(index).compile(dialect=dialect))
+
+
+async def test_persistence_rejects_refs_outside_schema_limits(
+    database_harness,
+) -> None:
+    from nonebot_plugin_uniref import UserRef, encode_ref
+
+    from nonebot_plugin_impart_plus.infra.database import (
+        PERSISTED_NAMESPACE_MAX_LENGTH,
+        PERSISTED_REF_MAX_LENGTH,
+    )
+
+    manager = database_harness.manager
+    namespace = "n" * PERSISTED_NAMESPACE_MAX_LENGTH
+    await manager.get_ranking(namespace)
+
+    with pytest.raises(ValueError, match="namespace exceeds"):
+        await manager.get_ranking(f"{namespace}n")
+
+    prefix_length = len(encode_ref(UserRef("n", "x"))) - 1
+    largest_ref = UserRef("n", "x" * (PERSISTED_REF_MAX_LENGTH - prefix_length))
+    assert len(encode_ref(largest_ref)) == PERSISTED_REF_MAX_LENGTH
+    assert not await manager.has_user(largest_ref)
+
+    with pytest.raises(ValueError, match="encoded Ref exceeds"):
+        await manager.has_user(UserRef("n", f"{largest_ref.id}x"))
 
 
 async def test_data_manager_isolates_same_id_by_namespace(database_harness) -> None:
@@ -118,6 +204,23 @@ async def test_data_manager_isolates_same_id_by_namespace(database_harness) -> N
         encode_ref(qq_user): "QQClient",
         encode_ref(telegram_user): "Telegram",
     }
+
+
+async def test_concurrent_ejaculation_updates_preserve_total(
+    database_harness,
+) -> None:
+    from asyncio import gather
+
+    from nonebot_plugin_uniref import UserRef
+
+    manager = database_harness.manager
+    recipient = UserRef("QQClient", "concurrent-recipient")
+
+    await gather(*(manager.insert_ejaculation(recipient, 1.0) for _ in range(8)))
+    assert await manager.get_today_ejaculation_data(recipient) == 8.0
+
+    await gather(*(manager.insert_ejaculation(recipient, 0.125) for _ in range(8)))
+    assert await manager.get_today_ejaculation_data(recipient) == 9.0
 
 
 async def test_scene_switch_uses_full_scene_ref(database_harness) -> None:

@@ -2,13 +2,13 @@
 
 ## 先建立一个印象
 
-`nonebot_plugin_impart_plus` 是面向 NoneBot2 群聊与频道场景的互动游戏插件。管理员先为场景开启功能，成员再通过命令创建和改变长度或深度、进行 PK、与群友互动，以及查询排行榜和注入记录。bot 接入使用 Alconna、Uninfo、UniRef 和 UniMessage，metadata 通过 `inherit_supported_adapters()` 动态继承三项接入依赖的 Adapter 交集；实际实现与回归验收优先保证 OneBot V11，其他 Adapter 仅保持理论兼容边界。
+`nonebot_plugin_impart_plus` 是面向 NoneBot2 群聊与频道场景的互动游戏插件。管理员先为场景开启功能，成员再通过命令创建和改变长度或深度、进行 PK、与群友互动，以及查询排行榜和注入记录。bot 接入使用 Alconna、Uninfo、UniRef 和 UniMessage，数据基础设施使用 NoneBot ORM；metadata 通过 `inherit_supported_adapters()` 动态继承三项消息接入依赖的 Adapter 交集。实际实现与回归验收优先保证 OneBot V11，其他 Adapter 仅保持理论兼容边界。
 
 当前 `feature` 使用粗粒度传统分层：bot 接收入站事件并生成回复，`impart/app.py` 编排完整游戏用例，`impart/core.py` 保存框架无关的纯规则，infra 封装数据库、冷却和图表等具体技术。这里记录当前代码事实，不把 `main` 分支的新增玩法视为既定目标。
 
 ## 核心能力与公开入口
 
-插件当前对外承诺的是 NoneBot 命令和配置项，不提供独立的 Python 业务 API 稳定性承诺。首次发布到 NoneBot 插件市场前，SQLite schema 始终视为开发中的 v1，现有开发数据库不属于兼容承诺。
+插件当前对外承诺的是 NoneBot 命令和配置项，不提供独立的 Python 业务 API 稳定性承诺。首次发布到 NoneBot 插件市场前，数据库 schema 始终视为开发中的 v1，现有开发数据库不属于兼容承诺。数据库必须位于最新 ORM revision；默认启动检查可在交互式终端确认后升级，非交互部署应提前运行 `nb orm upgrade`。
 
 | 核心能力或公开入口 | 对外含义 | 关键状态或副作用 | 主要实现位置 |
 |---|---|---|---|
@@ -26,7 +26,7 @@
 | 插件入口与 bot 接入 | `matchers.py` 共同定义 grammar、matcher 和 dispatch；所有顶层 matcher 显式启用 `use_cmd_start=True`，由 NoneBot `COMMAND_START` 决定可用前缀；各 matcher 直接把 Uninfo `GROUP | GUILD` 作为公开场景 Rule checker；`handlers/` 用模块级装饰器按游戏、互动、记录、控制拆分事件处理 | Uninfo 解析场景、成员与权限；Handler 统一注入 UniRef `RefContext`，从属性取得当前 UserRef/SceneRef，并用 `build_user_ref()` 将 Alconna At 的用户 ID 限定到当前 identity family；身份上下文不适用时跳过当前 Handler，事件传播继续遵循 matcher 自身的 `block` 设置；UniMessage 发送回复 | 单次事件上下文；模块级机器人昵称 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/__init__.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/__init__.py) |
 | 应用用例 | 依次执行场景和命令语义检查、缺失用户初始化、全局惩罚、世界与 Ref 冷却检查、随机、core 计算和持久化，返回语义化 outcome | 身份参数只接受 `UserRef`/`SceneRef`；初始化 outcome 携带实际创建的 Ref，创建后不继续其他副作用；当前直接依赖具体 infra，实现单入口传统分层，没有 ports | 无独立持久状态；持有 `CooldownManager` | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 核心规则 | 分类长度状态和正负成长模式，计算带符号成长增量、挑战、xnn、非正长度状态转换、PK 结果，以及互动的实际动作、行动者、液体和接收者 | 只依赖标准库；不导入 NoneBot、SQLAlchemy 或 Pillow；互动最多反制一次，目标自身不会再次触发反制 | 不持有运行状态 | [`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
-| 数据库与数据访问 | 定义全新 v1 Ref ORM、执行 CRUD，并把 ORM 用户状态映射给 core 后写回转换结果 | DataManager 独占 `encode_ref()`/`decode_ref()`，同步维护 namespace/type 查询投影；不接受裸 ID，也不包含旧 schema 兼容；每个方法保持独立提交 | UserRef 用户状态、SceneRef 开关和注入记录 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
+| 数据库与数据访问 | 模型继承 NoneBot ORM `Model`，由包内 Alembic migration 管理全新 v1 Ref schema；DataManager 执行 CRUD，并把 ORM 用户状态映射给 core 后写回转换结果 | NoneBot ORM 拥有 Engine、Session、默认数据库配置和 schema 生命周期；`default` extra 提供开箱即用的 SQLite 驱动，但不锁定后端，Bot 项目可通过 `SQLALCHEMY_DATABASE_URL` 和对应驱动改用其他数据库。三个模型显式使用默认 bind，不承诺 multidb 专用 bind。DataManager 通过可注入 Session factory 使用生产 `get_session()` 或测试 sessionmaker，独占 Ref codec 与 namespace/type 投影；编码 Ref 最长 255 字符、namespace 最长 128 字符，超限时在访问数据库前拒绝；每日互动总量通过条件更新和冲突重试维持并发累计 | UserRef 用户状态、SceneRef 开关和按用户/日期唯一的互动总量 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py)、[`migrations/`](../../src/nonebot_plugin_impart_plus/migrations/) |
 | 运行时与媒体基础设施 | 以 `UserRef` 保存四类冷却时间戳；使用 Pillow 和内置字体绘制图片 | 由 `bot/dependencies.py` 组装并提供给应用或 bot | 进程内 Ref 冷却字典；renderer 实例的调色板和字体路径 | [`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 
 主要代码依赖方向是 `bot → impart.app → impart.core/infra`，同时 bot 为呈现排行榜和历史记录而直接调用 `infra.chart_renderer`。`bot/dependencies.py` 是 composition root，可以同时引用配置、应用和具体基础设施。
@@ -37,15 +37,15 @@
 2. Handler 注入 UniRef `RefContext`，在业务副作用前取得当前 UserRef/SceneRef，并通过 `build_user_ref()` 构造 Alconna At 目标；上下文本身无法建立时当前 Handler 被跳过，属性或目标构造失败则保留异常。
 3. `GameApplication` 先检查场景与命令语义；PK、嗦或舔缺少目标以及 At 自己时先返回，不创建用户或执行其他副作用。有效目标与打胶、开扣、查询所涉及的缺失用户会创建默认状态；只要这些长度相关用例发生创建就返回实际 Ref，不执行全局惩罚、冷却或结算。群友互动同样会在发起者首次创建后立即返回，但缺失目标会初始化为默认正值并继续本次互动。
 4. 用户均已存在时，application 检查正负世界；PK 双方跨世界时立即拒绝，同世界命令才继续执行不活跃惩罚与 Ref 冷却。成长命令在世界检查后先刷新相关挑战状态：挑战者使用本世界成长命令，或目标正在挑战时直接拒绝，不记录冷却、不调用成长随机数；其他路径保持既有冷却和随机顺序。互动先只检查共享冷却，由 bot 解析有效目标后再让 application 固定领域结果并记录冷却；透继续在随机选人前生成反制值，榨不生成反制值。需要纯计算时将普通数值传给 `impart/core.py`。
-5. application 调用 `DataManager` 方法保存变化，并返回不包含 NoneBot 事件对象的 outcome。
+5. application 调用 `DataManager` 方法保存变化；DataManager 通过 NoneBot ORM `get_session()` 取得生产会话并由每个方法管理自身提交。每日互动总量以 `(user_ref, date)` 唯一行保存，发生并发竞争时通过带旧值条件的更新或插入冲突重试，最后返回不包含 NoneBot 事件对象的 outcome。
 6. bot 根据 outcome 选择文案；需要图片时再调用 `ChartRenderer`，最后通过 UniMessage 以 AUTO fallback 发送。
 
 ## 数据和状态放在哪里
 
 - `UserData` 以编码 `user_ref` 为主键，保存 `user_namespace` 查询投影、长度、最后活动时间、内部胜率，以及挑战、xnn 临界区和非正长度标记。
 - `SceneData` 以编码 `scene_ref` 为主键，保存 `scene_namespace`、`scene_type` 查询投影和场景开关。
-- `EjaculationData` 按编码 UserRef 和日期保存透或榨产生的无类型互动总量；同一天的记录累加到同一数值，归属实际获得液体者，公开查询继续称为“注入量”。
-- SQLite 文件位于 `nonebot-plugin-localstore` 提供的插件数据目录，文件名为 `impart.db`。启动时只按当前 v1 模型建表，不探测或升级旧 schema。
+- `EjaculationData` 按编码 UserRef 和日期保存透或榨产生的无类型互动总量；`(user_ref, date)` 唯一约束和条件更新重试保证同一天并发累加到同一行，记录归属实际获得液体者，公开查询继续称为“注入量”。
+- 数据库连接、Engine 和 Session 由 NoneBot ORM 管理；默认未配置时使用 `[default]` extra 提供的 SQLite，也可安装其他驱动并用 `SQLALCHEMY_DATABASE_URL` 切换默认连接。包内 generic migration 管理 schema，启动检查不会读取或升级旧 `impart.db`；自动化在 SQLite 执行 migration 和并发持久化测试，并为 PostgreSQL、MySQL 编译模型 DDL，但不连接这两种数据库做集成验证。
 - 打胶、PK、目标成长和群友互动冷却保存在 `CooldownManager` 的四个 UserRef 字典中；嗦与舔共享现有 `suo_cd_data`，进程重启后清空。所有用户使用相同冷却规则，不提供超级用户豁免。
 - 每日零点任务调用 application 的不活跃惩罚用例；开启惩罚时，相关命令在通过首次初始化前置条件后执行同一检查。
 
@@ -60,7 +60,7 @@
 
 ## 当前质量边界与维护风险
 
-- 当前测试覆盖插件与 10 个 Alconna matcher 注册、全部顶层命令的 command start、严格 grammar、统一首次初始化、正负成长与挑战边界、互动真值表与累计归属、冷却/随机副作用、Uninfo 场景/成员/角色、Ref Handler 参数、namespace schema/排行榜、能力降级和 UniMessage 文本/图片结构；这些聚焦测试是当前 OneBot V11 验收边界，不计划增加 Adapter 事件级 fixture。
+- 当前测试覆盖插件与 10 个 Alconna matcher 注册、ORM 依赖加载、模型 schema 与三种目标方言 DDL、SQLite migration smoke、并发累计、全部顶层命令的 command start、严格 grammar、统一首次初始化、正负成长与挑战边界、互动真值表与累计归属、冷却/随机副作用、Uninfo 场景/成员/角色、Ref Handler 参数、namespace 排行榜、能力降级和 UniMessage 文本/图片结构；这些聚焦测试是当前 OneBot V11 验收边界，不计划增加 Adapter 事件级 fixture。
 - 英文根命令 alias `impart` 只接受小写；排行榜自身的 `rank` 正则仍保持大小写不敏感。上游 `IMPART帮助` 等大小写变体不再作为兼容入口。
 - `bot/handlers/` 已按 `game`、`interaction`、`records`、`control` 拆分；群友、管理、群主共享一个互动 matcher 和 `yinpa` Handler，由必填 `kind` 参数选择目标策略；打胶与开扣共享一个 matcher 和一个装饰器 Handler，由 Alconna 命令头的类型化结果选择成长模式。跨功能共享保留玩法名称常量、未开启文案与用户目录辅助函数，`game.py` 因 PK 分支文案仍是其中最大的模块。
 - PK 和挑战结算继续由多个 `DataManager` 方法分别提交；中途异常可能留下双方状态只更新一部分的结果。
@@ -68,4 +68,4 @@
 - 用户文案与底层字段均保留“胜率”语义；当前 PK 直接使用发起者的 `win_probability` 判定，查询暂不展示该值，双方胜率归一化延后为独立玩法改动。
 - UniRef 0.4 的 QQAPI 群成员和频道用户使用复合完整 `UserRef.id`；排行榜当前不能据此可靠查询 Uninfo 用户资料，查询失败时退回 Ref ID 展示，不拆解上游私有格式，等待 UniRef 提供 Ref 到资料的公开查询入口。
 - Discord 的群主身份不能从普通角色权限可靠推导；Uninfo 0.11.1 的 `OWNER` 映射尚不足以证明真实 Guild owner。该限制仅作为理论兼容边界记录，不是当前发布闸门，本插件也不添加 Discord 专用查询分支。
-- 当前 Ref schema 不兼容旧开发数据库，也没有迁移、回填、v2 表或 legacy 分支；首次进入 NoneBot 插件市场前直接重建开发数据库，发布后再建立正式迁移策略。
+- 当前 ORM migration 只创建全新 Ref schema，不兼容旧开发数据库，也没有导入、回填、双写或 legacy 分支；从 `nonebot_plugin_impart` 导入数据属于下一项独立工作。

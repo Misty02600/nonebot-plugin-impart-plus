@@ -91,3 +91,12 @@ jobs:
 
       - name: Run pytest
         run: uv run --no-sync pytest
+
+      - name: ORM migration smoke
+        if: matrix.python-version == '3.11'
+        env:
+          ENVIRONMENT: test
+          SQLALCHEMY_DATABASE_URL: sqlite+aiosqlite:///${{ runner.temp }}/impart-orm-smoke.sqlite3
+        run: |
+          uv run --no-sync nb orm upgrade
+          uv run --no-sync nb orm check

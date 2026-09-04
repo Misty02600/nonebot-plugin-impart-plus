@@ -5,6 +5,7 @@ from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 from .config import Config
 
+require("nonebot_plugin_orm")
 require("nonebot_plugin_alconna")
 require("nonebot_plugin_uninfo")
 require("nonebot_plugin_uniref")

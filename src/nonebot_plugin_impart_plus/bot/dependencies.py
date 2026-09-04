@@ -1,12 +1,12 @@
 """插件运行时依赖。"""
 
 from nonebot import get_driver, get_plugin_config
+from nonebot_plugin_orm import get_session
 
 from ..config import Config
 from ..impart.app import GameApplication
 from ..infra.cooldown import CooldownManager
 from ..infra.data_manager import DataManager
-from ..infra.database import async_session
 
 plugin_config = get_plugin_config(Config)
 driver = get_driver()
@@ -19,7 +19,7 @@ cooldown = CooldownManager(
     fuck_cd_time=plugin_config.fuck_cd_time,
 )
 
-data_manager = DataManager(async_session)
+data_manager = DataManager(get_session)
 
 game_app = GameApplication(
     data_manager,

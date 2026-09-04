@@ -31,6 +31,7 @@ def test_plugin_metadata(app: App):
     assert isinstance(plugin_config, Config)
     assert pk is not None
     assert get_plugin("nonebot_plugin_alconna") is not None
+    assert get_plugin("nonebot_plugin_orm") is not None
     assert get_plugin("nonebot_plugin_uninfo") is not None
     assert get_plugin("nonebot_plugin_uniref") is not None
     assert __plugin_meta__.supported_adapters == inherit_supported_adapters(
