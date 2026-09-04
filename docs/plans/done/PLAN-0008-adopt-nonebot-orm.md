@@ -33,7 +33,7 @@
 
 ## 已知缺口与后续事项
 
-- 本次不读取或导入 `nonebot_plugin_impart/impart.db`；上游数据导入是下一项独立工作。
+- 上游数据导入已由 [PLAN-0009](PLAN-0009-import-upstream-data.md) 完成。
 - PK 等用例仍由多个 DataManager 方法分别提交，尚未建立统一事务边界。
 - `nonebot-plugin-orm 0.8.3` 搭配当前 Alembic 1.19.1 时会产生两条配置项弃用警告，但 migration 与测试正常通过。
 - 当前只支持 generic 默认 bind，不支持同一 migration 在 default 与 multidb 专用 bind 之间切换。
