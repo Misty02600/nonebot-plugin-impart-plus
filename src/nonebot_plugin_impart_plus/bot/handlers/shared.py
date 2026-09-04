@@ -1,15 +1,35 @@
 """Handler 共享文案与用户目录辅助函数。"""
 
+from random import choice
+
 from nonebot import logger
 from nonebot.exception import SkippedException
 from nonebot_plugin_alconna import At
 from nonebot_plugin_uninfo import Interface, Member, Uninfo, User
+from nonebot_plugin_uniref import UserRef
 
 NOT_ALLOWED_TEXT = (
     '当前未开启impart游戏, 请管理员发送"银趴开启", "银趴禁止"以开启/关闭该功能'
 )
 JJ_NAMES = ("牛子", "牛牛", "newnew")
 HOLE_NAME = "小学"
+
+
+def created_user_message(
+    created_users: tuple[UserRef, ...],
+    user_ref: UserRef,
+    target_ref: UserRef,
+) -> str:
+    user_created = user_ref in created_users
+    target_created = target_ref != user_ref and target_ref in created_users
+    jj_name = choice(JJ_NAMES)
+    if user_created and target_created:
+        return f"你们还没有{jj_name}喵，咱帮你们创建了喵，目前长度都是10cm喵"
+    if user_created:
+        return f"你还没有{jj_name}喵，咱帮你创建了喵，目前长度是10cm喵"
+    if target_created:
+        return f"TA还没有{jj_name}喵，咱帮TA创建了喵，目前长度是10cm喵"
+    raise ValueError("创建结果不包含命令用户")
 
 
 def user_display_name(user: User | None, fallback: str) -> str:

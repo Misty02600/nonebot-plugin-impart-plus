@@ -208,8 +208,11 @@ def test_pk_accepts_multiple_targets_and_keeps_their_order():
         ("rank", "jj排行榜", False),
         ("rank", "牛牛rank", False),
         ("interaction", "日群友", True),
+        ("interaction", "榨群友", True),
         ("interaction", "透 群主", True),
+        ("interaction", "/榨 群主", True),
         ("interaction", "透群主尾巴", False),
+        ("interaction", "榨汁群友", False),
         ("interaction", "/日群友", True),
     ],
 )
@@ -231,37 +234,47 @@ def test_rank_and_interaction_regex_ranges(
 
 
 @pytest.mark.parametrize(
-    ("message", "kind"),
+    ("message", "kind", "action"),
     [
-        ("透群友", "群友"),
-        ("透管理", "管理"),
-        ("透群主", "群主"),
+        ("透群友", "群友", "INJECT"),
+        ("日管理", "管理", "INJECT"),
+        ("榨群主", "群主", "SQUEEZE"),
     ],
 )
 def test_interaction_extracts_target_kind(
     message: str,
     kind: str,
+    action: str,
 ) -> None:
-    from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
+    from nonebot_plugin_impart_plus.bot.matchers import (
+        INTERACTION_ACTIONS,
+        INTERACTION_COMMAND,
+    )
+    from nonebot_plugin_impart_plus.impart.core import InteractionAction
 
     result = INTERACTION_COMMAND.parse(message)
 
     assert result.matched is True
     assert result.all_matched_args["kind"] == kind
+    assert (
+        INTERACTION_ACTIONS[result.header_match.groups["action"]]
+        is InteractionAction[action]
+    )
 
 
-def test_interaction_requires_kind_and_accepts_target() -> None:
+def test_interaction_requires_kind_and_accepts_multiple_targets() -> None:
     from nonebot_plugin_alconna import At, Text, UniMessage
 
     from nonebot_plugin_impart_plus.bot.matchers import INTERACTION_COMMAND
 
+    targets = (At("user", "67890"), At("user", "12345"))
     result = INTERACTION_COMMAND.parse(
-        UniMessage([Text("透管理 "), At("user", "67890")]),
+        UniMessage([Text("榨群友 "), targets[0], Text(" "), targets[1]]),
     )
 
     assert result.matched is True
     assert result.all_matched_args == {
-        "kind": "管理",
-        "target": At("user", "67890"),
+        "kind": "群友",
+        "targets": targets,
     }
     assert INTERACTION_COMMAND.parse("透").matched is False

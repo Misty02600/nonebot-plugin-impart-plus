@@ -18,6 +18,27 @@ class GrowthMode(StrEnum):
     DEPTH = "depth"
 
 
+class InteractionAction(StrEnum):
+    INJECT = "透"
+    SQUEEZE = "榨"
+
+
+class InteractionParticipant(StrEnum):
+    REQUESTER = "requester"
+    TARGET = "target"
+
+
+class InteractionFluid(StrEnum):
+    DNA = "脱氧核糖核酸"
+    GIRL_JUICE = "妹汁"
+
+
+class InteractionReversal(StrEnum):
+    NONE = "none"
+    WRONG_ACTION = "wrong_action"
+    XNN = "xnn"
+
+
 @dataclass(frozen=True, slots=True)
 class UserGameState:
     length: float
@@ -40,6 +61,15 @@ class PkResolution:
     random_num: float
     length_increase: float
     length_decrease: float
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionResolution:
+    action: InteractionAction
+    actor: InteractionParticipant
+    recipient: InteractionParticipant
+    fluid: InteractionFluid
+    reversal: InteractionReversal
 
 
 def classify_length(length: float) -> LengthState:
@@ -157,5 +187,85 @@ def resolve_pk(
     )
 
 
-def should_reverse_injection(length: float, roll: float) -> bool:
-    return length <= 0 or (5 >= length > 0 and roll < 0.5)
+def resolve_interaction(
+    requested_action: InteractionAction,
+    requester_length: float,
+    target_length: float,
+    *,
+    reverse_roll: float | None,
+) -> InteractionResolution:
+    """将请求动作解析为最多反制一次的实际互动。
+
+    Args:
+        requested_action: 发起者请求的透或榨。
+        requester_length: 发起者当前长度；正值与非正值代表两个世界。
+        target_length: 目标当前长度，用于确定反制动作与榨取液体。
+        reverse_roll: 透命令的 xnn 反制随机值；榨命令传入 ``None``。
+
+    Returns:
+        固定实际动作、行动者、液体接收者、液体名称和反制原因的结果。
+
+    Raises:
+        ValueError: 透命令缺少反制随机值，或榨命令错误携带该随机值。
+
+    Note:
+        动作与发起者世界不匹配时必定反制，目标不会再次触发反制。
+    """
+    if (requested_action is InteractionAction.INJECT) != (reverse_roll is not None):
+        raise ValueError("只有透命令必须提供反制随机值")
+
+    requester_positive = requester_length > 0
+    requester_can_act = (
+        requester_positive
+        if requested_action is InteractionAction.INJECT
+        else not requester_positive
+    )
+    xnn_reversal = (
+        requested_action is InteractionAction.INJECT
+        and requester_positive
+        and requester_length <= 5
+        and reverse_roll is not None
+        and reverse_roll < 0.5
+    )
+
+    if not requester_can_act:
+        reversal = InteractionReversal.WRONG_ACTION
+    elif xnn_reversal:
+        reversal = InteractionReversal.XNN
+    else:
+        reversal = InteractionReversal.NONE
+
+    if reversal is InteractionReversal.NONE:
+        action = requested_action
+        actor = InteractionParticipant.REQUESTER
+    else:
+        action = (
+            InteractionAction.INJECT if target_length > 0 else InteractionAction.SQUEEZE
+        )
+        actor = InteractionParticipant.TARGET
+
+    if action is InteractionAction.INJECT:
+        recipient = (
+            InteractionParticipant.TARGET
+            if actor is InteractionParticipant.REQUESTER
+            else InteractionParticipant.REQUESTER
+        )
+        fluid = InteractionFluid.DNA
+    else:
+        recipient = actor
+        source_length = (
+            target_length
+            if actor is InteractionParticipant.REQUESTER
+            else requester_length
+        )
+        fluid = (
+            InteractionFluid.DNA if source_length > 0 else InteractionFluid.GIRL_JUICE
+        )
+
+    return InteractionResolution(
+        action=action,
+        actor=actor,
+        recipient=recipient,
+        fluid=fluid,
+        reversal=reversal,
+    )

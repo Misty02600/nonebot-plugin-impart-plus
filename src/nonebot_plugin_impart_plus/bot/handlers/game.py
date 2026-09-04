@@ -5,7 +5,7 @@ from random import choice
 from arclet.alconna import Arparma
 from nonebot.matcher import Matcher
 from nonebot_plugin_alconna import At, Match
-from nonebot_plugin_uniref import RefContext, UserRef
+from nonebot_plugin_uniref import RefContext
 
 from ...impart.app import GrowthOutcomeType, PkOutcome, PkOutcomeType, QueryOutcomeType
 from ...impart.core import GrowthMode, LengthState
@@ -18,7 +18,13 @@ from ..matchers import (
     self_growth_matcher,
     target_growth_matcher,
 )
-from .shared import HOLE_NAME, JJ_NAMES, NOT_ALLOWED_TEXT, user_at_target
+from .shared import (
+    HOLE_NAME,
+    JJ_NAMES,
+    NOT_ALLOWED_TEXT,
+    created_user_message,
+    user_at_target,
+)
 
 
 def _growth_mode(
@@ -30,23 +36,6 @@ def _growth_mode(
     if mode is None:
         raise TypeError("成长命令未解析为 GrowthMode")
     return mode
-
-
-def _created_user_message(
-    created_users: tuple[UserRef, ...],
-    user_ref: UserRef,
-    target_ref: UserRef,
-) -> str:
-    user_created = user_ref in created_users
-    target_created = target_ref != user_ref and target_ref in created_users
-    jj_name = choice(JJ_NAMES)
-    if user_created and target_created:
-        return f"你们还没有{jj_name}喵，咱帮你们创建了喵，目前长度都是10cm喵"
-    if user_created:
-        return f"你还没有{jj_name}喵，咱帮你创建了喵，目前长度是10cm喵"
-    if target_created:
-        return f"TA还没有{jj_name}喵，咱帮TA创建了喵，目前长度是10cm喵"
-    raise ValueError("创建结果不包含命令用户")
 
 
 def _self_challenge_progress(status: str, mode: GrowthMode) -> str:
@@ -181,7 +170,7 @@ async def pk(
         await matcher.finish("你不能pk自己喵", at_sender=True)
     if outcome.type is PkOutcomeType.USERS_CREATED:
         await matcher.finish(
-            _created_user_message(outcome.created_users, user_ref, target_ref),
+            created_user_message(outcome.created_users, user_ref, target_ref),
             at_sender=True,
         )
     if outcome.type is PkOutcomeType.WORLD_MISMATCH:
@@ -285,7 +274,7 @@ async def grow_self(
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is GrowthOutcomeType.USER_CREATED:
         await matcher.finish(
-            _created_user_message(outcome.created_users, user_ref, user_ref),
+            created_user_message(outcome.created_users, user_ref, user_ref),
             at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.WRONG_STATE:
@@ -383,7 +372,7 @@ async def grow_target(
         )
     if outcome.type is GrowthOutcomeType.USER_CREATED:
         await matcher.finish(
-            _created_user_message(outcome.created_users, user_ref, target_ref),
+            created_user_message(outcome.created_users, user_ref, target_ref),
             at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.ACTOR_CHALLENGING:
@@ -451,7 +440,7 @@ async def queryjj(
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is QueryOutcomeType.USER_CREATED:
         await matcher.finish(
-            _created_user_message(outcome.created_users, user_ref, target_ref),
+            created_user_message(outcome.created_users, user_ref, target_ref),
             at_sender=True,
         )
 

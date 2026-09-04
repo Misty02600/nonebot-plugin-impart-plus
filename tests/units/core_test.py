@@ -18,6 +18,144 @@ def test_growth_mode_boundaries_and_signed_delta() -> None:
 
 @pytest.mark.parametrize(
     (
+        "requested",
+        "requester_length",
+        "target_length",
+        "roll",
+        "actual",
+        "actor",
+        "recipient",
+        "fluid",
+        "reversal",
+    ),
+    [
+        ("INJECT", 10.0, 10.0, 0.75, "INJECT", "REQUESTER", "TARGET", "DNA", "NONE"),
+        ("INJECT", 10.0, -10.0, 0.75, "INJECT", "REQUESTER", "TARGET", "DNA", "NONE"),
+        (
+            "INJECT",
+            -10.0,
+            10.0,
+            0.75,
+            "INJECT",
+            "TARGET",
+            "REQUESTER",
+            "DNA",
+            "WRONG_ACTION",
+        ),
+        (
+            "INJECT",
+            -10.0,
+            -10.0,
+            0.75,
+            "SQUEEZE",
+            "TARGET",
+            "TARGET",
+            "GIRL_JUICE",
+            "WRONG_ACTION",
+        ),
+        (
+            "SQUEEZE",
+            -10.0,
+            10.0,
+            None,
+            "SQUEEZE",
+            "REQUESTER",
+            "REQUESTER",
+            "DNA",
+            "NONE",
+        ),
+        (
+            "SQUEEZE",
+            -10.0,
+            -10.0,
+            None,
+            "SQUEEZE",
+            "REQUESTER",
+            "REQUESTER",
+            "GIRL_JUICE",
+            "NONE",
+        ),
+        (
+            "SQUEEZE",
+            10.0,
+            10.0,
+            None,
+            "INJECT",
+            "TARGET",
+            "REQUESTER",
+            "DNA",
+            "WRONG_ACTION",
+        ),
+        (
+            "SQUEEZE",
+            10.0,
+            -10.0,
+            None,
+            "SQUEEZE",
+            "TARGET",
+            "TARGET",
+            "DNA",
+            "WRONG_ACTION",
+        ),
+        (
+            "INJECT",
+            3.0,
+            10.0,
+            0.25,
+            "INJECT",
+            "TARGET",
+            "REQUESTER",
+            "DNA",
+            "XNN",
+        ),
+        (
+            "INJECT",
+            3.0,
+            -10.0,
+            0.25,
+            "SQUEEZE",
+            "TARGET",
+            "TARGET",
+            "DNA",
+            "XNN",
+        ),
+    ],
+)
+def test_interaction_resolution_is_symmetric(
+    requested: str,
+    requester_length: float,
+    target_length: float,
+    roll: float | None,
+    actual: str,
+    actor: str,
+    recipient: str,
+    fluid: str,
+    reversal: str,
+) -> None:
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionFluid,
+        InteractionParticipant,
+        InteractionReversal,
+        resolve_interaction,
+    )
+
+    resolution = resolve_interaction(
+        InteractionAction[requested],
+        requester_length,
+        target_length,
+        reverse_roll=roll,
+    )
+
+    assert resolution.action is InteractionAction[actual]
+    assert resolution.actor is InteractionParticipant[actor]
+    assert resolution.recipient is InteractionParticipant[recipient]
+    assert resolution.fluid is InteractionFluid[fluid]
+    assert resolution.reversal is InteractionReversal[reversal]
+
+
+@pytest.mark.parametrize(
+    (
         "length",
         "is_challenging",
         "challenge_completed",

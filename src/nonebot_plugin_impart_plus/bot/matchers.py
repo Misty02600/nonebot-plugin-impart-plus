@@ -7,7 +7,7 @@ from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import At, on_alconna
 from nonebot_plugin_uninfo import ADMIN, GROUP, GUILD
 
-from ..impart.core import GrowthMode
+from ..impart.core import GrowthMode, InteractionAction
 
 PK_COMMAND = Alconna("pk", Args["targets?", MultiVar(At)])
 
@@ -36,10 +36,15 @@ INJECTION_QUERY_COMMAND = Alconna(
 
 RANK_COMMAND = Alconna("re:(?i:(银趴|impart)(排行榜|排名|榜单|rank))")
 
+INTERACTION_ACTIONS = {
+    "透": InteractionAction.INJECT,
+    "日": InteractionAction.INJECT,
+    "榨": InteractionAction.SQUEEZE,
+}
 INTERACTION_COMMAND = Alconna(
-    "透",
+    f"{{action:{'|'.join(INTERACTION_ACTIONS)}}}",
     Args["kind", Literal["群友", "管理", "群主"]],
-    Args["target?", At],
+    Args["targets?", MultiVar(At)],
     meta=CommandMeta(compact=True),
 )
 
@@ -98,7 +103,6 @@ rank_matcher = on_alconna(
 
 interaction_matcher = on_alconna(
     INTERACTION_COMMAND,
-    aliases={"日"},
     rule=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,

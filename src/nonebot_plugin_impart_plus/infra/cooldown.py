@@ -54,3 +54,6 @@ class CooldownManager:
             else self.fuck_cd_time + 1
         )
         return cd > self.fuck_cd_time
+
+    def record_interaction(self, uid: UserRef) -> None:
+        self.ejaculation_cd[uid] = time.time()

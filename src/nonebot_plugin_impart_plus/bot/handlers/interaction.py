@@ -4,6 +4,7 @@ import asyncio
 from random import choice
 from typing import cast
 
+from arclet.alconna import Arparma
 from nonebot.matcher import Matcher
 from nonebot_plugin_alconna import (
     AUTO,
@@ -13,13 +14,20 @@ from nonebot_plugin_alconna import (
     UniMessage,
 )
 from nonebot_plugin_uninfo import Member, QryItrface, Uninfo
-from nonebot_plugin_uniref import RefContext, UserRef
+from nonebot_plugin_uniref import RefContext
 
-from ...impart.app import InteractionGuardType
+from ...impart.app import InteractionGuardType, InteractionResult
+from ...impart.core import (
+    InteractionAction,
+    InteractionParticipant,
+    InteractionResolution,
+    InteractionReversal,
+)
 from ..dependencies import botname, game_app
-from ..matchers import interaction_matcher
+from ..matchers import INTERACTION_ACTIONS, interaction_matcher
 from .shared import (
     NOT_ALLOWED_TEXT,
+    created_user_message,
     get_member_or_none,
     get_members_or_empty,
     get_user_or_none,
@@ -28,6 +36,14 @@ from .shared import (
     user_at_target,
     user_display_name,
 )
+
+
+def _interaction_action(result: Arparma) -> InteractionAction:
+    action = result.header_match.groups.get("action")
+    parsed = INTERACTION_ACTIONS.get(action) if isinstance(action, str) else None
+    if parsed is None:
+        raise TypeError("互动命令未解析为 InteractionAction")
+    return parsed
 
 
 def select_interaction_target(
@@ -44,12 +60,9 @@ def select_interaction_target(
         admin_ids = [
             member.user.id
             for member in members
-            if member_has_role(member, "ADMINISTRATOR")
+            if member.user.id != uid and member_has_role(member, "ADMINISTRATOR")
         ]
-        if not admin_ids:
-            return None
-        other_admin_ids = [user_id for user_id in admin_ids if user_id != uid]
-        return choice(other_admin_ids or admin_ids)
+        return choice(admin_ids) if admin_ids else None
     if kind == "群友":
         member_ids = [member.user.id for member in members if member.user.id != uid]
         return choice(member_ids) if member_ids else None
@@ -60,18 +73,20 @@ async def send_interaction_prompt(
     kind: str,
     req_user_card: str,
     matcher: Matcher,
-    user_ref: UserRef,
-    random_nn: float,
+    requested_action: InteractionAction,
+    resolution: InteractionResolution,
 ) -> None:
-    jj_length = await game_app.get_length(user_ref)
     target_text = {
         "群友": "随机一位幸运群友",
         "管理": "随机一位管理",
         "群主": "群主",
     }[kind]
-    if jj_length <= 0:
-        message = f"唔...你透不了哦~\n现在咱将{req_user_card}\n送给{target_text}色色！"
-    elif jj_length <= 5 and random_nn < 0.5:
+    if resolution.reversal is InteractionReversal.WRONG_ACTION:
+        message = (
+            f"唔...你{requested_action.value}不了哦~\n"
+            f"现在咱将{req_user_card}\n送给{target_text}色色！"
+        )
+    elif resolution.reversal is InteractionReversal.XNN:
         message = (
             f"{botname}发现你是xnn~现在咱将{req_user_card}\n送给{target_text}色色！"
         )
@@ -82,25 +97,70 @@ async def send_interaction_prompt(
     await matcher.send(message)
 
 
+def interaction_report(
+    result: InteractionResult,
+    req_user_card: str,
+    uid: str,
+    lucky_user_card: str,
+    lucky_user: str,
+) -> str:
+    requester = (req_user_card, uid)
+    target = (lucky_user_card, lucky_user)
+    if result.resolution.actor is InteractionParticipant.REQUESTER:
+        actor, counterpart = requester, target
+    else:
+        actor, counterpart = target, requester
+
+    prefix = f"好欸！{actor[0]}({actor[1]})用时{result.seconds}秒 \n"
+    if result.resolution.action is InteractionAction.INJECT:
+        action = (
+            f"给 {counterpart[0]}({counterpart[1]}) "
+            f"注入了{result.ejaculation}毫升的{result.resolution.fluid.value}"
+        )
+    else:
+        action = (
+            f"从 {counterpart[0]}({counterpart[1]}) "
+            f"榨出了{result.ejaculation}毫升的{result.resolution.fluid.value}"
+        )
+    return f"{prefix}{action}, 当日总注入量为：{result.today_total}毫升\n"
+
+
+def _missing_target_message(kind: str) -> str:
+    return {
+        "群友": "喵喵喵? 找不到群友!",
+        "管理": "喵喵喵? 找不到群管理!",
+        "群主": "喵喵喵? 找不到群主!",
+    }[kind]
+
+
 @interaction_matcher.handle()
 async def yinpa(
     matcher: Matcher,
     session: Uninfo,
     interface: QryItrface,
     refs: RefContext,
+    result: Arparma,
     kind: str,
-    target: Match[At],
+    targets: Match[tuple[At, ...]],
 ) -> None:
+    requested_action = _interaction_action(result)
     scene_ref = refs.scene_ref
     user_ref = refs.user_ref
     uid = session.user.id
     mentioned = (
-        user_at_target(target.result) if kind == "群友" and target.available else None
+        user_at_target(targets.result[0])
+        if kind == "群友" and targets.available
+        else None
     )
 
     guard = await game_app.prepare_interaction(scene_ref, user_ref)
     if guard.type is InteractionGuardType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
+    if guard.type is InteractionGuardType.USER_CREATED:
+        await matcher.finish(
+            created_user_message(guard.created_users, user_ref, user_ref),
+            at_sender=True,
+        )
     if guard.type is InteractionGuardType.COOLING_DOWN:
         await matcher.finish(
             f"你已经榨不出来任何东西了, 请先休息{guard.remaining}秒",
@@ -115,26 +175,36 @@ async def yinpa(
     if mentioned is None:
         members = await get_members_or_empty(interface, session)
         if not members:
-            game_app.release_interaction_cooldown(user_ref)
-            await matcher.finish("请@指定目标" if kind == "群友" else f"没找到{kind}")
-    random_nn = game_app.roll_interaction()
+            message = "请@指定目标" if kind == "群友" else _missing_target_message(kind)
+            await matcher.finish(message)
+
+    reverse_roll = (
+        game_app.roll_interaction()
+        if requested_action is InteractionAction.INJECT
+        else None
+    )
     lucky_user = mentioned or select_interaction_target(kind, members, uid)
     if lucky_user is None:
-        game_app.release_interaction_cooldown(user_ref)
-        await matcher.finish(
-            "喵喵喵? 找不到群友!" if kind == "群友" else f"没找到{kind}"
-        )
+        await matcher.finish(_missing_target_message(kind))
     if lucky_user == uid:
-        game_app.release_interaction_cooldown(user_ref)
-        await matcher.finish("你透你自己?")
+        await matcher.finish(f"你{requested_action.value}你自己?")
+
+    lucky_user_ref = refs.build_user_ref(lucky_user)
+    resolution = await game_app.begin_interaction(
+        user_ref,
+        lucky_user_ref,
+        requested_action,
+        reverse_roll,
+    )
     if mentioned is None:
         await send_interaction_prompt(
             kind,
             req_user_card,
             matcher,
-            user_ref,
-            random_nn,
+            requested_action,
+            resolution,
         )
+
     lucky_member = next(
         (member for member in members if member.user.id == lucky_user),
         None,
@@ -154,13 +224,16 @@ async def yinpa(
     await asyncio.sleep(2)
     interaction_result = await game_app.complete_interaction(
         user_ref,
-        refs.build_user_ref(lucky_user),
-        random_nn,
+        lucky_user_ref,
+        resolution,
     )
-    if interaction_result.reversed:
-        report = f"好欸！{lucky_user_card}({lucky_user})用时{interaction_result.seconds}秒 \n给 {req_user_card}({uid}) 注入了{interaction_result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{interaction_result.today_total}毫升\n"
-    else:
-        report = f"好欸！{req_user_card}({uid})用时{interaction_result.seconds}秒 \n给 {lucky_user_card}({lucky_user}) 注入了{interaction_result.ejaculation}毫升的脱氧核糖核酸, 当日总注入量为：{interaction_result.today_total}毫升\n"
+    report = interaction_report(
+        interaction_result,
+        req_user_card,
+        uid,
+        lucky_user_card,
+        lucky_user,
+    )
     message = UniMessage.text(report)
     if lucky_user_avatar:
         message.image(url=lucky_user_avatar)

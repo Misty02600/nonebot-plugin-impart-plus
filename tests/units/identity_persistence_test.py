@@ -150,7 +150,7 @@ async def test_scene_switch_uses_full_scene_ref(database_harness) -> None:
     }
 
 
-async def test_length_commands_initialize_missing_users_without_action(
+async def test_gameplay_commands_initialize_missing_users_without_action(
     game_harness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -172,6 +172,7 @@ async def test_length_commands_initialize_missing_users_without_action(
     query_target = UserRef("QQClient", "31")
     pk_user = UserRef("QQClient", "40")
     pk_target = UserRef("QQClient", "41")
+    interaction_user = UserRef("QQClient", "42")
     await manager.add_new_user(suo_user)
     await manager.set_jj_length(suo_user, 2.0)
     await manager.add_new_user(query_target)
@@ -201,6 +202,7 @@ async def test_length_commands_initialize_missing_users_without_action(
         ),
         await application.query_user(scene, query_user, query_target),
         await application.execute_pk(scene, pk_user, pk_target),
+        await application.prepare_interaction(scene, interaction_user),
     ]
 
     expected_users = [
@@ -208,6 +210,7 @@ async def test_length_commands_initialize_missing_users_without_action(
         (suo_target,),
         (query_user,),
         (pk_user, pk_target),
+        (interaction_user,),
     ]
 
     assert [outcome.type.value for outcome in outcomes] == [
@@ -215,17 +218,99 @@ async def test_length_commands_initialize_missing_users_without_action(
         "user_created",
         "user_created",
         "users_created",
+        "user_created",
     ]
     assert [outcome.created_users for outcome in outcomes] == expected_users
     assert cooldown.cd_data == {}
     assert cooldown.suo_cd_data == {}
     assert cooldown.pk_cd_data == {}
+    assert cooldown.ejaculation_cd == {}
     for created_user in (user for users in expected_users for user in users):
         assert await manager.has_user(created_user)
         assert await manager.get_jj_length(created_user) == 10.0
         assert await manager.get_win_probability(created_user) == 0.5
     assert await manager.get_jj_length(suo_user) == 12.0
     assert await manager.get_jj_length(query_target) == 13.0
+
+
+@pytest.mark.parametrize(
+    (
+        "requested",
+        "requester_length",
+        "target_length",
+        "roll",
+        "expected_action",
+        "expected_recipient",
+        "expected_fluid",
+    ),
+    [
+        ("INJECT", 10.0, None, 0.75, "INJECT", "target", "DNA"),
+        ("INJECT", -10.0, 10.0, 0.75, "INJECT", "requester", "DNA"),
+        ("SQUEEZE", -10.0, -10.0, None, "SQUEEZE", "requester", "GIRL_JUICE"),
+        ("SQUEEZE", 10.0, -10.0, None, "SQUEEZE", "target", "DNA"),
+    ],
+)
+async def test_interaction_records_volume_for_actual_recipient(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+    requested: str,
+    requester_length: float,
+    target_length: float | None,
+    roll: float | None,
+    expected_action: str,
+    expected_recipient: str,
+    expected_fluid: str,
+) -> None:
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionFluid,
+    )
+
+    manager = game_harness.manager
+    application = game_harness.application
+    cooldown = game_harness.cooldown
+    requester = game_harness.user
+    target = game_harness.target
+    await manager.add_new_user(requester)
+    await manager.set_jj_length(requester, requester_length - 10.0)
+    if target_length is not None:
+        await manager.add_new_user(target)
+        await manager.set_jj_length(target, target_length - 10.0)
+
+    resolution = await application.begin_interaction(
+        requester,
+        target,
+        InteractionAction[requested],
+        roll,
+    )
+    assert await manager.has_user(target)
+    assert requester in cooldown.ejaculation_cd
+
+    random_calls: list[str] = []
+
+    def volume(*_: object) -> float:
+        random_calls.append("volume")
+        return 12.5
+
+    def seconds(*_: object) -> int:
+        random_calls.append("seconds")
+        return 4
+
+    monkeypatch.setattr(app_module.random, "uniform", volume)
+    monkeypatch.setattr(app_module.random, "randint", seconds)
+    result = await application.complete_interaction(requester, target, resolution)
+
+    recipient = requester if expected_recipient == "requester" else target
+    other = target if recipient == requester else requester
+    assert result.resolution.action is InteractionAction[expected_action]
+    assert result.resolution.fluid is InteractionFluid[expected_fluid]
+    assert result.ejaculation == 12.5
+    assert result.seconds == 4
+    assert result.today_total == 12.5
+    assert await manager.get_today_ejaculation_data(recipient) == 12.5
+    assert await manager.get_today_ejaculation_data(other) == 0.0
+    assert random_calls == ["volume", "seconds"]
 
 
 async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(

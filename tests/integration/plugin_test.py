@@ -15,6 +15,7 @@ def test_plugin_metadata(app: App):
     assert __plugin_meta__.name == "nonebot_plugin_impart_plus"
     assert __plugin_meta__.description == "NoneBot2 银趴插件 Plus"
     assert "初始胜率为50%" in __plugin_meta__.usage
+    assert "[透|日|榨][群友|管理|群主]" in __plugin_meta__.usage
     assert "[开扣|挖矿]" in __plugin_meta__.usage
     assert "<长度或深度超过25时会触发神秘任务>" in __plugin_meta__.usage
     assert "[银趴|impart][开启|禁止|帮助]" in __plugin_meta__.usage

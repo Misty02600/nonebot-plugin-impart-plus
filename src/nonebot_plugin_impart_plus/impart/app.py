@@ -11,13 +11,16 @@ from ..infra.cooldown import CooldownManager
 from ..infra.data_manager import DataManager
 from .core import (
     GrowthMode,
+    InteractionAction,
+    InteractionParticipant,
+    InteractionResolution,
     LengthState,
     PkResolution,
     classify_length,
     crossed_challenge_threshold,
     growth_delta,
+    resolve_interaction,
     resolve_pk,
-    should_reverse_injection,
     supports_growth_mode,
 )
 
@@ -102,6 +105,7 @@ class RankingOutcome:
 
 class InteractionGuardType(StrEnum):
     DISABLED = "disabled"
+    USER_CREATED = "user_created"
     COOLING_DOWN = "cooling_down"
     ALLOWED = "allowed"
 
@@ -110,11 +114,12 @@ class InteractionGuardType(StrEnum):
 class InteractionGuard:
     type: InteractionGuardType
     remaining: float = 0
+    created_users: tuple[UserRef, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class InteractionResult:
-    reversed: bool
+    resolution: InteractionResolution
     ejaculation: float
     today_total: float
     seconds: int
@@ -419,6 +424,14 @@ class GameApplication:
     ) -> InteractionGuard:
         if not await self._data.is_scene_enabled(scene_ref):
             return InteractionGuard(InteractionGuardType.DISABLED)
+
+        created_users = await self._create_missing_users(user_ref)
+        if created_users:
+            return InteractionGuard(
+                InteractionGuardType.USER_CREATED,
+                created_users=created_users,
+            )
+
         await self.penalties_and_resets()
         if not await self._data.is_scene_enabled(scene_ref):
             return InteractionGuard(InteractionGuardType.DISABLED)
@@ -432,36 +445,67 @@ class GameApplication:
                 InteractionGuardType.COOLING_DOWN,
                 remaining=remaining,
             )
-        self._cooldown.ejaculation_cd.update({user_ref: time.time()})
         return InteractionGuard(InteractionGuardType.ALLOWED)
-
-    def release_interaction_cooldown(self, user_ref: UserRef) -> None:
-        del self._cooldown.ejaculation_cd[user_ref]
 
     @staticmethod
     def roll_interaction() -> float:
         return random.uniform(0, 1)
 
-    async def get_length(self, user_ref: UserRef) -> float:
-        return await self._data.get_jj_length(user_ref)
+    async def begin_interaction(
+        self,
+        user_ref: UserRef,
+        target_ref: UserRef,
+        requested_action: InteractionAction,
+        reverse_roll: float | None,
+    ) -> InteractionResolution:
+        """初始化互动目标、固定结算结果并开始计算冷却。
+
+        Args:
+            user_ref: 命令发起者。
+            target_ref: 已由接入层选定的有效目标。
+            requested_action: 发起者请求的互动动作。
+            reverse_roll: 透命令已生成的反制随机值；榨命令传入 ``None``。
+
+        Returns:
+            供选择提示和最终结算共同使用的领域结果。
+
+        Raises:
+            ValueError: 目标与发起者相同。
+        """
+        if target_ref == user_ref:
+            raise ValueError("互动目标不能是发起者")
+
+        await self._create_missing_users(target_ref)
+        requester_length = await self._data.get_jj_length(user_ref)
+        target_length = await self._data.get_jj_length(target_ref)
+        resolution = resolve_interaction(
+            requested_action,
+            requester_length,
+            target_length,
+            reverse_roll=reverse_roll,
+        )
+        self._cooldown.record_interaction(user_ref)
+        return resolution
 
     async def complete_interaction(
         self,
         user_ref: UserRef,
         lucky_user_ref: UserRef,
-        random_nn: float,
+        resolution: InteractionResolution,
     ) -> InteractionResult:
         await self._data.update_activity(lucky_user_ref)
         await self._data.update_activity(user_ref)
-        length = await self._data.get_jj_length(user_ref)
-        reversed_interaction = should_reverse_injection(length, random_nn)
         ejaculation = round(random.uniform(1, 100), 3)
-        recipient = user_ref if reversed_interaction else lucky_user_ref
+        recipient = (
+            user_ref
+            if resolution.recipient is InteractionParticipant.REQUESTER
+            else lucky_user_ref
+        )
         await self._data.insert_ejaculation(recipient, ejaculation)
         seconds = random.randint(1, 20)
         today_total = await self._data.get_today_ejaculation_data(recipient)
         return InteractionResult(
-            reversed=reversed_interaction,
+            resolution=resolution,
             ejaculation=ejaculation,
             today_total=today_total,
             seconds=seconds,
