@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 群开关与帮助 | `银趴` 根命令把开启/开始、禁止/关闭直接解析为一个布尔参数，帮助/介绍保留独立子命令；compact 允许有/无空格，开关限管理员、群主或超级用户 | 一个 toggle dispatch 和 Handler 持久化场景级 `allow` 状态；帮助 dispatch 保留独立权限与优先级；完整帮助文本来自 `PluginMetadata.usage`；与其他顶层命令一样从 NoneBot `COMMAND_START` 取得前缀 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/control.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/control.py) |
 | 长度与深度成长、查询 | `打胶/开导` 服务 `length > 0` 并增加本人长度，`开扣/挖矿` 服务 `length <= 0` 并增加绝对深度；`嗦` 只增加被 `@` 正值用户的长度，`舔` 只增加被 `@` 非正值用户的深度；`银趴/impart` 根命令下的 `查询` 子命令显示本人或被 `@` 用户的长度或深度状态 | 自我成长和目标成长分别各用一个 Alconna matcher；两者均由 Bracket Header 捕获 `action` 并通过对应映射取得 `GrowthMode`。目标成长必须 At 其他用户，允许多个 At 但严格只使用第一个，嗦与舔共享 `SUO_CD_TIME`；有效命令先初始化本次涉及的缺失用户，只有用户均已存在时才继续惩罚、世界检查、冷却与结算 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
-| 同世界 PK 与登神挑战 | `pk/对决` 必须 `@` 同世界其他用户；允许多个用户 At，但严格只使用第一个。正值双方结算长度，负值双方以相反方向结算深度，跨世界拒绝；胜负继续由发起者胜率判定 | 未提供目标时在场景开关检查后提示，第一个 At 是自己时拒绝；跨世界门禁早于不活跃惩罚和冷却。正值继续评估并呈现挑战与状态，负值只呈现基础结果和胜率；双方胜率、长度和状态仍通过多次独立提交更新 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
+| 同世界 PK 与正负挑战 | `pk/对决` 必须 `@` 同世界其他用户；允许多个用户 At，但严格只使用第一个。正值双方结算长度，负值双方以相反方向结算深度，跨世界拒绝；胜负继续由发起者胜率判定 | 未提供目标时在场景开关检查后提示，第一个 At 是自己时拒绝；跨世界门禁早于不活跃惩罚和冷却。正负世界都按绝对量级评估挑战：正值使用“登神长阶”，负值使用“深渊试炼”；双方胜率、长度和状态仍通过多次独立提交更新 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
 | 群友互动 | `透` 为根命令、`日` 为 alias，群友/管理/群主解析为同一个必填目标类型参数；其后可带 At，compact 允许有/无空格 | Uninfo 提供成员、角色、昵称与头像；群友使用 At 指定目标或随机选择，管理和群主忽略 At 并只按角色自动选择；找不到角色时返回对应提示，最终目标为发起者时统一拒绝；应用层处理冷却、反透和注入写入 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 排行榜与注入查询 | 在当前 `UserRef.namespace` 内显示长度前五、后五和本人排名；查询当天或历史注入量 | DataManager 通过 namespace 索引分榜，应用层返回类型化 Ref 条目，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 | `Config` | 配置四类冷却时长和不活跃惩罚 | 牛牛与负值部位名称是代码内玩法常量，不属于部署配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
@@ -36,7 +36,7 @@
 1. 所有顶层 matcher 先把 NoneBot `COMMAND_START` 作为命令前缀，再由 Alconna 解析结构化命令、子命令、Option 与 At；Uninfo 提供场景、用户、成员和角色。
 2. Handler 注入 UniRef `RefContext`，在业务副作用前取得当前 UserRef/SceneRef，并通过 `build_user_ref()` 构造 Alconna At 目标；上下文本身无法建立时当前 Handler 被跳过，属性或目标构造失败则保留异常。
 3. `GameApplication` 先检查场景与命令语义；PK、嗦或舔缺少目标以及 At 自己时先返回，不创建用户或执行其他副作用。有效目标与打胶、开扣、查询所涉及的缺失用户才会创建默认状态；只要发生创建就返回实际 Ref，不执行全局惩罚、冷却或结算。
-4. 用户均已存在时，application 检查正负世界；PK 双方跨世界时立即拒绝，同世界命令才继续执行不活跃惩罚与 Ref 冷却。需要纯计算时将普通数值传给 `impart/core.py`，取得状态分类、带符号成长、PK 增量或反透结果。
+4. 用户均已存在时，application 检查正负世界；PK 双方跨世界时立即拒绝，同世界命令才继续执行不活跃惩罚与 Ref 冷却。成长命令在世界检查后先刷新相关挑战状态：挑战者使用本世界成长命令，或目标正在挑战时直接拒绝，不记录冷却、不调用成长随机数；其他路径保持既有冷却和随机顺序。需要纯计算时将普通数值传给 `impart/core.py`，取得状态分类、带符号成长、PK 增量或反透结果。
 5. application 调用 `DataManager` 方法保存变化，并返回不包含 NoneBot 事件对象的 outcome。
 6. bot 根据 outcome 选择文案；需要图片时再调用 `ChartRenderer`，最后通过 UniMessage 以 AUTO fallback 发送。
 
@@ -52,15 +52,15 @@
 ## 当前稳定状态语义
 
 - 新用户初始长度为 `10.0`，内部胜率为 `0.5`。打胶、开扣、查询，或带有效非自身目标的嗦、舔和 PK 发现本次涉及的用户缺失时，只创建缺失者并回复，不消耗冷却或执行其他结算；缺少目标或 At 自己时不创建用户，排行榜和群友互动也不使用这项统一前置条件。
-- `25 <= length < 30` 会进入登神挑战并把内部胜率乘以 `0.8`；挑战期间禁止打胶和嗦。
-- 挑战中跌到 `length < 25` 会退出挑战、恢复内部胜率系数并额外减少 5；达到 `length >= 30` 会完成挑战。
-- `0 < length <= 5` 被标记为 xnn 临界区；`length <= 0` 属于负值状态，查询显示固定名称“小学”和绝对深度，并可通过开扣/挖矿或由其他用户使用舔继续向负方向成长。负值成长不触发 25/30 挑战，当前没有负值 PK 结算体系。
+- `25 <= abs(length) < 30` 会进入挑战并把内部胜率乘以 `0.8`；正值世界开启“登神长阶”，负值世界开启“深渊试炼”。挑战期间正值用户不能打胶或嗦，负值用户不能开扣或舔，挑战中的目标也不能被嗦或舔，只能通过同世界 PK 推进挑战。
+- 挑战中跌到 `abs(length) < 25` 会退出挑战、恢复内部胜率系数，并向零方向额外惩罚 5cm；达到 `abs(length) >= 30` 会完成挑战。完成后再次跌破 25cm 会取消称号并执行同方向惩罚。
+- `0 < length <= 5` 被标记为 xnn 临界区；`length <= 0` 属于负值状态，查询显示固定名称“小学”和绝对深度，并可通过开扣/挖矿或由其他用户使用舔继续向负方向成长；`length <= -30` 显示“深淵の主”。
 - PK 只使用发起者自身的内部胜率判定胜负；胜者内部胜率减 `0.01`，败者增加 `0.01`。正值世界中胜者增长、败者缩短，负值世界中胜者加深、败者变浅；本轮不做零点钳制，因此结算仍可能跨过零点。双方长度和胜率继续通过多次独立数据库提交更新。
 - 发起者处于 `0 < length <= 5` 时有 50% 概率被反透，这一范围同时包含当前的 XNN 与 NEAR_GIRL；`length <= 0` 时必定成为被注入方，`length > 5` 时不会反透。注入记录本身不会改变长度。
 
 ## 当前质量边界与维护风险
 
-- 当前测试覆盖插件与 10 个 Alconna matcher 注册、全部顶层命令的 command start、严格 grammar、统一首次初始化、正负成长边界、Uninfo 场景/成员/角色、Ref Handler 参数、namespace schema/排行榜、冷却隔离、能力降级和 UniMessage 文本/图片结构；这些聚焦测试是当前 OneBot V11 验收边界，不计划增加 Adapter 事件级 fixture。
+- 当前测试覆盖插件与 10 个 Alconna matcher 注册、全部顶层命令的 command start、严格 grammar、统一首次初始化、正负成长与挑战边界、挑战门禁的冷却/随机副作用、Uninfo 场景/成员/角色、Ref Handler 参数、namespace schema/排行榜、冷却隔离、能力降级和 UniMessage 文本/图片结构；这些聚焦测试是当前 OneBot V11 验收边界，不计划增加 Adapter 事件级 fixture。
 - 英文根命令 alias `impart` 只接受小写；排行榜自身的 `rank` 正则仍保持大小写不敏感。上游 `IMPART帮助` 等大小写变体不再作为兼容入口。
 - `bot/handlers/` 已按 `game`、`interaction`、`records`、`control` 拆分；群友、管理、群主共享一个互动 matcher 和 `yinpa` Handler，由必填 `kind` 参数选择目标策略；打胶与开扣共享一个 matcher 和一个装饰器 Handler，由 Alconna 命令头的类型化结果选择成长模式。跨功能共享保留玩法名称常量、未开启文案与用户目录辅助函数，`game.py` 因 PK 分支文案仍是其中最大的模块。
 - PK 和挑战结算继续由多个 `DataManager` 方法分别提交；中途异常可能留下双方状态只更新一部分的结果。

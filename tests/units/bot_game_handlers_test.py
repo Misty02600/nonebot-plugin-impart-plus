@@ -60,7 +60,7 @@ async def test_growth_handler_uses_uninfo_identity(
     assert calls == [(make_scene_ref("12345"), make_user_ref(), GrowthMode.LENGTH)]
     assert len(matcher.messages) == 1
     assert matcher.messages[0].startswith("开导结束喵")
-    assert "长了1.25cm" in matcher.messages[0]
+    assert "导长了1.25cm" in matcher.messages[0]
     assert "目前长度为11.25cm" in matcher.messages[0]
 
     async def reject_growth(
@@ -119,7 +119,7 @@ async def test_depth_growth_handler_uses_depth_copy(
 
     assert calls == [(make_scene_ref("12345"), make_user_ref(), GrowthMode.DEPTH)]
     assert matcher.messages == [
-        "开扣结束喵, 你的小学很满意喵, 深了1.25cm喵, 目前深度为3.25cm喵"
+        "开扣结束喵, 你的小学很满意喵, 扣深了1.25cm喵, 目前深度为3.25cm喵"
     ]
 
     async def reject_growth(
@@ -190,27 +190,43 @@ async def test_query_handler_uses_absolute_depth_for_negative_state(
     from nonebot_plugin_impart_plus.impart.app import QueryOutcome, QueryOutcomeType
     from nonebot_plugin_impart_plus.impart.core import LengthState
 
+    outcomes = iter(
+        (
+            QueryOutcome(
+                QueryOutcomeType.COMPLETED,
+                length=-2.5,
+                state=LengthState.GIRL,
+            ),
+            QueryOutcome(
+                QueryOutcomeType.COMPLETED,
+                length=-30.0,
+                state=LengthState.ABYSS_LORD,
+            ),
+        )
+    )
+
     async def query_user(
         _: SceneRef,
         __: UserRef,
         ___: UserRef,
     ) -> QueryOutcome:
-        return QueryOutcome(
-            QueryOutcomeType.COMPLETED,
-            length=-2.5,
-            state=LengthState.GIRL,
-        )
+        return next(outcomes)
 
     monkeypatch.setattr(game.game_app, "query_user", query_user)
-    matcher = MatcherStub()
+    messages: list[str] = []
+    for _ in range(2):
+        matcher = MatcherStub()
+        await game.queryjj(
+            cast(Matcher, matcher),
+            make_ref_context(scene_id="12345"),
+            Match(At("user", "67890"), True),
+        )
+        messages.extend(matcher.messages)
 
-    await game.queryjj(
-        cast(Matcher, matcher),
-        make_ref_context(scene_id="12345"),
-        Match(At("user", "67890"), True),
-    )
-
-    assert matcher.messages == ["TA已经是女孩子啦！\nTA的小学目前深度为2.5cm喵"]
+    assert messages == [
+        "TA已经是女孩子啦！\nTA的小学目前深度为2.5cm喵",
+        "🕳️深淵の主🕳️\nTA的小学目前深度为30.0cm喵",
+    ]
 
 
 async def test_pk_handler_requires_and_uses_mention(
@@ -315,14 +331,16 @@ async def test_pk_handler_renders_world_specific_results(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.DEPTH,
             resolution=PkResolution(True, 1.5, 0.75, 1.5),
-            defender_status="length_near_zero",
+            attacker_status="challenge_started_low_win",
+            defender_status="challenge_failed_high_win",
             attacker_probability=0.49,
         ),
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.DEPTH,
             resolution=PkResolution(False, 1.5, 0.75, 1.5),
-            attacker_status="length_near_zero",
+            attacker_status="challenge_completed_reduce",
+            defender_status="challenge_success_high_win",
             attacker_probability=0.51,
         ),
     )
@@ -337,11 +355,24 @@ async def test_pk_handler_renders_world_specific_results(
             await handler(cast(Matcher, matcher), outcome)
         result_messages.extend(matcher.messages)
 
-    assert result_messages == [
-        "对决胜利喵, 你的牛牛增加了0.75cm喵, 对面则在你的阴影笼罩下减小了1.5cm喵\n你的胜率现在为49%喵",
-        "对决胜利喵, 你的小学加深了0.75cm喵, 对面则在你小学的深暗压迫下变浅了1.5cm喵\n你的胜率现在为49%喵",
-        "对决失败喵, 在对面小学的深暗压迫下你的小学变浅了1.5cm喵, 对面加深了0.75cm喵\n你的胜率现在为51%喵",
-    ]
+    assert result_messages[0] == (
+        "对决胜利喵, 你的牛牛增加了0.75cm喵, 对面则在你的阴影笼罩下减小了1.5cm喵"
+        "\n你的胜率现在为49%喵"
+    )
+    assert result_messages[1].startswith(
+        "对决胜利喵, 你的小学加深了0.75cm喵, 对面则在你小学的深暗压迫下变浅了1.5cm喵"
+    )
+    assert "已为你开启🕳️“深渊试炼”🕳️" in result_messages[1]
+    assert "TA的深渊挑战失败" in result_messages[1]
+    assert "TA的小学深度变浅了5cm喵" in result_messages[1]
+    assert result_messages[1].endswith("你的胜率现在为49%喵")
+    assert result_messages[2].startswith(
+        "对决失败喵, 在对面小学的深暗压迫下你的小学变浅了1.5cm喵, 对面加深了0.75cm喵"
+    )
+    assert "你被深渊拒绝了" in result_messages[2]
+    assert "帮助TA完成深渊挑战" in result_messages[2]
+    assert "授予TA🎊“深淵の主”🎊称号" in result_messages[2]
+    assert result_messages[2].endswith("你的胜率现在为51%喵")
 
 
 async def test_target_growth_handler_requires_target_and_uses_mode(
@@ -440,10 +471,15 @@ async def test_target_growth_handler_uses_mode_specific_failure_copy(
         return outcome
 
     monkeypatch.setattr(game.game_app, "grow_target", grow_target)
+    monkeypatch.setattr(game, "choice", lambda _: "牛牛")
     cases = [
         ("嗦", GrowthOutcome(GrowthOutcomeType.WRONG_STATE)),
         ("舔", GrowthOutcome(GrowthOutcomeType.WRONG_STATE)),
         ("舔", GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=12.5)),
+        ("嗦", GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)),
+        ("舔", GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)),
+        ("嗦", GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)),
+        ("舔", GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)),
     ]
     messages: list[str] = []
     for command, current_outcome in cases:
@@ -463,4 +499,8 @@ async def test_target_growth_handler_uses_mode_specific_failure_copy(
     assert messages[1:] == [
         "TA没有小学喵，舔不了喵",
         "你已经舔不动了喵, 请等待12.5秒后再舔喵",
+        "你的牛牛长度在任务范围内，不允许嗦，请专心与群友pk！",
+        "你的小学深度在任务范围内，不允许舔，请专心与群友pk！",
+        "TA的牛牛长度在任务范围内，不准嗦！请专心与群友pk！",
+        "TA的小学深度在任务范围内，不准舔！请专心与群友pk！",
     ]

@@ -6,6 +6,7 @@ from enum import StrEnum
 
 class LengthState(StrEnum):
     GOD = "god"
+    ABYSS_LORD = "abyss_lord"
     NORMAL = "normal"
     XNN = "xnn"
     NEAR_GIRL = "near_girl"
@@ -44,6 +45,8 @@ class PkResolution:
 def classify_length(length: float) -> LengthState:
     if length >= 30:
         return LengthState.GOD
+    if length <= -30:
+        return LengthState.ABYSS_LORD
     if length > 5:
         return LengthState.NORMAL
     if length > 1:
@@ -66,10 +69,12 @@ def growth_delta(amount: float, mode: GrowthMode) -> float:
 
 
 def evaluate_user_state(state: UserGameState) -> StateEvaluation:
+    magnitude = abs(state.length)
+    penalty = 5 if state.length <= 0 else -5
     if (
         not state.is_challenging
         and not state.challenge_completed
-        and 25 <= state.length < 30
+        and 25 <= magnitude < 30
     ):
         return StateEvaluation(
             "challenge_started_low_win",
@@ -79,26 +84,22 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
                 win_probability=state.win_probability * 0.8,
             ),
         )
-    if (
-        not state.is_challenging
-        and not state.challenge_completed
-        and state.length >= 30
-    ):
+    if not state.is_challenging and not state.challenge_completed and magnitude >= 30:
         return StateEvaluation(
             "challenge_completed",
             replace(state, challenge_completed=True),
         )
-    if state.is_challenging and not state.challenge_completed and state.length < 25:
+    if state.is_challenging and not state.challenge_completed and magnitude < 25:
         return StateEvaluation(
             "challenge_failed_high_win",
             replace(
                 state,
-                length=state.length - 5,
+                length=state.length + penalty,
                 win_probability=state.win_probability * 1.25,
                 is_challenging=False,
             ),
         )
-    if state.is_challenging and not state.challenge_completed and state.length >= 30:
+    if state.is_challenging and not state.challenge_completed and magnitude >= 30:
         return StateEvaluation(
             "challenge_success_high_win",
             replace(
@@ -108,16 +109,16 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
                 challenge_completed=True,
             ),
         )
-    if state.is_challenging and 25 <= state.length < 30:
+    if state.is_challenging and 25 <= magnitude < 30:
         return StateEvaluation("is_challenging", state)
-    if state.challenge_completed and 25 <= state.length < 30:
+    if state.challenge_completed and 25 <= magnitude < 30:
         return StateEvaluation("challenge_completed", state)
-    if state.challenge_completed and state.length < 25:
+    if state.challenge_completed and magnitude < 25:
         return StateEvaluation(
             "challenge_completed_reduce",
             replace(
                 state,
-                length=state.length - 5,
+                length=state.length + penalty,
                 challenge_completed=False,
             ),
         )
@@ -139,7 +140,7 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
 
 
 def crossed_challenge_threshold(current_length: float, new_length: float) -> bool:
-    return current_length < 25 <= new_length
+    return abs(current_length) < 25 <= abs(new_length)
 
 
 def resolve_pk(

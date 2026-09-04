@@ -80,6 +80,14 @@ class DataManager:
             )
             return bool(result.scalar())
 
+    async def is_challenging(self, user_ref: UserRef) -> bool:
+        encoded = encode_ref(user_ref)
+        async with self._session_factory() as session:
+            result = await session.execute(
+                select(UserData.is_challenging).where(UserData.user_ref == encoded)
+            )
+            return bool(result.scalar())
+
     async def add_new_user(self, user_ref: UserRef) -> None:
         """插入初始长度为 10.0 的新用户。"""
         async with self._session_factory() as session:

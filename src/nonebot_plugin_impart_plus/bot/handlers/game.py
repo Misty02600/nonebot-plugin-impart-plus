@@ -49,6 +49,104 @@ def _created_user_message(
     raise ValueError("创建结果不包含命令用户")
 
 
+def _self_challenge_progress(status: str, mode: GrowthMode) -> str:
+    if status == "challenge_started_low_win":
+        if mode is GrowthMode.DEPTH:
+            return (
+                f"\n{botname}检测到你的{HOLE_NAME}深度超过25cm，已为你开启🕳️“深渊试炼”🕳️"
+                "\n你现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，"
+                f"请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！"
+            )
+        return (
+            f"\n{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
+            f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧!"
+        )
+    if status == "challenge_success_high_win":
+        if mode is GrowthMode.DEPTH:
+            return (
+                f"\n🎉恭喜你完成深渊挑战🎉\n你的{HOLE_NAME}深度已超过30cm，授予你🎊“深淵の主”🎊称号"
+                "\n你的胜率已恢复，“挖矿”与“舔”指令已重新开放，切记不忘初心，继续探索更深的境界喵！"
+            )
+        return (
+            f"\n🎉恭喜你完成登神挑战🎉\n你的{choice(JJ_NAMES)}长度已超过30cm，授予你🎊“牛々の神”🎊称号"
+            "\n你的胜率已恢复，“打胶”与“嗦”指令已重新开放，切记不忘初心，继续冲击更高的境界喵！"
+        )
+    return ""
+
+
+def _opponent_challenge_progress(status: str, mode: GrowthMode) -> str:
+    if status == "challenge_started_low_win":
+        if mode is GrowthMode.DEPTH:
+            return (
+                f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过25cm，已为TA开启🕳️“深渊试炼”🕳️"
+                "\n现在TA的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，"
+                f"请通知TA以将{HOLE_NAME}深度提升至30cm为目标与群友pk吧！"
+            )
+        return (
+            f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，已为TA开启✨“登神长阶”✨"
+            f"\n现在TA的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(JJ_NAMES)}长度提升至30cm为目标与群友pk吧！"
+        )
+    if status == "challenge_success_high_win":
+        if mode is GrowthMode.DEPTH:
+            return (
+                f"\n🎉恭喜你帮助TA完成深渊挑战🎉\nTA的{HOLE_NAME}深度超过30cm，授予TA🎊“深淵の主”🎊称号"
+                "\nTA的胜率已恢复，“挖矿”与“舔”指令已重新开放，请提醒TA继续探索更深的境界喵！"
+            )
+        return (
+            f"\n🎉恭喜你帮助TA完成登神挑战🎉\nTA的{choice(JJ_NAMES)}长度超过30cm，授予TA🎊“牛々の神”🎊称号"
+            "\nTA的胜率已恢复，“打胶”与“嗦”指令已重新开放，请提醒TA不忘初心，继续冲击更高的境界喵！"
+        )
+    return ""
+
+
+def _self_challenge_regress(status: str, mode: GrowthMode) -> str:
+    if status == "challenge_failed_high_win":
+        if mode is GrowthMode.DEPTH:
+            return (
+                "\n很遗憾，深渊挑战失败，别气馁啦！"
+                f"\n你的{HOLE_NAME}深度变浅了5cm喵，胜率已恢复，“挖矿”与“舔”指令已重新开放喵！"
+            )
+        return (
+            "\n很遗憾，登神挑战失败，别气馁啦！"
+            f"\n你的{choice(JJ_NAMES)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
+        )
+    if status == "challenge_completed_reduce":
+        if mode is GrowthMode.DEPTH:
+            return (
+                "\n很遗憾，你被深渊拒绝了，别气馁啦！"
+                f"\n你的{HOLE_NAME}深度变浅了5cm喵，请不忘初心，再次探索更深的境界喵！"
+            )
+        return (
+            "\n很遗憾，你跌落神坛，别气馁啦！"
+            f"\n你的{choice(JJ_NAMES)}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
+        )
+    return ""
+
+
+def _opponent_challenge_regress(status: str, mode: GrowthMode) -> str:
+    if status == "challenge_failed_high_win":
+        if mode is GrowthMode.DEPTH:
+            return (
+                f"\n由于你对决的胜利，{botname}检测到TA的{HOLE_NAME}深度已不足25cm，很遗憾，TA的深渊挑战失败，{botname}替TA感谢你的鞭策喵！"
+                f"\nTA的{HOLE_NAME}深度变浅了5cm喵，胜率已恢复，“挖矿”与“舔”指令已重新开放喵！"
+            )
+        return (
+            f"\n由于你对决的胜利，{botname}检测到TA的{choice(JJ_NAMES)}长度已不足25cm，很遗憾，TA的登神挑战失败，{botname}替TA感谢你的鞭策喵！"
+            f"\nTA的{choice(JJ_NAMES)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
+        )
+    if status == "challenge_completed_reduce":
+        if mode is GrowthMode.DEPTH:
+            return (
+                f"\n由于你对决的胜利，{botname}检测到TA的{HOLE_NAME}深度已不足25cm，很遗憾，TA被深渊拒绝了，{botname}替TA感谢你的鞭策喵！"
+                f"\nTA的{HOLE_NAME}深度变浅了5cm喵，请不忘初心，再次探索更深的境界喵！"
+            )
+        return (
+            f"\n由于你对决的胜利，{botname}检测到TA的{choice(JJ_NAMES)}长度已不足25cm，很遗憾，TA跌落神坛，{botname}替TA感谢你的鞭策喵！"
+            f"\nTA的{choice(JJ_NAMES)}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
+        )
+    return ""
+
+
 @pk_matcher.handle()
 async def pk(
     matcher: Matcher,
@@ -107,37 +205,26 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
             f"对决胜利喵, 你的{HOLE_NAME}加深了{resolution.length_increase}cm喵, "
             f"对面则在你{HOLE_NAME}的深暗压迫下变浅了{resolution.length_decrease}cm喵"
         )
-        await matcher.finish(
-            f"{uid_msg}\n你的胜率现在为{outcome.attacker_probability:.0%}喵",
-            at_sender=True,
-        )
-        return
-    uid_msg = f"对决胜利喵, 你的{choice(JJ_NAMES)}增加了{resolution.length_increase}cm喵, 对面则在你的阴影笼罩下减小了{resolution.length_decrease}cm喵"
+    else:
+        uid_msg = f"对决胜利喵, 你的{choice(JJ_NAMES)}增加了{resolution.length_increase}cm喵, 对面则在你的阴影笼罩下减小了{resolution.length_decrease}cm喵"
 
-    if "challenge_started_low_win" in outcome.attacker_status:
-        uid_msg += (
-            f"\n{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
-            f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧!"
-        )
-    elif "challenge_success_high_win" in outcome.attacker_status:
-        uid_msg += (
-            f"\n🎉恭喜你完成登神挑战🎉\n你的{choice(JJ_NAMES)}长度已超过30cm，授予你🎊“牛々の神”🎊称号"
-            f"\n你的胜率已恢复，“打胶”与“嗦”指令已重新开放，切记不忘初心，继续冲击更高的境界喵！"
-        )
-
-    if "challenge_failed_high_win" in outcome.defender_status:
-        uid_msg += (
-            f"\n由于你对决的胜利，{botname}检测到TA的{choice(JJ_NAMES)}长度已不足25cm，很遗憾，TA的登神挑战失败，{botname}替TA感谢你的鞭策喵！"
-            f"\nTA的{choice(JJ_NAMES)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
-        )
-    elif "challenge_completed_reduce" in outcome.defender_status:
-        uid_msg += (
-            f"\n由于你对决的胜利，{botname}检测到TA的{choice(JJ_NAMES)}长度已不足25cm，很遗憾，TA跌落神坛，{botname}替TA感谢你的鞭策喵！"
-            f"\nTA的{choice(JJ_NAMES)}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
-        )
-    elif "length_near_zero" in outcome.defender_status:
+    uid_msg += _self_challenge_progress(outcome.attacker_status, outcome.mode)
+    defender_challenge = _opponent_challenge_regress(
+        outcome.defender_status,
+        outcome.mode,
+    )
+    uid_msg += defender_challenge
+    if (
+        not defender_challenge
+        and outcome.mode is GrowthMode.LENGTH
+        and "length_near_zero" in outcome.defender_status
+    ):
         uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成xnn了喵！"
-    elif "length_zero_or_negative" in outcome.defender_status:
+    elif (
+        not defender_challenge
+        and outcome.mode is GrowthMode.LENGTH
+        and "length_zero_or_negative" in outcome.defender_status
+    ):
         uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成女孩子了喵！"
 
     probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
@@ -153,38 +240,28 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
             f"对决失败喵, 在对面{HOLE_NAME}的深暗压迫下你的{HOLE_NAME}"
             f"变浅了{resolution.length_decrease}cm喵, 对面加深了{resolution.length_increase}cm喵"
         )
-        await matcher.finish(
-            f"{uid_msg}\n你的胜率现在为{outcome.attacker_probability:.0%}喵",
-            at_sender=True,
-        )
-        return
-    uid_msg = f"对决失败喵, 在对面{choice(JJ_NAMES)}的阴影笼罩下你的{choice(JJ_NAMES)}减小了{resolution.length_decrease}cm喵, 对面增加了{resolution.length_increase}cm喵"
+    else:
+        uid_msg = f"对决失败喵, 在对面{choice(JJ_NAMES)}的阴影笼罩下你的{choice(JJ_NAMES)}减小了{resolution.length_decrease}cm喵, 对面增加了{resolution.length_increase}cm喵"
 
-    if "challenge_failed_high_win" in outcome.attacker_status:
-        uid_msg += (
-            "\n很遗憾，登神挑战失败，别气馁啦！"
-            f"\n你的{choice(JJ_NAMES)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
-        )
-    elif "challenge_completed_reduce" in outcome.attacker_status:
-        uid_msg += (
-            "\n很遗憾，你跌落神坛，别气馁啦！"
-            f"\n你的{choice(JJ_NAMES)}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
-        )
-    elif "length_near_zero" in outcome.attacker_status:
+    attacker_challenge = _self_challenge_regress(
+        outcome.attacker_status,
+        outcome.mode,
+    )
+    uid_msg += attacker_challenge
+    if (
+        not attacker_challenge
+        and outcome.mode is GrowthMode.LENGTH
+        and "length_near_zero" in outcome.attacker_status
+    ):
         uid_msg += "\n你醒啦, 你已经变成xnn了！"
-    elif "length_zero_or_negative" in outcome.attacker_status:
+    elif (
+        not attacker_challenge
+        and outcome.mode is GrowthMode.LENGTH
+        and "length_zero_or_negative" in outcome.attacker_status
+    ):
         uid_msg += "\n你醒啦, 你已经变成女孩子了！"
 
-    if "challenge_started_low_win" in outcome.defender_status:
-        uid_msg += (
-            f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，已为TA开启✨“登神长阶”✨"
-            f"\n现在TA的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(JJ_NAMES)}长度提升至30cm为目标与群友pk吧！"
-        )
-    elif "challenge_success_high_win" in outcome.defender_status:
-        uid_msg += (
-            f"\n🎉恭喜你帮助TA完成登神挑战🎉\nTA的{choice(JJ_NAMES)}长度超过30cm，授予TA🎊“牛々の神”🎊称号"
-            "\nTA的胜率已恢复，“打胶”与“嗦”指令已重新开放，请提醒TA不忘初心，继续冲击更高的境界喵！"
-        )
+    uid_msg += _opponent_challenge_progress(outcome.defender_status, outcome.mode)
 
     probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
     await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
@@ -224,25 +301,37 @@ async def grow_self(
             f"你已经{action}不动了喵, 请等待{outcome.remaining}秒后再{action}喵",
             at_sender=True,
         )
-    if mode is GrowthMode.DEPTH:
-        await matcher.finish(
-            f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 深了{outcome.random_num}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
-            at_sender=True,
+    if outcome.type is GrowthOutcomeType.ACTOR_CHALLENGING:
+        message = (
+            f"你的{choice(JJ_NAMES)}长度在任务范围内，不允许打胶，请专心与群友pk！"
+            if mode is GrowthMode.LENGTH
+            else f"你的{HOLE_NAME}深度在任务范围内，不允许挖矿，请专心与群友pk！"
         )
-    if outcome.type is GrowthOutcomeType.CHALLENGING:
         await matcher.finish(
-            f"你的{choice(JJ_NAMES)}长度在任务范围内，不允许打胶，请专心与群友pk！",
+            message,
             at_sender=True,
         )
     if outcome.challenge_started:
+        if mode is GrowthMode.DEPTH:
+            await matcher.finish(
+                f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.random_num}cm喵"
+                f"\n由于你无休止的挖矿，触犯到了神秘的禁忌，{botname}检测到你的{HOLE_NAME}深度超过25cm，已为你开启🕳️“深渊试炼”🕳️"
+                f"\n你现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！",
+                at_sender=True,
+            )
         await matcher.finish(
-            f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 长了{outcome.random_num}cm喵"
+            f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.random_num}cm喵"
             f"\n由于你无休止的打胶，触犯到了神秘的禁忌，{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
             f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
             at_sender=True,
         )
+    if mode is GrowthMode.DEPTH:
+        await matcher.finish(
+            f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.random_num}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
+            at_sender=True,
+        )
     await matcher.finish(
-        f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 长了{outcome.random_num}cm喵, 目前长度为{outcome.new_length}cm喵",
+        f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.random_num}cm喵, 目前长度为{outcome.new_length}cm喵",
         at_sender=True,
     )
 
@@ -297,23 +386,42 @@ async def grow_target(
             _created_user_message(outcome.created_users, user_ref, target_ref),
             at_sender=True,
         )
-    if outcome.type is GrowthOutcomeType.CHALLENGING:
+    if outcome.type is GrowthOutcomeType.ACTOR_CHALLENGING:
+        message = (
+            f"你的{choice(JJ_NAMES)}长度在任务范围内，不允许嗦，请专心与群友pk！"
+            if mode is GrowthMode.LENGTH
+            else f"你的{HOLE_NAME}深度在任务范围内，不允许舔，请专心与群友pk！"
+        )
+        await matcher.finish(message, at_sender=True)
+    if outcome.type is GrowthOutcomeType.TARGET_CHALLENGING:
+        message = (
+            f"TA的{choice(JJ_NAMES)}长度在任务范围内，不准嗦！请专心与群友pk！"
+            if mode is GrowthMode.LENGTH
+            else f"TA的{HOLE_NAME}深度在任务范围内，不准舔！请专心与群友pk！"
+        )
         await matcher.finish(
-            f"TA的{choice(JJ_NAMES)}长度在任务范围内，不准嗦！请专心与群友pk！",
+            message,
             at_sender=True,
         )
     if outcome.type is not GrowthOutcomeType.COMPLETED:
         return
-    if mode is GrowthMode.DEPTH:
-        await matcher.finish(
-            f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.random_num}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
-            at_sender=True,
-        )
     if outcome.challenge_started:
+        if mode is GrowthMode.DEPTH:
+            await matcher.finish(
+                f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.random_num}cm喵"
+                f"\n由于TA无休止的舔与被舔，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过25cm，"
+                f"\n已为TA开启🕳️“深渊试炼”🕳️，TA现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！",
+                at_sender=True,
+            )
         await matcher.finish(
             f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.random_num}cm喵"
             f"\n由于TA无休止的嗦与被嗦，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，"
-            f"\n已为TA开启✨“登神长阶”✨，TA现在的胜率变为80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
+            f"\n已为TA开启✨“登神长阶”✨，TA现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
+            at_sender=True,
+        )
+    if mode is GrowthMode.DEPTH:
+        await matcher.finish(
+            f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.random_num}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
             at_sender=True,
         )
     await matcher.finish(
@@ -351,6 +459,8 @@ async def queryjj(
         msg = (
             f"✨牛々の神✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
         )
+    elif outcome.state is LengthState.ABYSS_LORD:
+        msg = f"🕳️深淵の主🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm喵"
     elif outcome.state is LengthState.NORMAL:
         msg = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
     elif outcome.state is LengthState.XNN:

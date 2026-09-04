@@ -306,7 +306,7 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert penalty_calls == win_roll_calls == growth_roll_calls == 3
 
 
-async def test_self_growth_applies_signed_direction_and_skips_depth_challenge(
+async def test_self_growth_applies_signed_direction_and_checks_both_challenges(
     game_harness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -354,7 +354,7 @@ async def test_self_growth_applies_signed_direction_and_skips_depth_challenge(
     assert wrong_state.type.value == "wrong_state"
     assert await manager.get_jj_length(wrong_state_user) == 10.0
     assert generated == 2
-    assert calls == 1
+    assert calls == 2
     assert set(game_harness.cooldown.cd_data) == {length_user, depth_user}
 
 
@@ -455,8 +455,133 @@ async def test_target_growth_enforces_boundaries_and_signed_direction(
         11.25,
     )
     assert generated == 2
-    assert challenge_calls == 1
+    assert challenge_calls == 3
     assert set(cooldown.suo_cd_data) == {user, other_user}
+
+
+async def test_growth_challenge_guards_precede_cooldown_and_random(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.app import GrowthOutcomeType
+
+    manager = game_harness.manager
+    application = game_harness.application
+    cooldown = game_harness.cooldown
+    scene = game_harness.scene
+    mode = game_harness.growth_mode
+    positive_challenger = UserRef("QQClient", "70")
+    negative_challenger = UserRef("QQClient", "71")
+    positive_normal = UserRef("QQClient", "72")
+    negative_normal = UserRef("QQClient", "73")
+    await manager.set_scene_enabled(scene, True)
+    for user in (
+        positive_challenger,
+        negative_challenger,
+        positive_normal,
+        negative_normal,
+    ):
+        await manager.add_new_user(user)
+    await manager.set_jj_length(positive_challenger, 15.0)
+    await manager.set_jj_length(negative_challenger, -35.0)
+    await manager.set_jj_length(negative_normal, -20.0)
+    assert (
+        await manager.update_challenge_status(positive_challenger)
+        == "challenge_started_low_win"
+    )
+    assert (
+        await manager.update_challenge_status(negative_challenger)
+        == "challenge_started_low_win"
+    )
+
+    generated = 0
+
+    def track_random() -> float:
+        nonlocal generated
+        generated += 1
+        return 1.25
+
+    monkeypatch.setattr(app_module, "get_random_num", track_random)
+
+    outcomes = [
+        await application.grow_self(scene, positive_challenger, mode.LENGTH),
+        await application.grow_self(scene, negative_challenger, mode.DEPTH),
+        await application.grow_target(
+            scene,
+            positive_challenger,
+            positive_normal,
+            mode.LENGTH,
+        ),
+        await application.grow_target(
+            scene,
+            negative_challenger,
+            negative_normal,
+            mode.DEPTH,
+        ),
+        await application.grow_target(
+            scene,
+            positive_normal,
+            positive_challenger,
+            mode.LENGTH,
+        ),
+        await application.grow_target(
+            scene,
+            negative_normal,
+            negative_challenger,
+            mode.DEPTH,
+        ),
+    ]
+
+    assert [outcome.type for outcome in outcomes] == [
+        GrowthOutcomeType.ACTOR_CHALLENGING,
+        GrowthOutcomeType.ACTOR_CHALLENGING,
+        GrowthOutcomeType.ACTOR_CHALLENGING,
+        GrowthOutcomeType.ACTOR_CHALLENGING,
+        GrowthOutcomeType.TARGET_CHALLENGING,
+        GrowthOutcomeType.TARGET_CHALLENGING,
+    ]
+    assert generated == 0
+    assert cooldown.cd_data == {}
+    assert cooldown.suo_cd_data == {}
+    assert await manager.get_jj_length(positive_challenger) == 25.0
+    assert await manager.get_jj_length(negative_challenger) == -25.0
+    assert await manager.get_jj_length(positive_normal) == 10.0
+    assert await manager.get_jj_length(negative_normal) == -10.0
+
+
+async def test_negative_growth_can_start_challenge(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+
+    manager = game_harness.manager
+    application = game_harness.application
+    scene = game_harness.scene
+    mode = game_harness.growth_mode
+    self_user = UserRef("QQClient", "80")
+    actor = UserRef("QQClient", "81")
+    target = UserRef("QQClient", "82")
+    await manager.set_scene_enabled(scene, True)
+    for user in (self_user, actor, target):
+        await manager.add_new_user(user)
+    await manager.set_jj_length(self_user, -34.0)
+    await manager.set_jj_length(target, -34.0)
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+
+    self_outcome = await application.grow_self(scene, self_user, mode.DEPTH)
+    target_outcome = await application.grow_target(scene, actor, target, mode.DEPTH)
+
+    assert self_outcome.challenge_started
+    assert target_outcome.challenge_started
+    assert self_outcome.new_length == target_outcome.new_length == -25.0
+    assert await manager.get_win_probability(self_user) == 0.4
+    assert await manager.get_win_probability(target) == 0.4
 
 
 async def test_application_ranking_is_partitioned_by_namespace(

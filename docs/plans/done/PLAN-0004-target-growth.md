@@ -41,3 +41,4 @@ Alconna 1.8.44 的字典型命令头与 `use_cmd_start=True` 组合后无法解�
 
 - [当前项目架构](../../architecture/overview.md)
 - [负值状态自我成长](PLAN-0003-negative-self-growth.md)
+- [后续负值挑战](PLAN-0006-negative-challenge.md)

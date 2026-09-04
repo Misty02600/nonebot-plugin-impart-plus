@@ -51,7 +51,8 @@ class GrowthOutcomeType(StrEnum):
     COOLING_DOWN = "cooling_down"
     USER_CREATED = "user_created"
     WRONG_STATE = "wrong_state"
-    CHALLENGING = "challenging"
+    ACTOR_CHALLENGING = "actor_challenging"
+    TARGET_CHALLENGING = "target_challenging"
     COMPLETED = "completed"
 
 
@@ -139,6 +140,10 @@ def get_random_num() -> float:
     return round(rand_num, 3)
 
 
+def _growth_is_blocked(status: str) -> bool:
+    return status in {"challenge_started_low_win", "is_challenging"}
+
+
 class GameApplication:
     def __init__(
         self,
@@ -165,6 +170,11 @@ class GameApplication:
                 await self._data.add_new_user(user_ref)
                 created_users.append(user_ref)
         return tuple(created_users)
+
+    async def _active_challenge_blocks_growth(self, user_ref: UserRef) -> bool:
+        if not await self._data.is_challenging(user_ref):
+            return False
+        return _growth_is_blocked(await self._data.update_challenge_status(user_ref))
 
     async def execute_pk(
         self,
@@ -268,6 +278,10 @@ class GameApplication:
         if not supports_growth_mode(current_length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
+        status = await self._data.update_challenge_status(user_ref)
+        if _growth_is_blocked(status):
+            return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
+
         if not await self._cooldown.cd_check(user_ref):
             remaining = round(
                 self._cooldown.dj_cd_time
@@ -278,24 +292,6 @@ class GameApplication:
 
         self._cooldown.cd_data[user_ref] = time.time()
         random_num = get_random_num()
-        if mode is GrowthMode.DEPTH:
-            await self._data.set_jj_length(
-                user_ref,
-                growth_delta(random_num, mode),
-            )
-            return GrowthOutcome(
-                GrowthOutcomeType.COMPLETED,
-                random_num=random_num,
-                new_length=await self._data.get_jj_length(user_ref),
-            )
-
-        status = await self._data.update_challenge_status(user_ref)
-        if "is_challenging" in status:
-            return GrowthOutcome(
-                GrowthOutcomeType.CHALLENGING,
-                random_num=random_num,
-            )
-
         await self._data.set_jj_length(user_ref, growth_delta(random_num, mode))
         new_length = await self._data.get_jj_length(user_ref)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
@@ -338,6 +334,15 @@ class GameApplication:
         if not supports_growth_mode(current_length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
+        actor_length = await self._data.get_jj_length(user_ref)
+        actor_uses_mode = supports_growth_mode(actor_length, mode)
+        if actor_uses_mode and await self._active_challenge_blocks_growth(user_ref):
+            return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
+
+        target_status = await self._data.update_challenge_status(target_ref)
+        if _growth_is_blocked(target_status):
+            return GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)
+
         if not await self._cooldown.suo_cd_check(user_ref):
             remaining = round(
                 self._cooldown.suo_cd_time
@@ -348,24 +353,6 @@ class GameApplication:
 
         self._cooldown.suo_cd_data[user_ref] = time.time()
         random_num = get_random_num()
-        if mode is GrowthMode.DEPTH:
-            await self._data.set_jj_length(
-                target_ref,
-                growth_delta(random_num, mode),
-            )
-            return GrowthOutcome(
-                GrowthOutcomeType.COMPLETED,
-                random_num=random_num,
-                new_length=await self._data.get_jj_length(target_ref),
-            )
-
-        status = await self._data.update_challenge_status(target_ref)
-        if "is_challenging" in status:
-            return GrowthOutcome(
-                GrowthOutcomeType.CHALLENGING,
-                random_num=random_num,
-            )
-
         await self._data.set_jj_length(target_ref, growth_delta(random_num, mode))
         new_length = await self._data.get_jj_length(target_ref)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
