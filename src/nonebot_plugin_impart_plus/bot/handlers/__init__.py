@@ -3,6 +3,7 @@
 from . import control as control
 from . import game as game
 from . import interaction as interaction
+from . import query as query
 from . import records as records
 
-__all__ = ["control", "game", "interaction", "records"]
+__all__ = ["control", "game", "interaction", "query", "records"]

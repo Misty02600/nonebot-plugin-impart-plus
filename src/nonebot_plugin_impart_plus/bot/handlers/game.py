@@ -1,4 +1,4 @@
-"""PK、成长与状态查询 Handler。"""
+"""PK 与成长 Handler。"""
 
 from random import choice
 
@@ -7,14 +7,13 @@ from nonebot.matcher import Matcher
 from nonebot_plugin_alconna import At, Match
 from nonebot_plugin_uniref import RefContext
 
-from ...impart.app import GrowthOutcomeType, PkOutcome, PkOutcomeType, QueryOutcomeType
-from ...impart.core import GrowthMode, LengthState
+from ...impart.app import GrowthOutcomeType, PkOutcome, PkOutcomeType
+from ...impart.core import GrowthMode
 from ..dependencies import botname, game_app
 from ..matchers import (
     SELF_GROW_MODES,
     TARGET_GROW_MODES,
     pk_matcher,
-    query_matcher,
     self_growth_matcher,
     target_growth_matcher,
 )
@@ -209,12 +208,6 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
         and "length_near_zero" in outcome.defender_status
     ):
         uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成xnn了喵！"
-    elif (
-        not defender_challenge
-        and outcome.mode is GrowthMode.LENGTH
-        and "length_zero_or_negative" in outcome.defender_status
-    ):
-        uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成女孩子了喵！"
 
     probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
     await matcher.finish(f"{uid_msg}{probability_msg}", at_sender=True)
@@ -243,12 +236,6 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
         and "length_near_zero" in outcome.attacker_status
     ):
         uid_msg += "\n你醒啦, 你已经变成xnn了！"
-    elif (
-        not attacker_challenge
-        and outcome.mode is GrowthMode.LENGTH
-        and "length_zero_or_negative" in outcome.attacker_status
-    ):
-        uid_msg += "\n你醒啦, 你已经变成女孩子了！"
 
     uid_msg += _opponent_challenge_progress(outcome.defender_status, outcome.mode)
 
@@ -417,45 +404,3 @@ async def grow_target(
         f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.random_num}cm喵, 目前长度为{outcome.new_length}cm喵",
         at_sender=True,
     )
-
-
-@query_matcher.handle()
-async def queryjj(
-    matcher: Matcher,
-    refs: RefContext,
-    target: Match[At],
-) -> None:
-    scene_ref = refs.scene_ref
-    user_ref = refs.user_ref
-    mentioned = user_at_target(target.result) if target.available else None
-    target_ref = refs.build_user_ref(mentioned) if mentioned else user_ref
-    pronoun = "TA" if mentioned else "你"
-    outcome = await game_app.query_user(
-        scene_ref,
-        user_ref,
-        target_ref,
-    )
-
-    if outcome.type is QueryOutcomeType.DISABLED:
-        await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
-    if outcome.type is QueryOutcomeType.USER_CREATED:
-        await matcher.finish(
-            created_user_message(outcome.created_users, user_ref, target_ref),
-            at_sender=True,
-        )
-
-    if outcome.state is LengthState.GOD:
-        msg = (
-            f"✨牛々の神✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
-        )
-    elif outcome.state is LengthState.ABYSS_LORD:
-        msg = f"🕳️深淵の主🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm喵"
-    elif outcome.state is LengthState.NORMAL:
-        msg = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
-    elif outcome.state is LengthState.XNN:
-        msg = f"{pronoun}已经是xnn啦！\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
-    elif outcome.state is LengthState.NEAR_GIRL:
-        msg = f"{pronoun}快要变成女孩子啦！\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
-    else:
-        msg = f"{pronoun}已经是女孩子啦！\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm喵"
-    await matcher.finish(msg, at_sender=True)

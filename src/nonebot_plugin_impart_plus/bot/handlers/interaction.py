@@ -26,6 +26,7 @@ from ...impart.core import (
 from ..dependencies import botname, game_app
 from ..matchers import INTERACTION_ACTIONS, interaction_matcher
 from .shared import (
+    JJ_NAMES,
     NOT_ALLOWED_TEXT,
     created_user_message,
     get_member_or_none,
@@ -110,6 +111,11 @@ def interaction_report(
         actor, counterpart = requester, target
     else:
         actor, counterpart = target, requester
+    recipient = (
+        requester
+        if result.resolution.recipient is InteractionParticipant.REQUESTER
+        else target
+    )
 
     prefix = f"好欸！{actor[0]}({actor[1]})用时{result.seconds}秒 \n"
     if result.resolution.action is InteractionAction.INJECT:
@@ -122,7 +128,21 @@ def interaction_report(
             f"从 {counterpart[0]}({counterpart[1]}) "
             f"榨出了{result.ejaculation}毫升的{result.resolution.fluid.value}"
         )
-    return f"{prefix}{action}, 当日总注入量为：{result.today_total}毫升\n"
+    report = f"{prefix}{action}, 当日总注入量为：{result.today_total}毫升\n"
+    if result.feminized:
+        name = choice(JJ_NAMES)
+        return (
+            f"{report}\n{recipient[0]}({recipient[1]})被注入了太多脱氧核糖核酸……"
+            f"\n\n在{actor[0]}({actor[1]})的猛烈攻势下，TA的{name}彻底萎缩消失了♡"
+            f"\n\n取而代之的是一个深度{abs(result.recipient_length)}cm的小学♡"
+            f"\n\n{recipient[0]}({recipient[1]})已经完全雌堕，变成女孩子了喵！"
+        )
+    if result.risk_warning:
+        return (
+            f"{report}\n由于{recipient[0]}({recipient[1]})的当日注入量过多，"
+            f"TA的{choice(JJ_NAMES)}开始变得不稳定了..."
+        )
+    return report
 
 
 def _missing_target_message(kind: str) -> str:

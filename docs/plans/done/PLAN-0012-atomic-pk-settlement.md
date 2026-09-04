@@ -36,11 +36,11 @@ PK 原先分别提交双方胜率、长度和挑战状态，中途异常会留�
 - SQLite 是实际数据库测试后端；PostgreSQL 和 MySQL 当前只保持标准 SQLAlchemy 路径及方言编译边界，不宣称真实集成验证。
 - 状态锁会让不同群的 PK 与成长在短暂数据库临界区内串行；不包含 Handler 回复、图片处理或互动等待。没有真实吞吐瓶颈前不增加按用户分片锁。
 - 数据库失败时双方状态回滚，但已经记录的进程内冷却不撤销。
-- 本轮不改变零点、XNN、胜率和玩法；[PLAN-0010](../todo/PLAN-0010-xnn-feminization.md) 将直接扩展该结算结果，并让雌堕复用同一把锁。
+- 本轮未改变零点、XNN、胜率和玩法；后续 [PLAN-0010](PLAN-0010-xnn-feminization.md) 已扩展该结算结果，并让雌堕复用同一把锁。
 
 ## 相关文档
 
 - [当前项目架构](../../architecture/overview.md)
-- [PLAN-0010：实现 XNN 概率雌堕并合并查询](../todo/PLAN-0010-xnn-feminization.md)
+- [PLAN-0010：实现 XNN 概率雌堕并合并查询](PLAN-0010-xnn-feminization.md)
 - [PLAN-0005：让 PK 按正负世界结算](PLAN-0005-same-world-pk.md)
 - [PLAN-0006：为负值世界补齐挑战](PLAN-0006-negative-challenge.md)

@@ -239,8 +239,6 @@ def test_challenge_state_is_symmetric(
             win_probability=probability,
             is_challenging=is_challenging,
             challenge_completed=challenge_completed,
-            is_near_zero=False,
-            is_zero_or_negative=length <= 0,
         )
     )
 
@@ -273,8 +271,8 @@ def test_pk_settlement_applies_base_changes_before_challenge_updates() -> None:
         resolve_pk_settlement,
     )
 
-    attacker = UserGameState(25.1, 0.4, True, False, False, False)
-    defender = UserGameState(25.1, 0.5, False, False, False, False)
+    attacker = UserGameState(25.1, 0.4, True, False)
+    defender = UserGameState(25.1, 0.5, False, False)
 
     settlement = resolve_pk_settlement(
         attacker,
@@ -304,3 +302,106 @@ def test_pk_settlement_applies_base_changes_before_challenge_updates() -> None:
         0.392,
         True,
     )
+
+
+def test_xnn_probability_and_world_boundaries() -> None:
+    from nonebot_plugin_impart_plus.impart.core import (
+        LengthState,
+        apply_world_locked_delta,
+        classify_length,
+        feminization_probability,
+        is_xnn,
+    )
+
+    assert classify_length(5.0) is LengthState.NORMAL
+    assert all(is_xnn(length) for length in (4.999, 1.0, 0.001))
+    assert classify_length(4.999) is LengthState.XNN
+    assert classify_length(-0.001) is LengthState.GIRL
+    assert [
+        feminization_probability(total) for total in (0.0, 200.0, 400.0, 1000.0, 1200.0)
+    ] == [0.0, 0.0, 0.25, 1.0, 1.0]
+    assert apply_world_locked_delta(0.5, -1.5) == 0.001
+    assert apply_world_locked_delta(-0.5, 1.5) == -0.001
+
+
+def test_interaction_volume_resolves_warning_and_feminization() -> None:
+    from nonebot_plugin_impart_plus.impart.core import resolve_interaction_volume
+
+    warning = resolve_interaction_volume(
+        4.0,
+        190.0,
+        20.0,
+        feminization_roll=0.5,
+    )
+    converted_on_crossing = resolve_interaction_volume(
+        4.0,
+        190.0,
+        20.0,
+        feminization_roll=0.0,
+    )
+    probability_boundary = [
+        resolve_interaction_volume(
+            4.0,
+            300.0,
+            100.0,
+            feminization_roll=roll,
+        ).feminized
+        for roll in (0.249, 0.25)
+    ]
+    feminized_low = resolve_interaction_volume(
+        0.001,
+        990.0,
+        20.0,
+        feminization_roll=0.999,
+    )
+    feminized_high = resolve_interaction_volume(
+        4.999,
+        990.0,
+        20.0,
+        feminization_roll=0.999,
+    )
+    ignored = resolve_interaction_volume(
+        5.0,
+        990.0,
+        20.0,
+        feminization_roll=None,
+    )
+
+    assert warning.risk_warning
+    assert not warning.feminized
+    assert warning.total == 210.0
+    assert converted_on_crossing.feminized
+    assert not converted_on_crossing.risk_warning
+    assert probability_boundary == [True, False]
+    assert feminized_low.feminized
+    assert feminized_low.length == -4.999
+    assert feminized_high.feminized
+    assert feminized_high.length == -0.001
+    assert ignored.length == 5.0
+    assert not ignored.feminized
+
+
+def test_pk_world_lock_reports_actual_loss_and_xnn_entry() -> None:
+    from nonebot_plugin_impart_plus.impart.core import (
+        UserGameState,
+        resolve_pk_settlement,
+    )
+
+    locked = resolve_pk_settlement(
+        UserGameState(6.0, 0.5, False, False),
+        UserGameState(0.5, 0.5, False, False),
+        win_roll=0.0,
+        random_num=1.5,
+    )
+    entered = resolve_pk_settlement(
+        UserGameState(10.0, 0.5, False, False),
+        UserGameState(6.0, 0.5, False, False),
+        win_roll=0.0,
+        random_num=1.5,
+    )
+
+    assert locked.defender.base.length == 0.001
+    assert locked.defender.status == ""
+    assert locked.resolution.length_decrease == 0.499
+    assert entered.defender.base.length == 4.5
+    assert entered.defender.status == "length_near_zero"

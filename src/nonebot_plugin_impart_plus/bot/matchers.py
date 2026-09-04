@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from arclet.alconna import Alconna, Args, CommandMeta, MultiVar, Option, Subcommand
+from arclet.alconna import Alconna, Args, CommandMeta, MultiVar, Subcommand
 from nonebot.permission import SUPERUSER
 from nonebot_plugin_alconna import At, on_alconna
 from nonebot_plugin_uninfo import ADMIN, GROUP, GUILD
@@ -26,12 +26,6 @@ TARGET_GROW_MODES = {
 TARGET_GROW_COMMAND = Alconna(
     f"{{action:{'|'.join(TARGET_GROW_MODES)}}}",
     Args["targets?", MultiVar(At)],
-)
-
-INJECTION_QUERY_COMMAND = Alconna(
-    "注入查询",
-    Args["target?", At],
-    Option("历史", alias=["全部"], dest="history", compact=True),
 )
 
 RANK_COMMAND = Alconna("re:(?i:(银趴|impart)(排行榜|排名|榜单|rank))")
@@ -59,6 +53,12 @@ IMPART_COMMAND = Alconna(
             "关闭": False,
         },
     ],
+    Subcommand(
+        "查询历史",
+        Args["target?", At],
+        alias=["查询全部"],
+        dest="history_query",
+    ),
     Subcommand(
         "查询",
         Args["target?", At],
@@ -131,17 +131,14 @@ query_matcher = impart_matcher.dispatch(
     block=True,
 )
 
-help_matcher = impart_matcher.dispatch(
-    "help",
+history_query_matcher = impart_matcher.dispatch(
+    "history_query",
     priority=19,
     block=True,
 )
 
-injection_query_matcher = on_alconna(
-    INJECTION_QUERY_COMMAND,
-    aliases={"摄入查询", "射入查询"},
-    rule=GROUP | GUILD,
-    use_cmd_start=True,
-    priority=20,
+help_matcher = impart_matcher.dispatch(
+    "help",
+    priority=19,
     block=True,
 )

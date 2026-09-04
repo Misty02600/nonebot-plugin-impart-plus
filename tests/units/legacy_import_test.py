@@ -77,7 +77,7 @@ def _create_early_legacy_database(path: Path) -> None:
                 date VARCHAR(20) NOT NULL,
                 volume FLOAT NOT NULL
             );
-            INSERT INTO userdata VALUES (30001, 11.5);
+            INSERT INTO userdata VALUES (30001, 0.0);
             """
         )
 
@@ -154,8 +154,6 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
                 user.win_probability,
                 user.is_challenging,
                 user.challenge_completed,
-                user.is_near_zero,
-                user.is_zero_or_neg,
             )
             for user in users
         } == {
@@ -165,16 +163,12 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
                 0.4,
                 True,
                 False,
-                False,
-                False,
             ),
             encode_ref(UserRef("QQClient", "10002")): (
                 "QQClient",
                 -8.25,
                 0.6,
                 False,
-                True,
-                True,
                 True,
             ),
         }
@@ -229,8 +223,7 @@ async def test_defaults_old_columns_and_skips_non_empty_target(
         assert imported.win_probability == 0.5
         assert imported.is_challenging is False
         assert imported.challenge_completed is False
-        assert imported.is_near_zero is False
-        assert imported.is_zero_or_neg is False
+        assert imported.jj_length == -0.001
 
         async with occupied_sessions() as session:
             session.add(

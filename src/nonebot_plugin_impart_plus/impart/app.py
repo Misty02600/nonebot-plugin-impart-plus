@@ -20,6 +20,7 @@ from .core import (
     classify_length,
     crossed_challenge_threshold,
     growth_delta,
+    is_xnn,
     resolve_interaction,
     supports_growth_mode,
 )
@@ -81,6 +82,9 @@ class QueryOutcome:
     created_users: tuple[UserRef, ...] = ()
     length: float = 0
     state: LengthState = LengthState.NORMAL
+    today_total: float = 0
+    history_total: float | None = None
+    history: dict[str, float] = field(default_factory=dict)
 
 
 class RankingOutcomeType(StrEnum):
@@ -123,20 +127,9 @@ class InteractionResult:
     ejaculation: float
     today_total: float
     seconds: int
-
-
-class InjectionQueryType(StrEnum):
-    DISABLED = "disabled"
-    DAILY = "daily"
-    HISTORY_TEXT = "history_text"
-    HISTORY_CHART = "history_chart"
-
-
-@dataclass(frozen=True, slots=True)
-class InjectionQueryResult:
-    type: InjectionQueryType
-    total: float = 0
-    history: dict[str, float] = field(default_factory=dict)
+    recipient_length: float
+    risk_warning: bool
+    feminized: bool
 
 
 def get_random_num() -> float:
@@ -365,6 +358,8 @@ class GameApplication:
         scene_ref: SceneRef,
         requester_ref: UserRef,
         target_ref: UserRef,
+        *,
+        history: bool = False,
     ) -> QueryOutcome:
         if not await self._data.is_scene_enabled(scene_ref):
             return QueryOutcome(QueryOutcomeType.DISABLED)
@@ -376,11 +371,16 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        length = await self._data.get_jj_length(target_ref)
+        data = await self._data.get_user_query_data(target_ref, history=history)
+        if data is None:
+            raise LookupError("query target does not exist")
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
-            length=length,
-            state=classify_length(length),
+            length=data.length,
+            state=classify_length(data.length),
+            today_total=data.today_total,
+            history_total=round(sum(data.records.values()), 3) if history else None,
+            history=data.records if history else {},
         )
 
     async def query_ranking(
@@ -480,19 +480,33 @@ class GameApplication:
         resolution: InteractionResolution,
     ) -> InteractionResult:
         ejaculation = round(random.uniform(1, 100), 3)
+        seconds = random.randint(1, 20)
         recipient = (
             user_ref
             if resolution.recipient is InteractionParticipant.REQUESTER
             else lucky_user_ref
         )
-        await self._data.insert_ejaculation(recipient, ejaculation)
-        seconds = random.randint(1, 20)
-        today_total = await self._data.get_today_ejaculation_data(recipient)
+        async with self._state_lock:
+            recipient_length = await self._data.get_jj_length(recipient)
+            feminization_roll = (
+                random.random()
+                if resolution.action is InteractionAction.INJECT
+                and is_xnn(recipient_length)
+                else None
+            )
+            settlement = await self._data.settle_interaction_volume(
+                recipient,
+                ejaculation,
+                feminization_roll=feminization_roll,
+            )
         return InteractionResult(
             resolution=resolution,
             ejaculation=ejaculation,
-            today_total=today_total,
+            today_total=settlement.total,
             seconds=seconds,
+            recipient_length=settlement.length,
+            risk_warning=settlement.risk_warning,
+            feminized=settlement.feminized,
         )
 
     async def set_scene_enabled(
@@ -501,35 +515,3 @@ class GameApplication:
         enabled: bool,
     ) -> None:
         await self._data.set_scene_enabled(scene_ref, enabled)
-
-    async def query_injection(
-        self,
-        scene_ref: SceneRef,
-        user_ref: UserRef,
-        *,
-        history: bool,
-    ) -> InjectionQueryResult:
-        if not await self._data.is_scene_enabled(scene_ref):
-            return InjectionQueryResult(InjectionQueryType.DISABLED)
-        data = await self._data.get_ejaculation_data(user_ref)
-        if history:
-            if not data:
-                return InjectionQueryResult(InjectionQueryType.HISTORY_TEXT)
-            total = 0.0
-            values: dict[str, float] = {}
-            for item in data:
-                value = item["volume"]
-                total += value
-                values[item["date"]] = value
-            if len(values) < 2:
-                return InjectionQueryResult(
-                    InjectionQueryType.HISTORY_TEXT,
-                    total=total,
-                )
-            return InjectionQueryResult(
-                InjectionQueryType.HISTORY_CHART,
-                total=total,
-                history=values,
-            )
-        total = await self._data.get_today_ejaculation_data(user_ref)
-        return InjectionQueryResult(InjectionQueryType.DAILY, total=total)

@@ -66,6 +66,11 @@ def _optional_value(
     return default if value is None else value
 
 
+def _legacy_length(value: Any) -> float:
+    length = float(value)
+    return -0.001 if length == 0 else length
+
+
 def _read_legacy_database(path: Path) -> _LegacySnapshot:
     """以只读方式加载并验证完整旧库快照。
 
@@ -94,8 +99,6 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
             "win_probability",
             "is_challenging",
             "challenge_completed",
-            "is_near_zero",
-            "is_zero_or_neg",
         )
         selected_user_columns = (
             "userid",
@@ -110,7 +113,7 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
             {
                 "user_ref": encode_ref(UserRef(_QQ_NAMESPACE, str(row["userid"]))),
                 "user_namespace": _QQ_NAMESPACE,
-                "jj_length": float(row["jj_length"]),
+                "jj_length": _legacy_length(row["jj_length"]),
                 "win_probability": float(
                     _optional_value(
                         row,
@@ -124,12 +127,6 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
                 ),
                 "challenge_completed": bool(
                     _optional_value(row, user_columns, "challenge_completed", False)
-                ),
-                "is_near_zero": bool(
-                    _optional_value(row, user_columns, "is_near_zero", False)
-                ),
-                "is_zero_or_neg": bool(
-                    _optional_value(row, user_columns, "is_zero_or_neg", False)
                 ),
             }
             for row in user_rows

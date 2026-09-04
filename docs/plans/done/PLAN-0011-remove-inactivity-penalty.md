@@ -31,10 +31,10 @@
 
 - 不新增替代惩罚、定时任务、最后活动查询或兼容配置；遗留的 `ISALIVE` 环境变量由配置模型忽略。
 - 插件尚未发布到市场，本次直接修改 v1 初始 migration；已经运行旧开发 schema 的本地数据库不提供升级兼容。
-- [PLAN-0010](../todo/PLAN-0010-xnn-feminization.md) 可在没有隐式全局扣减和额外随机消费的基础上实现 XNN 雌堕。
+- [PLAN-0010](PLAN-0010-xnn-feminization.md) 已在没有隐式全局扣减和额外随机消费的基础上实现 XNN 雌堕。
 
 ## 相关文档
 
 - [当前项目架构](../../architecture/overview.md)
 - [PLAN-0009：导入上游插件数据](PLAN-0009-import-upstream-data.md)
-- [PLAN-0010：实现 XNN 概率雌堕并合并查询](../todo/PLAN-0010-xnn-feminization.md)
+- [PLAN-0010：实现 XNN 概率雌堕并合并查询](PLAN-0010-xnn-feminization.md)

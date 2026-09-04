@@ -1,29 +1,21 @@
-"""排行榜与注入记录查询 Handler。"""
+"""排行榜 Handler。"""
 
 from random import choice
 from typing import cast
 
 from nonebot.matcher import Matcher
-from nonebot_plugin_alconna import (
-    AUTO,
-    AlconnaMatcher,
-    At,
-    CommandResult,
-    Match,
-    UniMessage,
-)
+from nonebot_plugin_alconna import AUTO, AlconnaMatcher, UniMessage
 from nonebot_plugin_uninfo import QryItrface
 from nonebot_plugin_uniref import RefContext
 
-from ...impart.app import InjectionQueryType, RankingOutcomeType
+from ...impart.app import RankingOutcomeType
 from ...infra.chart_renderer import draw_bar_chart
 from ..dependencies import game_app
-from ..matchers import injection_query_matcher, rank_matcher
+from ..matchers import rank_matcher
 from .shared import (
     JJ_NAMES,
     NOT_ALLOWED_TEXT,
     get_user_or_none,
-    user_at_target,
     user_display_name,
 )
 
@@ -71,35 +63,4 @@ async def jjrank(
         UniMessage.image(raw=img_bytes).text(reply),
         fallback=AUTO,
         at_sender=True,
-    )
-
-
-@injection_query_matcher.handle()
-async def query_injection(
-    matcher: Matcher,
-    refs: RefContext,
-    command_result: CommandResult,
-    target: Match[At],
-) -> None:
-    scene_ref = refs.scene_ref
-    user_ref = refs.user_ref
-    mentioned = user_at_target(target.result) if target.available else None
-    object_ref = refs.build_user_ref(mentioned) if mentioned else user_ref
-    replay = "该用户" if mentioned else "您"
-    result = await game_app.query_injection(
-        scene_ref,
-        object_ref,
-        history="history" in command_result.result.options,
-    )
-    if result.type is InjectionQueryType.DISABLED:
-        await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
-    if result.type is InjectionQueryType.DAILY:
-        await matcher.finish(f"{replay}当日总被注射量为{result.total}ml")
-    if result.type is InjectionQueryType.HISTORY_TEXT:
-        await matcher.finish(f"{replay}历史总被注射量为{result.total}ml")
-    await cast(AlconnaMatcher, matcher).finish(
-        UniMessage.text(f"{replay}历史总被注射量为{result.total}ml").image(
-            raw=await draw_bar_chart.draw_line_chart(result.history),
-        ),
-        fallback=AUTO,
     )

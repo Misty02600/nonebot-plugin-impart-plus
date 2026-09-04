@@ -12,7 +12,7 @@ def _read_schema(
     connection: Connection,
 ) -> tuple[
     dict[str, set[str]],
-    dict[str, set[tuple[str, ...]]],
+    dict[str, set[tuple[str | None, ...]]],
     dict[str, set[tuple[str, ...]]],
 ]:
     inspector = inspect(connection)
@@ -128,6 +128,8 @@ async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
     assert {"user_ref", "user_namespace"} <= schema[user_table]
     assert "userid" not in schema[user_table]
     assert "last_masturbation_time" not in schema[user_table]
+    assert "is_near_zero" not in schema[user_table]
+    assert "is_zero_or_neg" not in schema[user_table]
     assert {"scene_ref", "scene_namespace", "scene_type"} <= schema[scene_table]
     assert "groupid" not in schema[scene_table]
     assert "user_ref" in schema[ejaculation_table]
@@ -187,13 +189,25 @@ async def test_data_manager_isolates_same_id_by_namespace(database_harness) -> N
     await manager.add_new_user(telegram_user)
     await manager.set_jj_length(qq_user, 1.0)
     await manager.set_jj_length(telegram_user, 2.0)
-    await manager.insert_ejaculation(qq_user, 3.0)
-    await manager.insert_ejaculation(telegram_user, 4.0)
+    await manager.settle_interaction_volume(
+        qq_user,
+        3.0,
+        feminization_roll=None,
+    )
+    await manager.settle_interaction_volume(
+        telegram_user,
+        4.0,
+        feminization_roll=None,
+    )
 
     assert await manager.get_jj_length(qq_user) == 11.0
     assert await manager.get_jj_length(telegram_user) == 12.0
-    assert await manager.get_today_ejaculation_data(qq_user) == 3.0
-    assert await manager.get_today_ejaculation_data(telegram_user) == 4.0
+    qq_query = await manager.get_user_query_data(qq_user, history=False)
+    telegram_query = await manager.get_user_query_data(telegram_user, history=False)
+    assert qq_query is not None
+    assert qq_query.records[manager.get_today()] == 3.0
+    assert telegram_query is not None
+    assert telegram_query.records[manager.get_today()] == 4.0
 
     async with database_harness.session_factory() as session:
         users = (await session.execute(select(UserData))).scalars().all()
@@ -204,21 +218,62 @@ async def test_data_manager_isolates_same_id_by_namespace(database_harness) -> N
     }
 
 
-async def test_concurrent_ejaculation_updates_preserve_total(
-    database_harness,
+async def test_application_serializes_concurrent_interaction_updates(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from asyncio import gather
 
-    from nonebot_plugin_uniref import UserRef
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionFluid,
+        InteractionParticipant,
+        InteractionResolution,
+        InteractionReversal,
+    )
 
-    manager = database_harness.manager
-    recipient = UserRef("QQClient", "concurrent-recipient")
+    manager = game_harness.manager
+    application = game_harness.application
+    requester = game_harness.user
+    recipient = game_harness.target
+    await manager.add_new_user(requester)
+    await manager.add_new_user(recipient)
+    await manager.set_jj_length(recipient, -6.0)
+    await manager.settle_interaction_volume(
+        recipient,
+        990.0,
+        feminization_roll=None,
+    )
+    resolution = InteractionResolution(
+        action=InteractionAction.INJECT,
+        actor=InteractionParticipant.REQUESTER,
+        recipient=InteractionParticipant.TARGET,
+        fluid=InteractionFluid.DNA,
+        reversal=InteractionReversal.NONE,
+    )
+    feminization_calls = 0
 
-    await gather(*(manager.insert_ejaculation(recipient, 1.0) for _ in range(8)))
-    assert await manager.get_today_ejaculation_data(recipient) == 8.0
+    def feminization_roll() -> float:
+        nonlocal feminization_calls
+        feminization_calls += 1
+        return 0.999
 
-    await gather(*(manager.insert_ejaculation(recipient, 0.125) for _ in range(8)))
-    assert await manager.get_today_ejaculation_data(recipient) == 9.0
+    monkeypatch.setattr(app_module.random, "uniform", lambda *_: 20.0)
+    monkeypatch.setattr(app_module.random, "randint", lambda *_: 1)
+    monkeypatch.setattr(app_module.random, "random", feminization_roll)
+
+    results = await gather(
+        application.complete_interaction(requester, recipient, resolution),
+        application.complete_interaction(requester, recipient, resolution),
+    )
+
+    data = await manager.get_user_query_data(recipient, history=False)
+    assert data is not None
+    assert data.records[manager.get_today()] == 1030.0
+    assert sum(result.feminized for result in results) == 1
+    assert feminization_calls == 1
+    assert await manager.get_jj_length(recipient) == -1.0
 
 
 async def test_scene_switch_uses_full_scene_ref(database_harness) -> None:
@@ -394,8 +449,13 @@ async def test_interaction_records_volume_for_actual_recipient(
         random_calls.append("seconds")
         return 4
 
+    def unexpected_feminization() -> float:
+        random_calls.append("feminization")
+        return 0.5
+
     monkeypatch.setattr(app_module.random, "uniform", volume)
     monkeypatch.setattr(app_module.random, "randint", seconds)
+    monkeypatch.setattr(app_module.random, "random", unexpected_feminization)
     result = await application.complete_interaction(requester, target, resolution)
 
     recipient = requester if expected_recipient == "requester" else target
@@ -405,9 +465,154 @@ async def test_interaction_records_volume_for_actual_recipient(
     assert result.ejaculation == 12.5
     assert result.seconds == 4
     assert result.today_total == 12.5
-    assert await manager.get_today_ejaculation_data(recipient) == 12.5
-    assert await manager.get_today_ejaculation_data(other) == 0.0
+    recipient_data = await manager.get_user_query_data(recipient, history=False)
+    other_data = await manager.get_user_query_data(other, history=False)
+    assert recipient_data is not None
+    assert recipient_data.records[manager.get_today()] == 12.5
+    assert other_data is not None
+    assert other_data.records == {}
     assert random_calls == ["volume", "seconds"]
+
+
+async def test_xnn_interaction_feminizes_actual_recipient(
+    game_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import InteractionAction
+
+    manager = game_harness.manager
+    application = game_harness.application
+    requester = game_harness.user
+    recipient = game_harness.target
+    await manager.add_new_user(requester)
+    await manager.add_new_user(recipient)
+    await manager.set_jj_length(recipient, -6.0)
+    await manager.settle_interaction_volume(
+        recipient,
+        990.0,
+        feminization_roll=None,
+    )
+    resolution = await application.begin_interaction(
+        requester,
+        recipient,
+        InteractionAction.INJECT,
+        0.75,
+    )
+    random_calls: list[str] = []
+
+    def volume(*_: object) -> float:
+        random_calls.append("volume")
+        return 20.0
+
+    def seconds(*_: object) -> int:
+        random_calls.append("seconds")
+        return 4
+
+    def feminization() -> float:
+        random_calls.append("feminization")
+        return 0.999
+
+    monkeypatch.setattr(app_module.random, "uniform", volume)
+    monkeypatch.setattr(app_module.random, "randint", seconds)
+    monkeypatch.setattr(app_module.random, "random", feminization)
+
+    result = await application.complete_interaction(requester, recipient, resolution)
+
+    assert random_calls == ["volume", "seconds", "feminization"]
+    assert result.feminized
+    assert not result.risk_warning
+    assert result.today_total == 1010.0
+    assert result.recipient_length == -1.0
+    assert await manager.get_jj_length(recipient) == -1.0
+
+
+async def test_interaction_settlement_rolls_back_volume_and_length(
+    database_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef, encode_ref
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from nonebot_plugin_impart_plus.infra.database import EjaculationData, UserData
+
+    manager = database_harness.manager
+    recipient = UserRef("QQClient", "rollback-recipient")
+    await manager.add_new_user(recipient)
+    await manager.set_jj_length(recipient, -6.0)
+
+    original_flush = AsyncSession.flush
+
+    async def fail_after_flush(
+        session: AsyncSession,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        await original_flush(session, *args, **kwargs)
+        raise RuntimeError("injected flush failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(AsyncSession, "flush", fail_after_flush)
+        with pytest.raises(RuntimeError, match="injected flush failure"):
+            await manager.settle_interaction_volume(
+                recipient,
+                1000.0,
+                feminization_roll=0.0,
+            )
+
+    encoded = encode_ref(recipient)
+    async with database_harness.session_factory() as session:
+        user = (
+            await session.execute(select(UserData).where(UserData.user_ref == encoded))
+        ).scalar_one()
+        records = (
+            await session.execute(
+                select(EjaculationData).where(EjaculationData.user_ref == encoded)
+            )
+        ).scalars()
+        assert user.jj_length == 4.0
+        assert list(records) == []
+
+
+async def test_query_snapshot_filters_today_and_orders_history(
+    game_harness,
+    database_harness,
+) -> None:
+    from nonebot_plugin_uniref import encode_ref
+
+    from nonebot_plugin_impart_plus.infra.database import EjaculationData
+
+    manager = game_harness.manager
+    application = game_harness.application
+    scene = game_harness.scene
+    user = game_harness.user
+    today = manager.get_today()
+    await manager.add_new_user(user)
+    await manager.set_scene_enabled(scene, True)
+    async with database_harness.session_factory() as session, session.begin():
+        session.add_all(
+            [
+                EjaculationData(
+                    user_ref=encode_ref(user),
+                    date=today,
+                    volume=5.5,
+                ),
+                EjaculationData(
+                    user_ref=encode_ref(user),
+                    date="2026-08-30",
+                    volume=3.0,
+                ),
+            ]
+        )
+
+    daily = await manager.get_user_query_data(user, history=False)
+    outcome = await application.query_user(scene, user, user, history=True)
+
+    assert daily is not None
+    assert list(daily.records) == [today]
+    assert list(outcome.history) == sorted(("2026-08-30", today))
+    assert outcome.today_total == 5.5
+    assert outcome.history_total == 8.5
 
 
 async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(

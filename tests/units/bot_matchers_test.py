@@ -13,6 +13,9 @@ import pytest
         ("银趴 关闭", False, None, True),
         ("银趴查询", None, "query", True),
         ("银趴 查询", None, "query", True),
+        ("银趴查询历史", None, "history_query", True),
+        ("银趴 查询全部", None, "history_query", True),
+        ("impart查询历史", None, "history_query", True),
         ("impart状态", None, None, False),
         ("银趴长度", None, None, False),
         ("开始银趴", None, None, False),
@@ -109,22 +112,26 @@ def test_target_growth_command_maps_headers_and_keeps_missing_target_parseable()
     )
 
 
-def test_query_subcommand_extracts_typed_target():
+@pytest.mark.parametrize("command", ["查询", "查询历史", "查询全部"])
+def test_query_subcommands_extract_typed_target(command: str):
     from nonebot_plugin_alconna import At, Text, UniMessage
 
     from nonebot_plugin_impart_plus.bot.matchers import (
         IMPART_COMMAND,
+        history_query_matcher,
         query_matcher,
     )
 
     result = IMPART_COMMAND.parse(
-        UniMessage([Text("银趴查询 "), At("user", "67890")]),
+        UniMessage([Text(f"银趴{command} "), At("user", "67890")]),
     )
 
     assert result.matched is True
     assert result.all_matched_args["target"].target == "67890"
-    assert "query" in result.subcommands
+    expected = "query" if command == "查询" else "history_query"
+    assert expected in result.subcommands
     assert query_matcher.block is True
+    assert history_query_matcher.block is True
 
 
 @pytest.mark.parametrize(
@@ -133,8 +140,6 @@ def test_query_subcommand_extracts_typed_target():
         ("pk", "pk", True),
         ("pk", "/对决", True),
         ("pk", "pk尾巴", False),
-        ("injection", "注入查询", True),
-        ("injection", "/摄入查询 历史", True),
     ],
 )
 def test_target_command_trigger_ranges(
@@ -142,34 +147,21 @@ def test_target_command_trigger_ranges(
     message: str,
     matched: bool,
 ):
-    from nonebot_plugin_impart_plus.bot.matchers import (
-        INJECTION_QUERY_COMMAND,
-        PK_COMMAND,
-    )
+    from nonebot_plugin_impart_plus.bot.matchers import PK_COMMAND
 
-    commands = {
-        "pk": PK_COMMAND,
-        "injection": INJECTION_QUERY_COMMAND,
-    }
+    commands = {"pk": PK_COMMAND}
     assert commands[command_name].parse(message).matched is matched
 
 
-@pytest.mark.parametrize("history_first", [True, False])
-def test_injection_history_option_accepts_either_position(history_first: bool):
+def test_query_rejects_old_commands_and_history_after_target():
     from nonebot_plugin_alconna import At, Text, UniMessage
 
-    from nonebot_plugin_impart_plus.bot.matchers import INJECTION_QUERY_COMMAND
+    from nonebot_plugin_impart_plus.bot.matchers import IMPART_COMMAND
 
-    message = (
-        UniMessage([Text("注入查询 历史 "), At("user", "67890")])
-        if history_first
-        else UniMessage([Text("注入查询 "), At("user", "67890"), Text(" 全部")])
-    )
-    result = INJECTION_QUERY_COMMAND.parse(message)
-
-    assert result.matched is True
-    assert result.all_matched_args["target"].target == "67890"
-    assert "history" in result.options
+    invalid_order = UniMessage([Text("银趴查询 "), At("user", "67890"), Text(" 历史")])
+    assert IMPART_COMMAND.parse(invalid_order).matched is False
+    for command in ("注入查询", "摄入查询", "射入查询"):
+        assert IMPART_COMMAND.parse(command).matched is False
 
 
 def test_pk_rejects_at_all():

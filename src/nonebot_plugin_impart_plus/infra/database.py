@@ -29,8 +29,6 @@ class UserData(Model):
     win_probability: Mapped[float] = mapped_column(default=0.5)
     is_challenging: Mapped[bool] = mapped_column(default=False)
     challenge_completed: Mapped[bool] = mapped_column(default=False)
-    is_near_zero: Mapped[bool] = mapped_column(default=False)
-    is_zero_or_neg: Mapped[bool] = mapped_column(default=False)
 
 
 class SceneData(Model):

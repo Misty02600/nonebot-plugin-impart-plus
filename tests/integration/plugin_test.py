@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 
 from nonebot import get_plugin
 from nonebot.plugin import inherit_supported_adapters
@@ -18,6 +19,8 @@ def test_plugin_metadata(app: App):
     assert "[透|日|榨][群友|管理|群主]" in __plugin_meta__.usage
     assert "[开扣|挖矿]" in __plugin_meta__.usage
     assert "<长度或深度超过25时会触发神秘任务>" in __plugin_meta__.usage
+    assert "可能触发特殊事件" in __plugin_meta__.usage
+    assert "[银趴|impart][查询|查询历史|查询全部]" in __plugin_meta__.usage
     assert "[银趴|impart][开启|禁止|帮助]" in __plugin_meta__.usage
     assert __plugin_meta__.type == "application"
     assert nonebot_plugin_impart_plus.__file__ is not None
@@ -65,17 +68,19 @@ def test_alconna_matcher_registration(app: App):
     assert len(plugin.matcher) == 10
     assert all(issubclass(matcher, AlconnaMatcher) for matcher in plugin.matcher)
 
-    dispatch_matchers = {
-        matcher.basepath: matcher
-        for matcher in plugin.matcher
-        if matcher.basepath in {"enabled", "query", "help"}
-    }
-    assert set(dispatch_matchers) == {"enabled", "query", "help"}
+    dispatch_matchers: dict[str, type[AlconnaMatcher]] = {}
+    for matcher in plugin.matcher:
+        basepath = getattr(matcher, "basepath", None)
+        if basepath in {"enabled", "query", "history_query", "help"}:
+            dispatch_matchers[basepath] = cast(type[AlconnaMatcher], matcher)
+    assert set(dispatch_matchers) == {"enabled", "query", "history_query", "help"}
     assert dispatch_matchers["enabled"].priority == 10
     assert dispatch_matchers["query"].priority == 20
+    assert dispatch_matchers["history_query"].priority == 20
     assert dispatch_matchers["help"].priority == 20
     assert len(dispatch_matchers["enabled"].permission.checkers) == 2
     assert len(dispatch_matchers["query"].permission.checkers) == 0
+    assert len(dispatch_matchers["history_query"].permission.checkers) == 0
     assert len(dispatch_matchers["help"].permission.checkers) == 0
     assert all(matcher.block for matcher in dispatch_matchers.values())
 
@@ -84,7 +89,7 @@ def test_alconna_matcher_registration(app: App):
     assert len(interaction_matcher.handlers) == 1
     assert impart_matcher.priority == 1
     assert impart_matcher.block is False
-    assert len(impart_matcher.handlers) == 3
+    assert len(impart_matcher.handlers) == 4
     assert all(
         len(matcher.handlers) == 1
         for matcher in plugin.matcher

@@ -81,8 +81,6 @@ def upgrade(name: str = "") -> None:
         sa.Column("win_probability", sa.Float(), nullable=False),
         sa.Column("is_challenging", sa.Boolean(), nullable=False),
         sa.Column("challenge_completed", sa.Boolean(), nullable=False),
-        sa.Column("is_near_zero", sa.Boolean(), nullable=False),
-        sa.Column("is_zero_or_neg", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint(
             "user_ref", name=op.f("pk_nonebot_plugin_impart_plus_userdata")
         ),

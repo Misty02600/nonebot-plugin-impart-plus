@@ -2,18 +2,18 @@
 
 import time
 from collections.abc import Callable
-from typing import Any, cast
+from dataclasses import dataclass
 
 from nonebot_plugin_uniref import SceneRef, UserRef, decode_ref, encode_ref
 from sqlalchemy import select, update
-from sqlalchemy.engine import CursorResult
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..impart.core import (
+    InteractionVolumeSettlement,
     PkSettlement,
     UserGameState,
     evaluate_user_state,
+    resolve_interaction_volume,
     resolve_pk_settlement,
 )
 from .database import (
@@ -24,7 +24,12 @@ from .database import (
     UserData,
 )
 
-_MAX_EJACULATION_WRITE_ATTEMPTS = 32
+
+@dataclass(frozen=True, slots=True)
+class UserQueryData:
+    length: float
+    today_total: float
+    records: dict[str, float]
 
 
 def _validate_namespace(namespace: str) -> None:
@@ -74,8 +79,6 @@ def _to_game_state(user: UserData) -> UserGameState:
         win_probability=user.win_probability,
         is_challenging=user.is_challenging,
         challenge_completed=user.challenge_completed,
-        is_near_zero=user.is_near_zero,
-        is_zero_or_negative=user.is_zero_or_neg,
     )
 
 
@@ -84,8 +87,6 @@ def _apply_game_state(user: UserData, state: UserGameState) -> None:
     user.win_probability = state.win_probability
     user.is_challenging = state.is_challenging
     user.challenge_completed = state.challenge_completed
-    user.is_near_zero = state.is_near_zero
-    user.is_zero_or_neg = state.is_zero_or_negative
 
 
 class DataManager:
@@ -280,88 +281,92 @@ class DataManager:
         """获取当前年月日格式，例如 2024-10-20。"""
         return time.strftime("%Y-%m-%d", time.localtime())
 
-    async def insert_ejaculation(self, user_ref: UserRef, volume: float) -> None:
-        """将一次注入量原子累加到用户的当日记录。
-
-        Args:
-            user_ref: 实际获得液体的用户身份。
-            volume: 本次需要累加的数量。
-
-        Raises:
-            ValueError: Ref 超出数据库的可移植长度边界。
-            RuntimeError: 连续并发冲突超过重试上限。
-        """
+    async def settle_interaction_volume(
+        self,
+        user_ref: UserRef,
+        volume: float,
+        *,
+        feminization_roll: float | None,
+    ) -> InteractionVolumeSettlement:
+        """在一个事务中累计当日互动量，并按需完成雌堕。"""
         encoded = _encode_persistent_ref(user_ref)
-        now_date = self.get_today()
-        for _ in range(_MAX_EJACULATION_WRITE_ATTEMPTS):
-            async with self._session_factory() as read_session:
-                result = await read_session.execute(
-                    select(EjaculationData.volume).where(
+        today = self.get_today()
+        async with self._session_factory() as session, session.begin():
+            user = (
+                await session.execute(
+                    select(UserData).where(UserData.user_ref == encoded)
+                )
+            ).scalar_one_or_none()
+            if user is None:
+                raise LookupError("interaction recipient does not exist")
+
+            daily = (
+                await session.execute(
+                    select(EjaculationData).where(
                         EjaculationData.user_ref == encoded,
-                        EjaculationData.date == now_date,
+                        EjaculationData.date == today,
                     )
                 )
-                current_volume = result.scalar_one_or_none()
-
-            if current_volume is None:
-                async with self._session_factory() as insert_session:
-                    insert_session.add(
-                        EjaculationData(
-                            user_ref=encoded,
-                            date=now_date,
-                            volume=volume,
-                        )
+            ).scalar_one_or_none()
+            settlement = resolve_interaction_volume(
+                user.jj_length,
+                daily.volume if daily else 0.0,
+                volume,
+                feminization_roll=feminization_roll,
+            )
+            if daily is None:
+                session.add(
+                    EjaculationData(
+                        user_ref=encoded,
+                        date=today,
+                        volume=settlement.total,
                     )
-                    try:
-                        await insert_session.commit()
-                    except IntegrityError:
-                        await insert_session.rollback()
-                    else:
-                        return
-                continue
-
-            async with self._session_factory() as update_session:
-                result = cast(
-                    CursorResult[Any],
-                    await update_session.execute(
-                        update(EjaculationData)
-                        .where(
-                            EjaculationData.user_ref == encoded,
-                            EjaculationData.date == now_date,
-                            EjaculationData.volume == current_volume,
-                        )
-                        .values(volume=round(current_volume + volume, 3))
-                    ),
                 )
-                if result.rowcount == 1:
-                    await update_session.commit()
-                    return
-                await update_session.rollback()
+            else:
+                daily.volume = settlement.total
+            if settlement.feminized:
+                user.jj_length = settlement.length
+            await session.flush()
+        return settlement
 
-        raise RuntimeError("failed to update daily volume due to concurrent writes")
-
-    async def get_ejaculation_data(self, user_ref: UserRef) -> list[dict]:
-        """获取一个用户的所有注入记录。"""
+    async def get_user_query_data(
+        self,
+        user_ref: UserRef,
+        *,
+        history: bool,
+    ) -> UserQueryData | None:
+        """用一条查询取得用户长度和所需范围内的互动记录。"""
         encoded = _encode_persistent_ref(user_ref)
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(EjaculationData).filter(EjaculationData.user_ref == encoded)
+        today = self.get_today()
+        join_condition = EjaculationData.user_ref == UserData.user_ref
+        if not history:
+            join_condition &= EjaculationData.date == today
+        statement = (
+            select(
+                UserData.jj_length,
+                EjaculationData.date,
+                EjaculationData.volume,
             )
-            return [
-                {"date": row.date, "volume": row.volume} for row in result.scalars()
-            ]
-
-    async def get_today_ejaculation_data(self, user_ref: UserRef) -> float:
-        """获取用户当日注入量。"""
-        encoded = _encode_persistent_ref(user_ref)
+            .select_from(UserData)
+            .outerjoin(EjaculationData, join_condition)
+            .where(UserData.user_ref == encoded)
+        )
+        if history:
+            statement = statement.order_by(EjaculationData.date.asc())
         async with self._session_factory() as session:
-            result = await session.execute(
-                select(EjaculationData.volume).filter(
-                    EjaculationData.user_ref == encoded,
-                    EjaculationData.date == self.get_today(),
-                )
-            )
-            return result.scalar() or 0.0
+            rows = (await session.execute(statement)).all()
+        if not rows:
+            return None
+        records = {
+            row.date: row.volume
+            for row in rows
+            if row.date is not None and row.volume is not None
+        }
+        return UserQueryData(
+            length=rows[0].jj_length,
+            today_total=records.get(today, 0.0),
+            records=records,
+        )
 
     async def get_ranking(self, namespace: str) -> list[tuple[UserRef, float]]:
         """返回指定用户 namespace 内按长度降序排列的榜单。"""

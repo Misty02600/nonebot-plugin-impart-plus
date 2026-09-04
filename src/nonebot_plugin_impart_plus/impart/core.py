@@ -9,7 +9,6 @@ class LengthState(StrEnum):
     ABYSS_LORD = "abyss_lord"
     NORMAL = "normal"
     XNN = "xnn"
-    NEAR_GIRL = "near_girl"
     GIRL = "girl"
 
 
@@ -45,8 +44,6 @@ class UserGameState:
     win_probability: float
     is_challenging: bool
     challenge_completed: bool
-    is_near_zero: bool
-    is_zero_or_negative: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,17 +84,32 @@ class InteractionResolution:
     reversal: InteractionReversal
 
 
+FEMINIZATION_WARNING_VOLUME = 200.0
+FEMINIZATION_CERTAIN_VOLUME = 1000.0
+FEMINIZATION_LENGTH_LOSS = 5.0
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionVolumeSettlement:
+    total: float
+    length: float
+    risk_warning: bool
+    feminized: bool
+
+
+def is_xnn(length: float) -> bool:
+    return 0 < length < 5
+
+
 def classify_length(length: float) -> LengthState:
     if length >= 30:
         return LengthState.GOD
     if length <= -30:
         return LengthState.ABYSS_LORD
-    if length > 5:
+    if length >= 5:
         return LengthState.NORMAL
-    if length > 1:
+    if is_xnn(length):
         return LengthState.XNN
-    if length > 0:
-        return LengthState.NEAR_GIRL
     return LengthState.GIRL
 
 
@@ -111,6 +123,16 @@ def growth_delta(amount: float, mode: GrowthMode) -> float:
     if mode is GrowthMode.LENGTH:
         return amount
     return -amount
+
+
+def apply_world_locked_delta(length: float, delta: float) -> float:
+    """应用三位小数增量，并阻止普通玩法跨过零点。"""
+    candidate = round(length + delta, 3)
+    if length > 0 and candidate <= 0:
+        return 0.001
+    if length < 0 and candidate >= 0:
+        return -0.001
+    return candidate
 
 
 def evaluate_user_state(state: UserGameState) -> StateEvaluation:
@@ -139,7 +161,7 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
             "challenge_failed_high_win",
             replace(
                 state,
-                length=state.length + penalty,
+                length=apply_world_locked_delta(state.length, penalty),
                 win_probability=state.win_probability * 1.25,
                 is_challenging=False,
             ),
@@ -163,24 +185,10 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
             "challenge_completed_reduce",
             replace(
                 state,
-                length=state.length + penalty,
+                length=apply_world_locked_delta(state.length, penalty),
                 challenge_completed=False,
             ),
         )
-    if not state.is_near_zero and 0 < state.length <= 5:
-        return StateEvaluation(
-            "length_near_zero",
-            replace(state, is_near_zero=True),
-        )
-    if state.is_near_zero and (state.length <= 0 or state.length > 5):
-        return StateEvaluation("", replace(state, is_near_zero=False))
-    if not state.is_zero_or_negative and state.length <= 0:
-        return StateEvaluation(
-            "length_zero_or_negative",
-            replace(state, is_zero_or_negative=True),
-        )
-    if state.is_zero_or_negative and state.length > 0:
-        return StateEvaluation("", replace(state, is_zero_or_negative=False))
     return StateEvaluation("", state)
 
 
@@ -192,11 +200,54 @@ def _apply_pk_delta(
     state: UserGameState,
     length_delta: float,
     probability_delta: float,
-) -> UserGameState:
+) -> tuple[UserGameState, bool]:
+    unlocked_length = round(state.length + length_delta, 3)
+    length = apply_world_locked_delta(state.length, length_delta)
     return replace(
         state,
-        length=round(state.length + length_delta, 3),
+        length=length,
         win_probability=round(state.win_probability + probability_delta, 3),
+    ), length != unlocked_length
+
+
+def feminization_probability(total: float) -> float:
+    return min(
+        1.0,
+        max(
+            0.0,
+            (total - FEMINIZATION_WARNING_VOLUME)
+            / (FEMINIZATION_CERTAIN_VOLUME - FEMINIZATION_WARNING_VOLUME),
+        ),
+    )
+
+
+def resolve_interaction_volume(
+    current_length: float,
+    previous_total: float,
+    amount: float,
+    *,
+    feminization_roll: float | None,
+) -> InteractionVolumeSettlement:
+    """累计一次互动量，并计算实际被透的 XNN 是否雌堕。"""
+    total = round(previous_total + amount, 3)
+    if feminization_roll is not None and is_xnn(current_length):
+        feminized = feminization_roll < feminization_probability(total)
+        risk_warning = (
+            not feminized and previous_total <= FEMINIZATION_WARNING_VOLUME < total
+        )
+    else:
+        feminized = False
+        risk_warning = False
+    length = (
+        round(current_length - FEMINIZATION_LENGTH_LOSS, 3)
+        if feminized
+        else current_length
+    )
+    return InteractionVolumeSettlement(
+        total=total,
+        length=length,
+        risk_warning=risk_warning,
+        feminized=feminized,
     )
 
 
@@ -238,18 +289,40 @@ def resolve_pk_settlement(
     defender_length_delta = direction * (
         -random_num if resolution.won else random_num / 2
     )
-    attacker_base = _apply_pk_delta(
+    attacker_base, attacker_locked = _apply_pk_delta(
         attacker,
         attacker_length_delta,
         attacker_probability_delta,
     )
-    defender_base = _apply_pk_delta(
+    defender_base, defender_locked = _apply_pk_delta(
         defender,
         defender_length_delta,
         -attacker_probability_delta,
     )
     attacker_evaluation = evaluate_user_state(attacker_base)
     defender_evaluation = evaluate_user_state(defender_base)
+    loser_before = defender if resolution.won else attacker
+    loser_base = defender_base if resolution.won else attacker_base
+    loser_locked = defender_locked if resolution.won else attacker_locked
+    if loser_locked:
+        resolution = replace(
+            resolution,
+            length_decrease=round(abs(loser_before.length - loser_base.length), 3),
+        )
+    attacker_status = attacker_evaluation.status
+    if (
+        not attacker_status
+        and not is_xnn(attacker.length)
+        and is_xnn(attacker_evaluation.state.length)
+    ):
+        attacker_status = "length_near_zero"
+    defender_status = defender_evaluation.status
+    if (
+        not defender_status
+        and not is_xnn(defender.length)
+        and is_xnn(defender_evaluation.state.length)
+    ):
+        defender_status = "length_near_zero"
     return PkSettlement(
         mode=mode,
         resolution=resolution,
@@ -257,13 +330,13 @@ def resolve_pk_settlement(
             before=attacker,
             base=attacker_base,
             final=attacker_evaluation.state,
-            status=attacker_evaluation.status,
+            status=attacker_status,
         ),
         defender=PkParticipantSettlement(
             before=defender,
             base=defender_base,
             final=defender_evaluation.state,
-            status=defender_evaluation.status,
+            status=defender_status,
         ),
     )
 
@@ -304,7 +377,7 @@ def resolve_interaction(
     xnn_reversal = (
         requested_action is InteractionAction.INJECT
         and requester_positive
-        and requester_length <= 5
+        and is_xnn(requester_length)
         and reverse_roll is not None
         and reverse_roll < 0.5
     )

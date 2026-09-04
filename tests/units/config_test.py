@@ -3,9 +3,9 @@ def test_config_can_be_instantiated():
 
     config = Config()
 
-    assert config.dj_cd_time == 300
-    assert config.pk_cd_time == 60
-    assert config.suo_cd_time == 300
-    assert config.fuck_cd_time == 3600
+    assert config.dj_cd_time == 600
+    assert config.pk_cd_time == 600
+    assert config.suo_cd_time == 600
+    assert config.fuck_cd_time == 1200
     assert not hasattr(config, "jj_variable")
     assert not hasattr(config, "isalive")

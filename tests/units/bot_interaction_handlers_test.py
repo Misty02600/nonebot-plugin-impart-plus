@@ -79,6 +79,9 @@ async def test_explicit_interaction_uses_only_first_target(
             ejaculation=2.5,
             today_total=8.0,
             seconds=3,
+            recipient_length=10.0,
+            risk_warning=False,
+            feminized=False,
         )
 
     class InterfaceStub:
@@ -499,9 +502,72 @@ def test_interaction_report_matches_actual_action(
         ejaculation=12.5,
         today_total=20.0,
         seconds=4,
+        recipient_length=target_length,
+        risk_warning=False,
+        feminized=False,
     )
 
     assert interaction_report(result, "发起者", "10001", "目标", "20002") == expected
+
+
+def test_interaction_report_appends_risk_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.impart.app import InteractionResult
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        resolve_interaction,
+    )
+
+    resolution = resolve_interaction(
+        InteractionAction.INJECT,
+        10.0,
+        4.0,
+        reverse_roll=0.75,
+    )
+    monkeypatch.setattr(interaction, "choice", lambda _: "牛牛")
+    warning = InteractionResult(
+        resolution,
+        20.0,
+        210.0,
+        4,
+        4.0,
+        True,
+        False,
+    )
+    feminized = InteractionResult(
+        resolution,
+        20.0,
+        1010.0,
+        4,
+        -1.0,
+        False,
+        True,
+    )
+
+    warning_text = interaction.interaction_report(
+        warning,
+        "发起者",
+        "10001",
+        "目标",
+        "20002",
+    )
+    feminized_text = interaction.interaction_report(
+        feminized,
+        "发起者",
+        "10001",
+        "目标",
+        "20002",
+    )
+
+    assert warning_text.endswith(
+        "由于目标(20002)的当日注入量过多，TA的牛牛开始变得不稳定了..."
+    )
+    assert "目标(20002)被注入了太多脱氧核糖核酸……" in feminized_text
+    assert "在发起者(10001)的猛烈攻势下，TA的牛牛彻底萎缩消失了♡" in feminized_text
+    assert "取而代之的是一个深度1.0cm的小学♡" in feminized_text
+    assert feminized_text.endswith("目标(20002)已经完全雌堕，变成女孩子了喵！")
 
 
 async def test_member_query_exception_is_logged(
