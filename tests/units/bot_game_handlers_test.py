@@ -44,7 +44,7 @@ async def test_growth_handler_uses_uninfo_identity(
         calls.append((scene_ref, user_ref, mode))
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
-            random_num=1.25,
+            amount=1.25,
             new_length=11.25,
         )
 
@@ -103,7 +103,7 @@ async def test_depth_growth_handler_uses_depth_copy(
         calls.append((scene_ref, user_ref, mode))
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
-            random_num=1.25,
+            amount=1.25,
             new_length=-3.25,
         )
 
@@ -148,23 +148,31 @@ async def test_pk_handler_requires_and_uses_mention(
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import game
-    from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
+    from nonebot_plugin_impart_plus.impart.app import (
+        PkOutcome,
+        PkOutcomeType,
+        PkPreparation,
+    )
 
-    calls: list[tuple[SceneRef, UserRef, UserRef | None]] = []
+    calls: list[tuple[SceneRef, UserRef, tuple[UserRef, ...]]] = []
+
+    async def prepare_pk(_: SceneRef, __: UserRef) -> PkPreparation:
+        return PkPreparation(True, 1)
 
     async def execute_pk(
         scene_ref: SceneRef,
         attacker_ref: UserRef,
-        defender_ref: UserRef | None,
+        defender_refs: tuple[UserRef, ...],
     ) -> PkOutcome:
-        calls.append((scene_ref, attacker_ref, defender_ref))
-        if defender_ref is None:
+        calls.append((scene_ref, attacker_ref, defender_refs))
+        if not defender_refs:
             return PkOutcome(PkOutcomeType.MISSING_TARGET)
         return PkOutcome(
             PkOutcomeType.USERS_CREATED,
-            created_users=(attacker_ref, defender_ref),
+            created_users=(attacker_ref, *defender_refs),
         )
 
+    monkeypatch.setattr(game.game_app, "prepare_pk", prepare_pk)
     monkeypatch.setattr(game.game_app, "execute_pk", execute_pk)
     matcher = FinishingMatcherStub()
     with pytest.raises(FinishedException):
@@ -178,7 +186,7 @@ async def test_pk_handler_requires_and_uses_mention(
         (
             make_scene_ref("12345"),
             make_user_ref(),
-            make_user_ref("67890"),
+            (make_user_ref("67890"),),
         )
     ]
     assert len(matcher.messages) == 1
@@ -192,8 +200,64 @@ async def test_pk_handler_requires_and_uses_mention(
             make_ref_context(scene_id="12345"),
             Match((At("user", "unused"),), False),
         )
-    assert calls[-1] == (make_scene_ref("12345"), make_user_ref(), None)
+    assert len(calls) == 1
     assert missing_matcher.messages == ["请at你要pk的目标"]
+
+
+async def test_pk_handler_selects_unlocked_window_without_backfill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_uniref import SceneRef, UserRef
+
+    from nonebot_plugin_impart_plus.bot.handlers import game
+    from nonebot_plugin_impart_plus.impart.app import (
+        PkOutcome,
+        PkOutcomeType,
+        PkPreparation,
+    )
+
+    max_targets = 2
+    calls: list[tuple[UserRef, ...]] = []
+
+    async def prepare_pk(_: SceneRef, __: UserRef) -> PkPreparation:
+        return PkPreparation(True, max_targets)
+
+    async def execute_pk(
+        _: SceneRef,
+        __: UserRef,
+        target_refs: tuple[UserRef, ...],
+    ) -> PkOutcome:
+        calls.append(target_refs)
+        return PkOutcome(PkOutcomeType.WORLD_MISMATCH)
+
+    monkeypatch.setattr(game.game_app, "prepare_pk", prepare_pk)
+    monkeypatch.setattr(game.game_app, "execute_pk", execute_pk)
+
+    for targets in (
+        (At("user", "1"), At("user", "1"), At("user", "2")),
+        (At("user", "1"), At("user", "2"), At("user", "3")),
+    ):
+        with pytest.raises(FinishedException):
+            await game.pk(
+                cast(Matcher, FinishingMatcherStub()),
+                make_ref_context(),
+                Match(targets, True),
+            )
+
+    max_targets = 1
+    with pytest.raises(FinishedException):
+        await game.pk(
+            cast(Matcher, FinishingMatcherStub()),
+            make_ref_context(),
+            Match((At("user", "1"), At("role", "ignored")), True),
+        )
+
+    assert calls == [
+        (make_user_ref("1"),),
+        (make_user_ref("1"), make_user_ref("2")),
+        (make_user_ref("1"),),
+    ]
 
 
 async def test_pk_handler_renders_world_specific_results(
@@ -203,18 +267,27 @@ async def test_pk_handler_renders_world_specific_results(
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import game
-    from nonebot_plugin_impart_plus.impart.app import PkOutcome, PkOutcomeType
-    from nonebot_plugin_impart_plus.impart.core import GrowthMode, PkResolution
+    from nonebot_plugin_impart_plus.impart.app import (
+        PkOutcome,
+        PkOutcomeType,
+        PkPreparation,
+        PkTargetOutcome,
+    )
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
 
     current_mode = GrowthMode.LENGTH
+
+    async def prepare_pk(_: SceneRef, __: UserRef) -> PkPreparation:
+        return PkPreparation(True, 1)
 
     async def execute_pk(
         _: SceneRef,
         __: UserRef,
-        ___: UserRef | None,
+        ___: tuple[UserRef, ...],
     ) -> PkOutcome:
         return PkOutcome(PkOutcomeType.WORLD_MISMATCH, mode=current_mode)
 
+    monkeypatch.setattr(game.game_app, "prepare_pk", prepare_pk)
     monkeypatch.setattr(game.game_app, "execute_pk", execute_pk)
     monkeypatch.setattr(game, "choice", lambda _: "牛牛")
     mismatch_messages: list[str] = []
@@ -236,23 +309,37 @@ async def test_pk_handler_renders_world_specific_results(
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.LENGTH,
-            resolution=PkResolution(True, 0.75, 1.5),
+            won=True,
+            attacker_change=0.75,
+            targets=(PkTargetOutcome(-1.5),),
             attacker_probability=0.49,
         ),
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.DEPTH,
-            resolution=PkResolution(True, 0.75, 1.5),
+            won=True,
+            attacker_change=-0.75,
+            targets=(
+                PkTargetOutcome(
+                    1.5,
+                    "challenge_failed_high_win",
+                ),
+            ),
             attacker_status="challenge_started_low_win",
-            defender_status="challenge_failed_high_win",
             attacker_probability=0.49,
         ),
         PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=GrowthMode.DEPTH,
-            resolution=PkResolution(False, 0.75, 1.5),
+            won=False,
+            attacker_change=1.5,
+            targets=(
+                PkTargetOutcome(
+                    -0.75,
+                    "challenge_success_high_win",
+                ),
+            ),
             attacker_status="challenge_completed_reduce",
-            defender_status="challenge_success_high_win",
             attacker_probability=0.51,
         ),
     )
@@ -286,6 +373,23 @@ async def test_pk_handler_renders_world_specific_results(
     assert "授予TA🎊“深淵の主”🎊称号" in result_messages[2]
     assert result_messages[2].endswith("你的胜率现在为51%喵")
 
+    dual = PkOutcome(
+        PkOutcomeType.COMPLETED,
+        mode=GrowthMode.LENGTH,
+        won=True,
+        attacker_change=1.2,
+        targets=(
+            PkTargetOutcome(-0.6),
+            PkTargetOutcome(-0.3),
+        ),
+        attacker_probability=0.49,
+    )
+    dual_matcher = FinishingMatcherStub()
+    with pytest.raises(FinishedException):
+        await game._handle_pk_win(cast(Matcher, dual_matcher), dual)
+    assert "目标1则在你的阴影笼罩下减小了0.6cm喵" in dual_matcher.messages[0]
+    assert "目标2则在你的阴影笼罩下减小了0.3cm喵" in dual_matcher.messages[0]
+
 
 async def test_game_reply_notifies_actual_unlocked_member_after_result(
     monkeypatch: pytest.MonkeyPatch,
@@ -301,27 +405,53 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
         GrowthOutcomeType,
         PkOutcome,
         PkOutcomeType,
+        PkTargetOutcome,
     )
-    from nonebot_plugin_impart_plus.impart.core import GrowthMode, PkResolution
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
 
-    for won, member in ((True, make_user_ref()), (False, make_user_ref("2"))):
+    for mode, won, members in (
+        (GrowthMode.LENGTH, True, (make_user_ref(),)),
+        (GrowthMode.LENGTH, False, (make_user_ref("2"), make_user_ref("3"))),
+        (GrowthMode.DEPTH, True, (make_user_ref(),)),
+        (GrowthMode.DEPTH, False, (make_user_ref("2"), make_user_ref("3"))),
+    ):
         outcome = PkOutcome(
             PkOutcomeType.COMPLETED,
-            mode=GrowthMode.DEPTH,
-            resolution=PkResolution(won, 0.5, 1.0),
-            unlocked_users=(member,),
+            mode=mode,
+            won=won,
+            attacker_change=0.5 if won else -2.0,
+            attacker_status="challenge_success_high_win" if won else "",
+            targets=tuple(
+                PkTargetOutcome(
+                    -2.0 if won else 0.25,
+                    "" if won else "challenge_success_high_win",
+                )
+                for _ in range(1 if won else 2)
+            ),
+            attacker_probability=0.4875 if won else 0.51,
+            unlocked_users=members,
         )
         matcher = FinishingMatcherStub()
         handler = game._handle_pk_win if won else game._handle_pk_loss
         with pytest.raises(FinishedException):
             await handler(cast(Matcher, matcher), outcome)
-        assert len(matcher.raw_messages) == 2
+        assert len(matcher.raw_messages) == len(members) + 1
         assert "对决" in matcher.messages[0]
-        notification = matcher.raw_messages[1]
-        assert isinstance(notification, UniMessage)
-        assert notification[0] == At("user", member.id)
-        assert "现在可以使用指令「夺舍」了！" in str(notification)
-        assert "at_sender" not in matcher.options[1]
+        for member, notification, options in zip(
+            members,
+            matcher.raw_messages[1:],
+            matcher.options[1:],
+            strict=True,
+        ):
+            assert isinstance(notification, UniMessage)
+            assert notification[0] == At("user", member.id)
+            dimension = "深度" if mode is GrowthMode.DEPTH else "长度"
+            assert f"你的任何基础{dimension}变动将翻倍！" in str(notification)
+            assert "PK现在最多可以指定两个目标了！" in str(notification)
+            assert ("现在可以使用指令「夺舍」了！" in str(notification)) == (
+                mode is GrowthMode.DEPTH
+            )
+            assert "at_sender" not in options
 
     monkeypatch.setattr(
         game.game_app,
@@ -330,7 +460,6 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
             return_value=GrowthOutcome(
                 GrowthOutcomeType.COOLING_DOWN,
                 remaining=10.0,
-                unlocked_users=(make_user_ref(),),
             )
         ),
     )
@@ -339,7 +468,7 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
         await game.grow_self(
             cast(Matcher, matcher), make_ref_context(), SELF_GROW_COMMAND.parse("开扣")
         )
-    assert len(matcher.messages) == 2
+    assert len(matcher.messages) == 1
     assert "请等待10.0秒" in matcher.messages[0]
 
     failing_matcher = FinishingMatcherStub()
@@ -348,7 +477,10 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
     )
     with pytest.raises(RuntimeError, match="send failed"):
         await game._finish_game_reply(
-            cast(Matcher, failing_matcher), "result", unlocked_users=(make_user_ref(),)
+            cast(Matcher, failing_matcher),
+            "result",
+            unlocked_users=(make_user_ref(),),
+            mode=GrowthMode.DEPTH,
         )
     assert failing_matcher.messages == []
 
@@ -379,7 +511,7 @@ async def test_target_growth_handler_requires_target_and_uses_mode(
             return GrowthOutcome(GrowthOutcomeType.SELF_TARGET)
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
-            random_num=1.5,
+            amount=1.5,
             new_length=-3.5,
         )
 

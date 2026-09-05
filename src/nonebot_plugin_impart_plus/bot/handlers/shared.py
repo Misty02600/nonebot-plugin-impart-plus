@@ -23,16 +23,20 @@ OPPONENT_TITLE_LOSS = (
 def created_user_message(
     created_users: tuple[UserRef, ...],
     user_ref: UserRef,
-    target_ref: UserRef,
+    *target_refs: UserRef,
 ) -> str:
     user_created = user_ref in created_users
-    target_created = target_ref != user_ref and target_ref in created_users
+    target_count = sum(
+        target != user_ref and target in created_users for target in target_refs
+    )
     jj_name = choice(JJ_NAMES)
-    if user_created and target_created:
+    if user_created and target_count:
         return f"你们还没有{jj_name}喵，咱帮你们创建了喵，目前长度都是10cm喵"
     if user_created:
         return f"你还没有{jj_name}喵，咱帮你创建了喵，目前长度是10cm喵"
-    if target_created:
+    if target_count > 1:
+        return f"TA们还没有{jj_name}喵，咱帮TA们创建了喵，目前长度都是10cm喵"
+    if target_count == 1:
         return f"TA还没有{jj_name}喵，咱帮TA创建了喵，目前长度是10cm喵"
     raise ValueError("创建结果不包含命令用户")
 

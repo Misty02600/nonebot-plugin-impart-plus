@@ -17,11 +17,9 @@ from .core import (
     InteractionResolution,
     InteractionVolumeSettlement,
     LengthState,
-    PkResolution,
     PossessionStatus,
+    active_challenge,
     classify_length,
-    crossed_challenge_threshold,
-    growth_delta,
     is_xnn,
     resolve_interaction,
     supports_growth_mode,
@@ -35,7 +33,20 @@ class PkOutcomeType(StrEnum):
     SELF_TARGET = "self_target"
     USERS_CREATED = "users_created"
     WORLD_MISMATCH = "world_mismatch"
+    MULTI_TARGET_UNAVAILABLE = "multi_target_unavailable"
     COMPLETED = "completed"
+
+
+@dataclass(frozen=True, slots=True)
+class PkPreparation:
+    enabled: bool
+    max_targets: int = 1
+
+
+@dataclass(frozen=True, slots=True)
+class PkTargetOutcome:
+    length_change: float
+    status: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,9 +55,10 @@ class PkOutcome:
     mode: GrowthMode = GrowthMode.LENGTH
     remaining: float = 0
     created_users: tuple[UserRef, ...] = ()
-    resolution: PkResolution | None = None
+    won: bool = False
+    attacker_change: float = 0
     attacker_status: str = ""
-    defender_status: str = ""
+    targets: tuple[PkTargetOutcome, ...] = ()
     attacker_probability: float = 0.5
     unlocked_users: tuple[UserRef, ...] = ()
 
@@ -76,7 +88,7 @@ class GrowthOutcome:
     type: GrowthOutcomeType
     remaining: float = 0
     created_users: tuple[UserRef, ...] = ()
-    random_num: float = 0
+    amount: float = 0
     new_length: float = 0
     challenge_started: bool = False
     unlocked_users: tuple[UserRef, ...] = ()
@@ -93,6 +105,7 @@ class QueryOutcome:
     type: QueryOutcomeType
     created_users: tuple[UserRef, ...] = ()
     length: float = 0
+    challenge_tier: int = 0
     state: LengthState = LengthState.NORMAL
     today_total: float = 0
     history_total: float | None = None
@@ -152,10 +165,6 @@ def get_random_num() -> float:
     return round(rand_num, 3)
 
 
-def _growth_is_blocked(status: str) -> bool:
-    return status in {"challenge_started_low_win", "is_challenging"}
-
-
 class GameApplication:
     def __init__(
         self,
@@ -202,40 +211,68 @@ class GameApplication:
                 target_status=result.target_status,
             )
 
+    async def prepare_pk(
+        self,
+        scene_ref: SceneRef,
+        attacker_ref: UserRef,
+    ) -> PkPreparation:
+        if not await self._data.is_scene_enabled(scene_ref):
+            return PkPreparation(False)
+        async with self._state_lock:
+            if not await self._data.has_user(attacker_ref):
+                return PkPreparation(True)
+            state = (await self._data.get_user_states(attacker_ref))[attacker_ref]
+            return PkPreparation(True, 2 if state.challenge_tier >= 1 else 1)
+
     async def execute_pk(
         self,
         scene_ref: SceneRef,
         attacker_ref: UserRef,
-        defender_ref: UserRef | None,
+        defender_refs: tuple[UserRef, ...],
     ) -> PkOutcome:
         if not await self._data.is_scene_enabled(scene_ref):
             return PkOutcome(PkOutcomeType.DISABLED)
 
-        if defender_ref is None:
+        if not defender_refs:
             return PkOutcome(PkOutcomeType.MISSING_TARGET)
 
-        if defender_ref == attacker_ref:
+        if attacker_ref in defender_refs:
             return PkOutcome(PkOutcomeType.SELF_TARGET)
+        if len(defender_refs) > 2 or len(set(defender_refs)) != len(defender_refs):
+            raise ValueError("PK targets must contain one or two unique users")
 
         async with self._state_lock:
-            return await self._execute_pk(attacker_ref, defender_ref)
+            return await self._execute_pk(attacker_ref, defender_refs)
 
     async def _execute_pk(
         self,
         attacker_ref: UserRef,
-        defender_ref: UserRef,
+        defender_refs: tuple[UserRef, ...],
     ) -> PkOutcome:
-        created_users = await self._create_missing_users(attacker_ref, defender_ref)
+        if len(defender_refs) > 1 and await self._data.has_user(attacker_ref):
+            attacker_state = (await self._data.get_user_states(attacker_ref))[
+                attacker_ref
+            ]
+            if attacker_state.challenge_tier < 1:
+                return PkOutcome(PkOutcomeType.MULTI_TARGET_UNAVAILABLE)
+
+        created_users = await self._create_missing_users(
+            attacker_ref,
+            *defender_refs,
+        )
         if created_users:
             return PkOutcome(
                 PkOutcomeType.USERS_CREATED,
                 created_users=created_users,
             )
 
-        attacker_length = await self._data.get_jj_length(attacker_ref)
-        defender_length = await self._data.get_jj_length(defender_ref)
-        mode = GrowthMode.LENGTH if attacker_length > 0 else GrowthMode.DEPTH
-        if not supports_growth_mode(defender_length, mode):
+        states = await self._data.get_user_states(attacker_ref, *defender_refs)
+        attacker_state = states[attacker_ref]
+        mode = GrowthMode.LENGTH if attacker_state.length > 0 else GrowthMode.DEPTH
+        if any(
+            not supports_growth_mode(states[defender].length, mode)
+            for defender in defender_refs
+        ):
             return PkOutcome(PkOutcomeType.WORLD_MISMATCH, mode=mode)
 
         if not await self._cooldown.pkcd_check(attacker_ref):
@@ -251,26 +288,32 @@ class GameApplication:
         random_num = get_random_num()
         settlement = await self._data.settle_pk(
             attacker_ref,
-            defender_ref,
+            defender_refs,
             win_roll=win_roll,
             random_num=random_num,
         )
         return PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=settlement.mode,
-            resolution=settlement.resolution,
+            won=settlement.won,
+            attacker_change=settlement.attacker.length_change,
             attacker_status=settlement.attacker.status,
-            defender_status=settlement.defender.status,
+            targets=tuple(
+                PkTargetOutcome(
+                    length_change=participant.length_change,
+                    status=participant.status,
+                )
+                for participant in settlement.defenders
+            ),
             attacker_probability=settlement.attacker.final.win_probability,
             unlocked_users=tuple(
                 user
                 for user, participant in (
                     (attacker_ref, settlement.attacker),
-                    (defender_ref, settlement.defender),
+                    *zip(defender_refs, settlement.defenders, strict=True),
                 )
-                if not participant.before.challenge_completed
-                and participant.final.challenge_completed
-                and participant.final.length < 0
+                if participant.before.challenge_tier < 1
+                and participant.final.challenge_tier >= 1
             ),
         )
 
@@ -298,13 +341,11 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        current_length = await self._data.get_jj_length(user_ref)
-        if not supports_growth_mode(current_length, mode):
+        state = (await self._data.get_user_states(user_ref))[user_ref]
+        if not supports_growth_mode(state.length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
-        evaluation = await self._data.update_challenge_status(user_ref)
-        unlocked_users = (user_ref,) if evaluation.possession_unlocked else ()
-        if _growth_is_blocked(evaluation.status):
+        if active_challenge(state):
             return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
 
         if not await self._cooldown.cd_check(user_ref):
@@ -316,26 +357,21 @@ class GameApplication:
             return GrowthOutcome(
                 GrowthOutcomeType.COOLING_DOWN,
                 remaining=remaining,
-                unlocked_users=unlocked_users,
             )
 
         self._cooldown.cd_data[user_ref] = time.time()
         random_num = get_random_num()
-        await self._data.set_jj_length(user_ref, growth_delta(random_num, mode))
-        new_length = await self._data.get_jj_length(user_ref)
-        challenge_started = crossed_challenge_threshold(current_length, new_length)
-        if challenge_started:
-            evaluation = await self._data.update_challenge_status(user_ref)
-            if evaluation.possession_unlocked:
-                unlocked_users = (user_ref,)
-        else:
-            new_length = await self._data.get_jj_length(user_ref)
+        settlement = await self._data.settle_growth(
+            user_ref,
+            mode,
+            random_num=random_num,
+        )
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
-            random_num=random_num,
-            new_length=new_length,
-            challenge_started=challenge_started,
-            unlocked_users=unlocked_users,
+            amount=settlement.amount,
+            new_length=settlement.final.length,
+            challenge_started=settlement.status == "challenge_started_low_win",
+            unlocked_users=(user_ref,) if settlement.completed_tier == 1 else (),
         )
 
     async def grow_target(
@@ -370,27 +406,18 @@ class GameApplication:
                 created_users=created_users,
             )
 
-        current_length = await self._data.get_jj_length(target_ref)
-        if not supports_growth_mode(current_length, mode):
+        states = await self._data.get_user_states(user_ref, target_ref)
+        actor_state = states[user_ref]
+        target_state = states[target_ref]
+        if not supports_growth_mode(target_state.length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
-        actor_length = await self._data.get_jj_length(user_ref)
-        actor_uses_mode = supports_growth_mode(actor_length, mode)
-        unlocked_users: tuple[UserRef, ...] = ()
-        if actor_uses_mode and await self._data.is_challenging(user_ref):
-            actor_evaluation = await self._data.update_challenge_status(user_ref)
-            if _growth_is_blocked(actor_evaluation.status):
-                return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
-            if actor_evaluation.possession_unlocked:
-                unlocked_users = (user_ref,)
-
-        target_evaluation = await self._data.update_challenge_status(target_ref)
-        if target_evaluation.possession_unlocked:
-            unlocked_users += (target_ref,)
-        if _growth_is_blocked(target_evaluation.status):
-            return GrowthOutcome(
-                GrowthOutcomeType.TARGET_CHALLENGING, unlocked_users=unlocked_users
-            )
+        if supports_growth_mode(actor_state.length, mode) and active_challenge(
+            actor_state
+        ):
+            return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
+        if active_challenge(target_state):
+            return GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)
 
         if not await self._cooldown.suo_cd_check(user_ref):
             remaining = round(
@@ -401,24 +428,21 @@ class GameApplication:
             return GrowthOutcome(
                 GrowthOutcomeType.COOLING_DOWN,
                 remaining=remaining,
-                unlocked_users=unlocked_users,
             )
 
         self._cooldown.suo_cd_data[user_ref] = time.time()
         random_num = get_random_num()
-        await self._data.set_jj_length(target_ref, growth_delta(random_num, mode))
-        new_length = await self._data.get_jj_length(target_ref)
-        challenge_started = crossed_challenge_threshold(current_length, new_length)
-        if challenge_started:
-            target_evaluation = await self._data.update_challenge_status(target_ref)
-            if target_evaluation.possession_unlocked:
-                unlocked_users += (target_ref,)
+        settlement = await self._data.settle_growth(
+            target_ref,
+            mode,
+            random_num=random_num,
+        )
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
-            random_num=random_num,
-            new_length=new_length,
-            challenge_started=challenge_started,
-            unlocked_users=unlocked_users,
+            amount=settlement.amount,
+            new_length=settlement.final.length,
+            challenge_started=settlement.status == "challenge_started_low_win",
+            unlocked_users=(target_ref,) if settlement.completed_tier == 1 else (),
         )
 
     async def query_user(
@@ -445,9 +469,8 @@ class GameApplication:
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=data.length,
-            state=classify_length(
-                data.length, challenge_completed=data.challenge_completed
-            ),
+            challenge_tier=data.challenge_tier,
+            state=classify_length(data.length, challenge_tier=data.challenge_tier),
             today_total=data.today_total,
             history_total=round(sum(data.records.values()), 3) if history else None,
             history=data.records if history else {},

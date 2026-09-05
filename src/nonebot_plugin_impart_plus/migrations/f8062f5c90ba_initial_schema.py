@@ -79,8 +79,7 @@ def upgrade(name: str = "") -> None:
         sa.Column("user_namespace", sa.String(length=128), nullable=False),
         sa.Column("jj_length", sa.Float(), nullable=False),
         sa.Column("win_probability", sa.Float(), nullable=False),
-        sa.Column("is_challenging", sa.Boolean(), nullable=False),
-        sa.Column("challenge_completed", sa.Boolean(), nullable=False),
+        sa.Column("challenge_tier", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint(
             "user_ref", name=op.f("pk_nonebot_plugin_impart_plus_userdata")
         ),

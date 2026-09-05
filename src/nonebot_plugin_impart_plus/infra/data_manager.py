@@ -9,13 +9,14 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..impart.core import (
+    GrowthMode,
+    GrowthSettlement,
     InteractionVolumeSettlement,
     PkSettlement,
     PossessionSettlement,
     PossessionStatus,
-    StateEvaluation,
     UserGameState,
-    evaluate_user_state,
+    resolve_growth_settlement,
     resolve_interaction_volume,
     resolve_pk_settlement,
     resolve_possession,
@@ -32,7 +33,7 @@ from .database import (
 @dataclass(frozen=True, slots=True)
 class UserQueryData:
     length: float
-    challenge_completed: bool
+    challenge_tier: int
     today_total: float
     records: dict[str, float]
 
@@ -82,16 +83,14 @@ def _to_game_state(user: UserData) -> UserGameState:
     return UserGameState(
         length=user.jj_length,
         win_probability=user.win_probability,
-        is_challenging=user.is_challenging,
-        challenge_completed=user.challenge_completed,
+        challenge_tier=user.challenge_tier,
     )
 
 
 def _apply_game_state(user: UserData, state: UserGameState) -> None:
     user.jj_length = state.length
     user.win_probability = state.win_probability
-    user.is_challenging = state.is_challenging
-    user.challenge_completed = state.challenge_completed
+    user.challenge_tier = state.challenge_tier
 
 
 class DataManager:
@@ -101,36 +100,44 @@ class DataManager:
     ) -> None:
         self._session_factory = session_factory
 
-    async def update_challenge_status(self, user_ref: UserRef) -> StateEvaluation:
-        """根据用户当前状态更新挑战状态与胜率。"""
+    async def settle_growth(
+        self,
+        user_ref: UserRef,
+        mode: GrowthMode,
+        *,
+        random_num: float,
+    ) -> GrowthSettlement:
+        """在一个事务中提交成长、挑战状态与胜率变化。"""
         encoded = _encode_persistent_ref(user_ref)
-        async with self._session_factory() as session:
+        async with self._session_factory() as session, session.begin():
             result = await session.execute(
                 select(UserData).where(UserData.user_ref == encoded)
             )
-            user = result.scalar()
-            if not user:
-                raise LookupError("challenge user does not exist")
-
-            evaluation = evaluate_user_state(_to_game_state(user))
-            _apply_game_state(user, evaluation.state)
-
-            await session.commit()
-            return evaluation
+            user = result.scalar_one_or_none()
+            if user is None:
+                raise LookupError("growth user does not exist")
+            settlement = resolve_growth_settlement(
+                _to_game_state(user),
+                mode,
+                random_num,
+            )
+            _apply_game_state(user, settlement.final)
+            await session.flush()
+        return settlement
 
     async def settle_pk(
         self,
         attacker_ref: UserRef,
-        defender_ref: UserRef,
+        defender_refs: tuple[UserRef, ...],
         *,
         win_roll: float,
         random_num: float,
     ) -> PkSettlement:
-        """在一个数据库事务中结算并保存 PK 双方状态。
+        """在一个数据库事务中结算并保存PK全部参与者状态。
 
         Args:
             attacker_ref: 发起者持久身份。
-            defender_ref: 目标持久身份。
+            defender_refs: 按At顺序排列的一至两个目标。
             win_roll: 本局固定的胜负随机值。
             random_num: 本局固定的长度变化随机值。
 
@@ -139,30 +146,39 @@ class DataManager:
 
         Raises:
             LookupError: 任一参与者在事务中不存在。
-            ValueError: 双方在事务中不属于同一个正负世界。
+            ValueError: 没有目标、目标重复，或参与者不属于同一个世界。
         """
+        if not defender_refs or len(set(defender_refs)) != len(defender_refs):
+            raise ValueError("PK defenders must be non-empty and unique")
+        if attacker_ref in defender_refs:
+            raise ValueError("PK attacker cannot be a defender")
         attacker_key = _encode_persistent_ref(attacker_ref)
-        defender_key = _encode_persistent_ref(defender_ref)
+        defender_keys = tuple(_encode_persistent_ref(ref) for ref in defender_refs)
         async with self._session_factory() as session, session.begin():
             result = await session.execute(
                 select(UserData).where(
-                    UserData.user_ref.in_((attacker_key, defender_key))
+                    UserData.user_ref.in_((attacker_key, *defender_keys))
                 )
             )
             users = {user.user_ref: user for user in result.scalars()}
             attacker = users.get(attacker_key)
-            defender = users.get(defender_key)
-            if attacker is None or defender is None:
+            if attacker is None or any(key not in users for key in defender_keys):
                 raise LookupError("PK participant does not exist")
+            defenders = tuple(users[key] for key in defender_keys)
 
             settlement = resolve_pk_settlement(
                 _to_game_state(attacker),
-                _to_game_state(defender),
+                tuple(_to_game_state(defender) for defender in defenders),
                 win_roll=win_roll,
                 random_num=random_num,
             )
             _apply_game_state(attacker, settlement.attacker.final)
-            _apply_game_state(defender, settlement.defender.final)
+            for defender, participant in zip(
+                defenders,
+                settlement.defenders,
+                strict=True,
+            ):
+                _apply_game_state(defender, participant.final)
             await session.flush()
         return settlement
 
@@ -214,14 +230,6 @@ class DataManager:
         if len(states) != len(keys):
             raise LookupError("interaction participant does not exist")
         return states
-
-    async def is_challenging(self, user_ref: UserRef) -> bool:
-        encoded = _encode_persistent_ref(user_ref)
-        async with self._session_factory() as session:
-            result = await session.execute(
-                select(UserData.is_challenging).where(UserData.user_ref == encoded)
-            )
-            return bool(result.scalar())
 
     async def add_new_user(self, user_ref: UserRef) -> None:
         """插入初始长度为 10.0 的新用户。"""
@@ -395,7 +403,7 @@ class DataManager:
         statement = (
             select(
                 UserData.jj_length,
-                UserData.challenge_completed,
+                UserData.challenge_tier,
                 EjaculationData.date,
                 EjaculationData.volume,
             )
@@ -416,7 +424,7 @@ class DataManager:
         }
         return UserQueryData(
             length=rows[0].jj_length,
-            challenge_completed=rows[0].challenge_completed,
+            challenge_tier=rows[0].challenge_tier,
             today_total=records.get(today, 0.0),
             records=records,
         )

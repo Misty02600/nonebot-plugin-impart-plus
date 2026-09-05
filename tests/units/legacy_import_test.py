@@ -43,6 +43,8 @@ def _create_current_legacy_database(path: Path) -> None:
             (
                 (10001, 26.5, 1234, 0.4, 1, 0, 0, 0),
                 (10002, -8.25, 5678, 0.6, 0, 1, 1, 1),
+                (10003, 26.5, 5678, 0.5, 0, 0, 0, 0),
+                (10004, 30.0, 5678, 0.5, 0, 0, 0, 0),
             ),
         )
         connection.executemany(
@@ -152,8 +154,7 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
                 user.user_namespace,
                 user.jj_length,
                 user.win_probability,
-                user.is_challenging,
-                user.challenge_completed,
+                user.challenge_tier,
             )
             for user in users
         } == {
@@ -161,15 +162,25 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
                 "QQClient",
                 26.5,
                 0.4,
-                True,
-                False,
+                0,
             ),
             encode_ref(UserRef("QQClient", "10002")): (
                 "QQClient",
                 -8.25,
                 0.6,
-                False,
-                True,
+                0,
+            ),
+            encode_ref(UserRef("QQClient", "10003")): (
+                "QQClient",
+                26.5,
+                0.4,
+                0,
+            ),
+            encode_ref(UserRef("QQClient", "10004")): (
+                "QQClient",
+                30.0,
+                0.5,
+                1,
             ),
         }
         assert {
@@ -221,8 +232,7 @@ async def test_defaults_old_columns_and_skips_non_empty_target(
             )
         assert imported is not None
         assert imported.win_probability == 0.5
-        assert imported.is_challenging is False
-        assert imported.challenge_completed is False
+        assert imported.challenge_tier == 0
         assert imported.jj_length == -0.001
 
         async with occupied_sessions() as session:

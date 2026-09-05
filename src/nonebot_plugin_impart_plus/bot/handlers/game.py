@@ -44,6 +44,7 @@ async def _finish_game_reply(
     message: str,
     *,
     unlocked_users: tuple[UserRef, ...],
+    mode: GrowthMode,
 ) -> None:
     """先回复本局结果，再单独 At 本次解锁成员；最后一条消息结束 matcher。"""
     if not unlocked_users:
@@ -51,9 +52,20 @@ async def _finish_game_reply(
         return
     await matcher.send(message, at_sender=True)
     for index, user in enumerate(unlocked_users):
-        notification = UniMessage.at(user.id).text(
-            " 你感到深渊的禁忌力量正涌入体内...\n现在可以使用指令「夺舍」了！"
-        )
+        if mode is GrowthMode.DEPTH:
+            text = (
+                " 你感到深渊的禁忌力量正涌入体内..."
+                "\n你的任何基础深度变动将翻倍！"
+                "\nPK现在最多可以指定两个目标了！"
+                "\n现在可以使用指令「夺舍」了！"
+            )
+        else:
+            text = (
+                " 你感到一股神性的力量正涌入体内..."
+                "\n你的任何基础长度变动将翻倍！"
+                "\nPK现在最多可以指定两个目标了！"
+            )
+        notification = UniMessage.at(user.id).text(text)
         if index == len(unlocked_users) - 1:
             await cast(AlconnaMatcher, matcher).finish(notification, fallback=AUTO)
         else:
@@ -72,7 +84,7 @@ def _self_challenge_progress(status: str, mode: GrowthMode) -> str:
             f"\n{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
             f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧!"
         )
-    if status == "challenge_success_high_win":
+    if status in {"challenge_completed", "challenge_success_high_win"}:
         if mode is GrowthMode.DEPTH:
             return (
                 f"\n🎉恭喜你完成深渊挑战🎉\n你的{HOLE_NAME}深度已超过30cm，授予你🎊“深淵の主”🎊称号"
@@ -97,7 +109,7 @@ def _opponent_challenge_progress(status: str, mode: GrowthMode) -> str:
             f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，已为TA开启✨“登神长阶”✨"
             f"\n现在TA的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(JJ_NAMES)}长度提升至30cm为目标与群友pk吧！"
         )
-    if status == "challenge_success_high_win":
+    if status in {"challenge_completed", "challenge_success_high_win"}:
         if mode is GrowthMode.DEPTH:
             return (
                 f"\n🎉恭喜你帮助TA完成深渊挑战🎉\nTA的{HOLE_NAME}深度超过30cm，授予TA🎊“深淵の主”🎊称号"
@@ -168,23 +180,24 @@ async def pk(
 ) -> None:
     scene_ref = refs.scene_ref
     user_ref = refs.user_ref
-    target_ref = (
-        refs.build_user_ref(user_at_target(targets.result[0]))
-        if targets.available
-        else None
-    )
-    outcome = await game_app.execute_pk(
-        scene_ref,
-        user_ref,
-        target_ref,
-    )
+    preparation = await game_app.prepare_pk(scene_ref, user_ref)
+    if not preparation.enabled:
+        await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
+    if not targets.available:
+        await matcher.finish("请at你要pk的目标", at_sender=True)
+        return
 
+    selected = targets.result[: preparation.max_targets]
+    target_refs = tuple(
+        dict.fromkeys(
+            refs.build_user_ref(user_at_target(target)) for target in selected
+        )
+    )
+    outcome = await game_app.execute_pk(scene_ref, user_ref, target_refs)
     if outcome.type is PkOutcomeType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is PkOutcomeType.MISSING_TARGET:
         await matcher.finish("请at你要pk的目标", at_sender=True)
-    if target_ref is None:
-        return
     if outcome.type is PkOutcomeType.COOLING_DOWN:
         await matcher.finish(
             f"你已经pk不动了喵, 请等待{outcome.remaining}秒后再pk喵",
@@ -192,65 +205,97 @@ async def pk(
         )
     if outcome.type is PkOutcomeType.SELF_TARGET:
         await matcher.finish("你不能pk自己喵", at_sender=True)
+    if outcome.type is PkOutcomeType.MULTI_TARGET_UNAVAILABLE:
+        await matcher.finish("你尚未解锁同时与两人pk的能力喵", at_sender=True)
     if outcome.type is PkOutcomeType.USERS_CREATED:
         await matcher.finish(
-            created_user_message(outcome.created_users, user_ref, target_ref),
+            created_user_message(outcome.created_users, user_ref, *target_refs),
             at_sender=True,
         )
     if outcome.type is PkOutcomeType.WORLD_MISMATCH:
         name = choice(JJ_NAMES) if outcome.mode is GrowthMode.LENGTH else HOLE_NAME
         await matcher.finish(f"你只能和有{name}的人pk！", at_sender=True)
-
-    if outcome.resolution is None:
+    if outcome.type is not PkOutcomeType.COMPLETED:
         return
-    if outcome.resolution.won:
+    if outcome.won:
         await _handle_pk_win(matcher, outcome)
     else:
         await _handle_pk_loss(matcher, outcome)
 
 
+def _target_label(index: int, target_count: int) -> str:
+    return "对面" if target_count == 1 else f"目标{index}"
+
+
 async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
-    resolution = outcome.resolution
-    if resolution is None:
-        return
+    attacker_change = abs(outcome.attacker_change)
+    target_count = len(outcome.targets)
+    separator = ", " if target_count == 1 else "\n"
     if outcome.mode is GrowthMode.DEPTH:
-        uid_msg = (
-            f"对决胜利喵, 你的{HOLE_NAME}加深了{resolution.length_increase}cm喵, "
-            f"对面则在你{HOLE_NAME}的深暗压迫下变浅了{resolution.length_decrease}cm喵"
-        )
+        uid_msg = f"对决胜利喵, 你的{HOLE_NAME}加深了{attacker_change}cm喵"
+        for index, target in enumerate(outcome.targets, 1):
+            uid_msg += (
+                f"{separator}{_target_label(index, target_count)}"
+                f"则在你{HOLE_NAME}的深暗压迫下"
+                f"变浅了{abs(target.length_change)}cm喵"
+            )
     else:
-        uid_msg = f"对决胜利喵, 你的{choice(JJ_NAMES)}增加了{resolution.length_increase}cm喵, 对面则在你的阴影笼罩下减小了{resolution.length_decrease}cm喵"
+        name = choice(JJ_NAMES)
+        uid_msg = f"对决胜利喵, 你的{name}增加了{attacker_change}cm喵"
+        for index, target in enumerate(outcome.targets, 1):
+            uid_msg += (
+                f"{separator}{_target_label(index, target_count)}则在你的阴影笼罩下"
+                f"减小了{abs(target.length_change)}cm喵"
+            )
 
     uid_msg += _self_challenge_progress(outcome.attacker_status, outcome.mode)
-    defender_challenge = _opponent_challenge_regress(
-        outcome.defender_status,
-        outcome.mode,
-    )
-    uid_msg += defender_challenge
-    if (
-        not defender_challenge
-        and outcome.mode is GrowthMode.LENGTH
-        and "length_near_zero" in outcome.defender_status
-    ):
-        uid_msg += f"\n由于你对决的胜利，{botname}检测到TA已经变成xnn了喵！"
+    for index, target in enumerate(outcome.targets, 1):
+        challenge = _opponent_challenge_regress(target.status, outcome.mode)
+        if challenge and target_count > 1:
+            uid_msg += f"\n{_target_label(index, target_count)}：" + challenge
+        else:
+            uid_msg += challenge
+        if (
+            not challenge
+            and outcome.mode is GrowthMode.LENGTH
+            and "length_near_zero" in target.status
+        ):
+            subject = "TA" if target_count == 1 else _target_label(index, target_count)
+            uid_msg += f"\n由于你对决的胜利，{botname}检测到{subject}已经变成xnn了喵！"
 
     probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
     await _finish_game_reply(
-        matcher, f"{uid_msg}{probability_msg}", unlocked_users=outcome.unlocked_users
+        matcher,
+        f"{uid_msg}{probability_msg}",
+        unlocked_users=outcome.unlocked_users,
+        mode=outcome.mode,
     )
 
 
 async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
-    resolution = outcome.resolution
-    if resolution is None:
-        return
+    attacker_change = abs(outcome.attacker_change)
+    target_count = len(outcome.targets)
+    separator = ", " if target_count == 1 else "\n"
     if outcome.mode is GrowthMode.DEPTH:
         uid_msg = (
             f"对决失败喵, 在对面{HOLE_NAME}的深暗压迫下你的{HOLE_NAME}"
-            f"变浅了{resolution.length_decrease}cm喵, 对面加深了{resolution.length_increase}cm喵"
+            f"变浅了{attacker_change}cm喵"
         )
+        for index, target in enumerate(outcome.targets, 1):
+            uid_msg += (
+                f"{separator}{_target_label(index, target_count)}加深了"
+                f"{abs(target.length_change)}cm喵"
+            )
     else:
-        uid_msg = f"对决失败喵, 在对面{choice(JJ_NAMES)}的阴影笼罩下你的{choice(JJ_NAMES)}减小了{resolution.length_decrease}cm喵, 对面增加了{resolution.length_increase}cm喵"
+        name = choice(JJ_NAMES)
+        uid_msg = (
+            f"对决失败喵, 在对面{name}的阴影笼罩下你的{name}减小了{attacker_change}cm喵"
+        )
+        for index, target in enumerate(outcome.targets, 1):
+            uid_msg += (
+                f"{separator}{_target_label(index, target_count)}增加了"
+                f"{abs(target.length_change)}cm喵"
+            )
 
     attacker_challenge = _self_challenge_regress(
         outcome.attacker_status,
@@ -264,11 +309,19 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
     ):
         uid_msg += "\n你醒啦, 你已经变成xnn了！"
 
-    uid_msg += _opponent_challenge_progress(outcome.defender_status, outcome.mode)
+    for index, target in enumerate(outcome.targets, 1):
+        challenge = _opponent_challenge_progress(target.status, outcome.mode)
+        if challenge and target_count > 1:
+            uid_msg += f"\n{_target_label(index, target_count)}：" + challenge
+        else:
+            uid_msg += challenge
 
     probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
     await _finish_game_reply(
-        matcher, f"{uid_msg}{probability_msg}", unlocked_users=outcome.unlocked_users
+        matcher,
+        f"{uid_msg}{probability_msg}",
+        unlocked_users=outcome.unlocked_users,
+        mode=outcome.mode,
     )
 
 
@@ -287,14 +340,11 @@ async def grow_self(
         mode,
     )
     if outcome.type is GrowthOutcomeType.DISABLED:
-        await _finish_game_reply(
-            matcher, NOT_ALLOWED_TEXT, unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is GrowthOutcomeType.USER_CREATED:
-        await _finish_game_reply(
-            matcher,
+        await matcher.finish(
             created_user_message(outcome.created_users, user_ref, user_ref),
-            unlocked_users=outcome.unlocked_users,
+            at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.WRONG_STATE:
         message = (
@@ -302,15 +352,12 @@ async def grow_self(
             if mode is GrowthMode.LENGTH
             else f"你没有{HOLE_NAME}喵，挖不了矿喵"
         )
-        await _finish_game_reply(
-            matcher, message, unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish(message, at_sender=True)
     if outcome.type is GrowthOutcomeType.COOLING_DOWN:
         action = "导" if mode is GrowthMode.LENGTH else "扣"
-        await _finish_game_reply(
-            matcher,
+        await matcher.finish(
             f"你已经{action}不动了喵, 请等待{outcome.remaining}秒后再{action}喵",
-            unlocked_users=outcome.unlocked_users,
+            at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.ACTOR_CHALLENGING:
         message = (
@@ -318,37 +365,37 @@ async def grow_self(
             if mode is GrowthMode.LENGTH
             else f"你的{HOLE_NAME}深度在任务范围内，不允许挖矿，请专心与群友pk！"
         )
-        await _finish_game_reply(
-            matcher,
-            message,
-            unlocked_users=outcome.unlocked_users,
-        )
+        await matcher.finish(message, at_sender=True)
     if outcome.challenge_started:
         if mode is GrowthMode.DEPTH:
             await _finish_game_reply(
                 matcher,
-                f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.random_num}cm喵"
+                f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵"
                 f"\n由于你无休止的挖矿，触犯到了神秘的禁忌，{botname}检测到你的{HOLE_NAME}深度超过25cm，已为你开启🕳️“深渊试炼”🕳️"
                 f"\n你现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！",
                 unlocked_users=outcome.unlocked_users,
+                mode=mode,
             )
         await _finish_game_reply(
             matcher,
-            f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.random_num}cm喵"
+            f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵"
             f"\n由于你无休止的打胶，触犯到了神秘的禁忌，{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
             f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
             unlocked_users=outcome.unlocked_users,
+            mode=mode,
         )
     if mode is GrowthMode.DEPTH:
         await _finish_game_reply(
             matcher,
-            f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.random_num}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
+            f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
             unlocked_users=outcome.unlocked_users,
+            mode=mode,
         )
     await _finish_game_reply(
         matcher,
-        f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.random_num}cm喵, 目前长度为{outcome.new_length}cm喵",
+        f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵, 目前长度为{outcome.new_length}cm喵",
         unlocked_users=outcome.unlocked_users,
+        mode=mode,
     )
 
 
@@ -372,22 +419,16 @@ async def grow_target(
     )
 
     if outcome.type is GrowthOutcomeType.DISABLED:
-        await _finish_game_reply(
-            matcher, NOT_ALLOWED_TEXT, unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is GrowthOutcomeType.MISSING_TARGET:
-        await _finish_game_reply(
-            matcher, "请at你要嗦/舔的目标", unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish("请at你要嗦/舔的目标", at_sender=True)
     if outcome.type is GrowthOutcomeType.SELF_TARGET:
         message = (
             f"你嗦不到自己的{choice(JJ_NAMES)}喵"
             if mode is GrowthMode.LENGTH
             else f"你舔不到自己的{HOLE_NAME}喵"
         )
-        await _finish_game_reply(
-            matcher, message, unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish(message, at_sender=True)
     if target_ref is None:
         return
     if outcome.type is GrowthOutcomeType.WRONG_STATE:
@@ -396,21 +437,17 @@ async def grow_target(
             if mode is GrowthMode.LENGTH
             else f"TA没有{HOLE_NAME}喵，舔不了喵"
         )
-        await _finish_game_reply(
-            matcher, message, unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish(message, at_sender=True)
     if outcome.type is GrowthOutcomeType.COOLING_DOWN:
         action = "嗦" if mode is GrowthMode.LENGTH else "舔"
-        await _finish_game_reply(
-            matcher,
+        await matcher.finish(
             f"你已经{action}不动了喵, 请等待{outcome.remaining}秒后再{action}喵",
-            unlocked_users=outcome.unlocked_users,
+            at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.USER_CREATED:
-        await _finish_game_reply(
-            matcher,
+        await matcher.finish(
             created_user_message(outcome.created_users, user_ref, target_ref),
-            unlocked_users=outcome.unlocked_users,
+            at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.ACTOR_CHALLENGING:
         message = (
@@ -418,46 +455,44 @@ async def grow_target(
             if mode is GrowthMode.LENGTH
             else f"你的{HOLE_NAME}深度在任务范围内，不允许舔，请专心与群友pk！"
         )
-        await _finish_game_reply(
-            matcher, message, unlocked_users=outcome.unlocked_users
-        )
+        await matcher.finish(message, at_sender=True)
     if outcome.type is GrowthOutcomeType.TARGET_CHALLENGING:
         message = (
             f"TA的{choice(JJ_NAMES)}长度在任务范围内，不准嗦！请专心与群友pk！"
             if mode is GrowthMode.LENGTH
             else f"TA的{HOLE_NAME}深度在任务范围内，不准舔！请专心与群友pk！"
         )
-        await _finish_game_reply(
-            matcher,
-            message,
-            unlocked_users=outcome.unlocked_users,
-        )
+        await matcher.finish(message, at_sender=True)
     if outcome.type is not GrowthOutcomeType.COMPLETED:
         return
     if outcome.challenge_started:
         if mode is GrowthMode.DEPTH:
             await _finish_game_reply(
                 matcher,
-                f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.random_num}cm喵"
+                f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.amount}cm喵"
                 f"\n由于TA无休止的舔与被舔，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过25cm，"
                 f"\n已为TA开启🕳️“深渊试炼”🕳️，TA现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！",
                 unlocked_users=outcome.unlocked_users,
+                mode=mode,
             )
         await _finish_game_reply(
             matcher,
-            f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.random_num}cm喵"
+            f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.amount}cm喵"
             f"\n由于TA无休止的嗦与被嗦，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，"
             f"\n已为TA开启✨“登神长阶”✨，TA现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
             unlocked_users=outcome.unlocked_users,
+            mode=mode,
         )
     if mode is GrowthMode.DEPTH:
         await _finish_game_reply(
             matcher,
-            f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.random_num}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
+            f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.amount}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
             unlocked_users=outcome.unlocked_users,
+            mode=mode,
         )
     await _finish_game_reply(
         matcher,
-        f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.random_num}cm喵, 目前长度为{outcome.new_length}cm喵",
+        f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.amount}cm喵, 目前长度为{outcome.new_length}cm喵",
         unlocked_users=outcome.unlocked_users,
+        mode=mode,
     )

@@ -27,8 +27,7 @@ class UserData(Model):
     )
     jj_length: Mapped[float]
     win_probability: Mapped[float] = mapped_column(default=0.5)
-    is_challenging: Mapped[bool] = mapped_column(default=False)
-    challenge_completed: Mapped[bool] = mapped_column(default=False)
+    challenge_tier: Mapped[int] = mapped_column(default=0)
 
 
 class SceneData(Model):

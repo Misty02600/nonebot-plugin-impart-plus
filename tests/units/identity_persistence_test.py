@@ -114,8 +114,7 @@ async def possession_harness(game_harness, database_harness):
                 user_namespace=user.namespace,
                 jj_length=length,
                 win_probability=probability,
-                is_challenging=False,
-                challenge_completed=True,
+                challenge_tier=1,
             )
             for user, length, probability in (
                 (game_harness.user, -70.0, 0.6),
@@ -148,8 +147,7 @@ async def test_possession_persists_both_states_and_preserves_other_data(
     assert actor is not None
     assert target is not None
     assert (actor.length, target.length) == (24.999, 19.999)
-    assert not actor.challenge_completed
-    assert not target.challenge_completed
+    assert actor.challenge_tier == target.challenge_tier == 0
     assert actor.records == target.records == {h.manager.get_today(): 250.0}
     assert await h.manager.get_win_probability(h.user) == 0.6
     assert await h.manager.get_win_probability(h.target) == 0.4
@@ -210,8 +208,7 @@ async def test_possession_rolls_back_then_releases_application_lock(
     assert actor is not None
     assert target is not None
     assert (actor.length, target.length) == (-70.0, 49.998)
-    assert actor.challenge_completed
-    assert target.challenge_completed
+    assert actor.challenge_tier == target.challenge_tier == 1
     retry = await asyncio.wait_for(
         h.application.execute_possession(h.scene, h.user, h.target), timeout=3
     )
@@ -263,12 +260,10 @@ async def test_possession_serializes_duplicate_calls_and_target_growth(
 async def test_pk_and_growth_report_only_new_possession_unlocks(
     game_harness, database_harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import time
-
     from nonebot_plugin_uniref import encode_ref
 
     from nonebot_plugin_impart_plus.impart import app as app_module
-    from nonebot_plugin_impart_plus.impart.core import GrowthMode, LengthState
+    from nonebot_plugin_impart_plus.impart.core import LengthState
     from nonebot_plugin_impart_plus.infra.database import UserData
 
     h = game_harness
@@ -280,29 +275,21 @@ async def test_pk_and_growth_report_only_new_possession_unlocks(
                 user_namespace=user.namespace,
                 jj_length=length,
                 win_probability=0.4,
-                is_challenging=True,
-                challenge_completed=False,
+                challenge_tier=tier,
             )
-            for user, length in ((h.user, -29.8), (h.target, -30.0))
+            for user, length, tier in ((h.user, -29.8, 0), (h.target, -31.0, 1))
         )
     monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
     monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
-    pk = await h.application.execute_pk(h.scene, h.user, h.target)
+    pk = await h.application.execute_pk(h.scene, h.user, (h.target,))
     assert pk.unlocked_users == (h.user,)
     h.cooldown.pk_cd_data.clear()
-    repeated = await h.application.execute_pk(h.scene, h.user, h.target)
+    repeated = await h.application.execute_pk(h.scene, h.user, (h.target,))
     assert repeated.unlocked_users == ()
     # 回落到25～30的既有称号也应该由同一查询快照展示。
     await h.manager.set_jj_length(h.user, 3.0)
     query = await h.application.query_user(h.scene, h.user, h.user)
     assert query.state is LengthState.ABYSS_LORD
-
-    # 尚未刷新的完成状态在成长门禁阶段提交，冷却回复后也应携带解锁通知。
-    await h.manager.set_jj_length(h.target, -3.0)
-    h.cooldown.cd_data[h.target] = time.time()
-    growth = await h.application.grow_self(h.scene, h.target, GrowthMode.DEPTH)
-    assert growth.type.value == "cooling_down"
-    assert growth.unlocked_users == (h.target,)
 
 
 async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
@@ -335,6 +322,9 @@ async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
     assert "last_masturbation_time" not in schema[user_table]
     assert "is_near_zero" not in schema[user_table]
     assert "is_zero_or_neg" not in schema[user_table]
+    assert "challenge_tier" in schema[user_table]
+    assert "is_challenging" not in schema[user_table]
+    assert "challenge_completed" not in schema[user_table]
     assert {"scene_ref", "scene_namespace", "scene_type"} <= schema[scene_table]
     assert "groupid" not in schema[scene_table]
     assert "user_ref" in schema[ejaculation_table]
@@ -531,7 +521,7 @@ async def test_gameplay_commands_initialize_missing_users_without_action(
     monkeypatch.setattr(app_module, "get_random_num", unexpected_random)
     monkeypatch.setattr(app_module.random, "random", unexpected_random)
 
-    missing_pk = await application.execute_pk(scene, pk_user, None)
+    missing_pk = await application.execute_pk(scene, pk_user, ())
     assert missing_pk.type.value == "missing_target"
     assert not await manager.has_user(pk_user)
 
@@ -544,7 +534,7 @@ async def test_gameplay_commands_initialize_missing_users_without_action(
             growth_mode.LENGTH,
         ),
         await application.query_user(scene, query_user, query_target),
-        await application.execute_pk(scene, pk_user, pk_target),
+        await application.execute_pk(scene, pk_user, (pk_target,)),
         await application.prepare_interaction(scene, interaction_user),
     ]
 
@@ -1024,8 +1014,12 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     monkeypatch.setattr(app_module.random, "random", fixed_win_roll)
     monkeypatch.setattr(app_module, "get_random_num", fixed_growth_roll)
 
-    mixed_positive = await application.execute_pk(scene, positive[0], negative_win[0])
-    mixed_negative = await application.execute_pk(scene, negative_win[0], positive[0])
+    mixed_positive = await application.execute_pk(
+        scene, positive[0], (negative_win[0],)
+    )
+    mixed_negative = await application.execute_pk(
+        scene, negative_win[0], (positive[0],)
+    )
 
     assert mixed_positive.type is PkOutcomeType.WORLD_MISMATCH
     assert mixed_positive.mode is mode.LENGTH
@@ -1036,9 +1030,13 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert await manager.get_jj_length(positive[0]) == 10.0
     assert await manager.get_jj_length(negative_win[0]) == -10.0
 
-    positive_result = await application.execute_pk(scene, *positive)
-    negative_win_result = await application.execute_pk(scene, *negative_win)
-    negative_loss_result = await application.execute_pk(scene, *negative_loss)
+    positive_result = await application.execute_pk(scene, positive[0], (positive[1],))
+    negative_win_result = await application.execute_pk(
+        scene, negative_win[0], (negative_win[1],)
+    )
+    negative_loss_result = await application.execute_pk(
+        scene, negative_loss[0], (negative_loss[1],)
+    )
 
     assert positive_result.mode is mode.LENGTH
     assert negative_win_result.mode is mode.DEPTH
@@ -1054,7 +1052,7 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert win_roll_calls == growth_roll_calls == 3
 
 
-async def test_pk_settlement_rolls_back_both_users_after_flush(
+async def test_pk_settlement_rolls_back_all_users_after_flush(
     database_harness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1063,9 +1061,12 @@ async def test_pk_settlement_rolls_back_both_users_after_flush(
 
     manager = database_harness.manager
     attacker = UserRef("QQClient", "pk-rollback-attacker")
-    defender = UserRef("QQClient", "pk-rollback-defender")
-    await manager.add_new_user(attacker)
-    await manager.add_new_user(defender)
+    defenders = (
+        UserRef("QQClient", "pk-rollback-defender-1"),
+        UserRef("QQClient", "pk-rollback-defender-2"),
+    )
+    for user in (attacker, *defenders):
+        await manager.add_new_user(user)
     original_flush = AsyncSession.flush
 
     async def fail_after_flush(
@@ -1081,15 +1082,164 @@ async def test_pk_settlement_rolls_back_both_users_after_flush(
         with pytest.raises(RuntimeError, match="injected flush failure"):
             await manager.settle_pk(
                 attacker,
-                defender,
+                defenders,
                 win_roll=0.0,
                 random_num=1.0,
             )
 
-    assert await manager.get_jj_length(attacker) == 10.0
-    assert await manager.get_jj_length(defender) == 10.0
-    assert await manager.get_win_probability(attacker) == 0.5
-    assert await manager.get_win_probability(defender) == 0.5
+    for user in (attacker, *defenders):
+        assert await manager.get_jj_length(user) == 10.0
+        assert await manager.get_win_probability(user) == 0.5
+
+
+async def test_dual_target_pk_uses_one_roll_and_one_cooldown(
+    game_harness,
+    database_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef, encode_ref
+    from sqlalchemy import update
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.app import PkOutcomeType
+    from nonebot_plugin_impart_plus.infra.database import UserData
+
+    manager = game_harness.manager
+    application = game_harness.application
+    scene = game_harness.scene
+    attacker = UserRef("QQClient", "pk-dual-attacker")
+    defenders = (
+        UserRef("QQClient", "pk-dual-defender-1"),
+        UserRef("QQClient", "pk-dual-defender-2"),
+    )
+    await manager.set_scene_enabled(scene, True)
+    for user in (attacker, *defenders):
+        await manager.add_new_user(user)
+    await manager.set_jj_length(attacker, 90.0)
+    async with database_harness.session_factory() as session, session.begin():
+        await session.execute(
+            update(UserData)
+            .where(UserData.user_ref == encode_ref(attacker))
+            .values(challenge_tier=1)
+        )
+
+    calls = {"win": 0, "growth": 0}
+
+    def win_roll() -> float:
+        calls["win"] += 1
+        return 0.0
+
+    def growth_roll() -> float:
+        calls["growth"] += 1
+        return 0.6
+
+    monkeypatch.setattr(app_module.random, "random", win_roll)
+    monkeypatch.setattr(app_module, "get_random_num", growth_roll)
+
+    preparation = await application.prepare_pk(scene, attacker)
+    outcome = await application.execute_pk(scene, attacker, defenders)
+
+    assert (preparation.enabled, preparation.max_targets) == (True, 2)
+    assert outcome.type is PkOutcomeType.COMPLETED
+    assert outcome.unlocked_users == ()
+    assert outcome.attacker_change == 1.2
+    assert [target.length_change for target in outcome.targets] == [-0.6, -0.6]
+    assert calls == {"win": 1, "growth": 1}
+    assert set(game_harness.cooldown.pk_cd_data) == {attacker}
+    assert await manager.get_jj_length(attacker) == 101.2
+    states = await manager.get_user_states(*defenders)
+    assert [states[user].length for user in defenders] == [9.4, 9.4]
+    assert all(state.challenge_tier == 0 for state in states.values())
+    assert await manager.get_win_probability(attacker) == 0.49
+    assert [await manager.get_win_probability(user) for user in defenders] == [
+        0.51,
+        0.51,
+    ]
+
+
+async def test_dual_target_pk_guards_before_cooldown_and_random(
+    game_harness,
+    database_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef, encode_ref
+    from sqlalchemy import update
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.app import PkOutcomeType
+    from nonebot_plugin_impart_plus.infra.database import UserData
+
+    manager = game_harness.manager
+    application = game_harness.application
+    scene = game_harness.scene
+    attacker = UserRef("QQClient", "pk-guard-attacker")
+    negative = UserRef("QQClient", "pk-guard-negative")
+    missing = UserRef("QQClient", "pk-guard-missing")
+    await manager.set_scene_enabled(scene, True)
+    for user in (attacker, negative):
+        await manager.add_new_user(user)
+    await manager.set_jj_length(attacker, 90.0)
+    await manager.set_jj_length(negative, -20.0)
+    async with database_harness.session_factory() as session, session.begin():
+        await session.execute(
+            update(UserData)
+            .where(UserData.user_ref == encode_ref(attacker))
+            .values(challenge_tier=1)
+        )
+
+    def unexpected_random() -> float:
+        raise AssertionError("门禁拒绝不应生成PK随机数")
+
+    monkeypatch.setattr(app_module.random, "random", unexpected_random)
+    monkeypatch.setattr(app_module, "get_random_num", unexpected_random)
+
+    preparation = await application.prepare_pk(scene, attacker)
+    created = await application.execute_pk(scene, attacker, (negative, missing))
+    mismatch = await application.execute_pk(scene, attacker, (negative, missing))
+    async with database_harness.session_factory() as session, session.begin():
+        await session.execute(
+            update(UserData)
+            .where(UserData.user_ref == encode_ref(attacker))
+            .values(challenge_tier=0, jj_length=20.0)
+        )
+    lost_entitlement = await application.execute_pk(
+        scene, attacker, (negative, missing)
+    )
+
+    assert preparation.max_targets == 2
+    assert created.type is PkOutcomeType.USERS_CREATED
+    assert created.created_users == (missing,)
+    assert mismatch.type is PkOutcomeType.WORLD_MISMATCH
+    assert lost_entitlement.type is PkOutcomeType.MULTI_TARGET_UNAVAILABLE
+    assert game_harness.cooldown.pk_cd_data == {}
+
+
+async def test_growth_settlement_rolls_back_length_probability_and_tier(
+    database_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_uniref import UserRef
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode
+
+    manager = database_harness.manager
+    user = UserRef("QQClient", "growth-rollback")
+    await manager.add_new_user(user)
+    await manager.set_jj_length(user, 14.5)
+    original_flush = AsyncSession.flush
+
+    async def fail_after_flush(session, *args, **kwargs):
+        await original_flush(session, *args, **kwargs)
+        raise RuntimeError("growth flush failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(AsyncSession, "flush", fail_after_flush)
+        with pytest.raises(RuntimeError, match="growth flush failed"):
+            await manager.settle_growth(user, GrowthMode.LENGTH, random_num=1.0)
+
+    state = (await manager.get_user_states(user))[user]
+    assert (state.length, state.win_probability, state.challenge_tier) == (24.5, 0.5, 0)
 
 
 async def test_application_serializes_pk_with_a_shared_target(
@@ -1123,23 +1273,27 @@ async def test_application_serializes_pk_with_a_shared_target(
 
     async def delayed_execute(
         attacker_ref: UserRef,
-        defender_ref: UserRef,
+        defender_refs: tuple[UserRef, ...],
     ) -> PkOutcome:
         nonlocal execution_calls
         execution_calls += 1
         if execution_calls == 1:
             first_entered.set()
             await release_first.wait()
-        return await original_execute(attacker_ref, defender_ref)
+        return await original_execute(attacker_ref, defender_refs)
 
     monkeypatch.setattr(manager, "is_scene_enabled", scene_enabled)
     monkeypatch.setattr(application, "_execute_pk", delayed_execute)
     monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
     monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
 
-    first = asyncio.create_task(application.execute_pk(scene, first_attacker, target))
+    first = asyncio.create_task(
+        application.execute_pk(scene, first_attacker, (target,))
+    )
     await first_entered.wait()
-    second = asyncio.create_task(application.execute_pk(scene, second_attacker, target))
+    second = asyncio.create_task(
+        application.execute_pk(scene, second_attacker, (target,))
+    )
     await asyncio.sleep(0)
     calls_while_first_held_lock = execution_calls
     release_first.set()
@@ -1183,26 +1337,16 @@ async def test_self_growth_applies_signed_direction_and_checks_both_challenges(
 
     monkeypatch.setattr(app_module, "get_random_num", fixed_random)
 
-    original_update = manager.update_challenge_status
-    calls = 0
-
-    async def track_challenge(user_ref):
-        nonlocal calls
-        calls += 1
-        return await original_update(user_ref)
-
-    monkeypatch.setattr(manager, "update_challenge_status", track_challenge)
-
     length = await application.grow_self(scene, length_user, mode.LENGTH)
     depth = await application.grow_self(scene, depth_user, mode.DEPTH)
     wrong_state = await application.grow_self(scene, wrong_state_user, mode.DEPTH)
 
     assert (length.type.value, length.new_length) == ("completed", 11.25)
     assert (depth.type.value, depth.new_length) == ("completed", -1.25)
+    assert length.amount == depth.amount == 1.25
     assert wrong_state.type.value == "wrong_state"
     assert await manager.get_jj_length(wrong_state_user) == 10.0
     assert generated == 2
-    assert calls == 2
     assert set(game_harness.cooldown.cd_data) == {length_user, depth_user}
 
 
@@ -1248,16 +1392,6 @@ async def test_target_growth_enforces_boundaries_and_signed_direction(
         return 1.25
 
     monkeypatch.setattr(app_module, "get_random_num", fixed_random)
-    original_update = manager.update_challenge_status
-    challenge_calls = 0
-
-    async def track_challenge(user_ref):
-        nonlocal challenge_calls
-        challenge_calls += 1
-        return await original_update(user_ref)
-
-    monkeypatch.setattr(manager, "update_challenge_status", track_challenge)
-
     wrong_length = await application.grow_target(
         scene,
         user,
@@ -1274,7 +1408,6 @@ async def test_target_growth_enforces_boundaries_and_signed_direction(
     assert wrong_length.type is GrowthOutcomeType.WRONG_STATE
     assert wrong_depth.type is GrowthOutcomeType.WRONG_STATE
     assert generated == 0
-    assert challenge_calls == 0
     assert cooldown.suo_cd_data == {}
 
     depth = await application.grow_target(
@@ -1303,7 +1436,6 @@ async def test_target_growth_enforces_boundaries_and_signed_direction(
         11.25,
     )
     assert generated == 2
-    assert challenge_calls == 3
     assert set(cooldown.suo_cd_data) == {user, other_user}
 
 
@@ -1336,12 +1468,8 @@ async def test_growth_challenge_guards_precede_cooldown_and_random(
     await manager.set_jj_length(positive_challenger, 15.0)
     await manager.set_jj_length(negative_challenger, -35.0)
     await manager.set_jj_length(negative_normal, -20.0)
-    assert (
-        await manager.update_challenge_status(positive_challenger)
-    ).status == "challenge_started_low_win"
-    assert (
-        await manager.update_challenge_status(negative_challenger)
-    ).status == "challenge_started_low_win"
+    await manager.set_win_probability(positive_challenger, -0.1)
+    await manager.set_win_probability(negative_challenger, -0.1)
 
     generated = 0
 

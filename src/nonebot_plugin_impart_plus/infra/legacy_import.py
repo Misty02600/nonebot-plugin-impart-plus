@@ -71,6 +71,24 @@ def _legacy_length(value: Any) -> float:
     return -0.001 if length == 0 else length
 
 
+def _legacy_challenge_state(
+    row: sqlite3.Row,
+    columns: set[str],
+    length: float,
+) -> tuple[float, int]:
+    win_probability = float(_optional_value(row, columns, "win_probability", 0.5))
+    was_challenging = bool(_optional_value(row, columns, "is_challenging", False))
+    completed = bool(_optional_value(row, columns, "challenge_completed", False))
+    magnitude = abs(length)
+    challenge_tier = 1 if magnitude >= 30 or (completed and magnitude >= 25) else 0
+    is_challenging = challenge_tier == 0 and 25 <= magnitude < 30
+    if was_challenging and not is_challenging:
+        win_probability *= 1.25
+    elif is_challenging and not was_challenging:
+        win_probability *= 0.8
+    return win_probability, challenge_tier
+
+
 def _read_legacy_database(path: Path) -> _LegacySnapshot:
     """以只读方式加载并验证完整旧库快照。
 
@@ -109,28 +127,24 @@ def _read_legacy_database(path: Path) -> _LegacySnapshot:
             f'SELECT {", ".join(selected_user_columns)} FROM "userdata" '
             'ORDER BY "userid"'
         ).fetchall()
-        users = tuple(
-            {
-                "user_ref": encode_ref(UserRef(_QQ_NAMESPACE, str(row["userid"]))),
-                "user_namespace": _QQ_NAMESPACE,
-                "jj_length": _legacy_length(row["jj_length"]),
-                "win_probability": float(
-                    _optional_value(
-                        row,
-                        user_columns,
-                        "win_probability",
-                        0.5,
-                    )
-                ),
-                "is_challenging": bool(
-                    _optional_value(row, user_columns, "is_challenging", False)
-                ),
-                "challenge_completed": bool(
-                    _optional_value(row, user_columns, "challenge_completed", False)
-                ),
-            }
-            for row in user_rows
-        )
+        users_list: list[dict[str, Any]] = []
+        for row in user_rows:
+            length = _legacy_length(row["jj_length"])
+            win_probability, challenge_tier = _legacy_challenge_state(
+                row,
+                user_columns,
+                length,
+            )
+            users_list.append(
+                {
+                    "user_ref": encode_ref(UserRef(_QQ_NAMESPACE, str(row["userid"]))),
+                    "user_namespace": _QQ_NAMESPACE,
+                    "jj_length": length,
+                    "win_probability": win_probability,
+                    "challenge_tier": challenge_tier,
+                }
+            )
+        users = tuple(users_list)
 
         scenes = tuple(
             {
