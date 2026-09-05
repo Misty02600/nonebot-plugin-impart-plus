@@ -247,6 +247,9 @@ def test_challenge_state_is_symmetric(
     assert evaluation.state.win_probability == expected_probability
     assert evaluation.state.is_challenging is expected_challenging
     assert evaluation.state.challenge_completed is expected_completed
+    assert evaluation.possession_unlocked is (
+        length < 0 and not challenge_completed and expected_completed
+    )
 
 
 def test_challenge_threshold_and_titles_are_symmetric() -> None:
@@ -262,6 +265,71 @@ def test_challenge_threshold_and_titles_are_symmetric() -> None:
     assert not crossed_challenge_threshold(-25.0, -25.1)
     assert classify_length(30.0) is LengthState.GOD
     assert classify_length(-30.0) is LengthState.ABYSS_LORD
+    assert classify_length(27.0, challenge_completed=True) is LengthState.GOD
+    assert classify_length(-27.0, challenge_completed=True) is LengthState.ABYSS_LORD
+    assert classify_length(27.0) is LengthState.NORMAL
+    assert classify_length(-27.0) is LengthState.GIRL
+
+
+@pytest.mark.parametrize(
+    ("length", "completed", "half", "final_target"),
+    [
+        (10.0, False, 5.0, 5.0),
+        (5.001, False, 2.501, 2.501),
+        (0.001, False, 0.001, 0.001),
+        (49.998, True, 24.999, 19.999),
+        (49.999, True, 25.0, 25.0),
+        (54.0, True, 27.0, 27.0),
+        (60.0, False, 30.0, 30.0),
+    ],
+)
+def test_possession_rounding_and_asymmetric_title_penalty(
+    length: float, completed: bool, half: float, final_target: float
+) -> None:
+    from nonebot_plugin_impart_plus.impart.core import (
+        PossessionSettlement,
+        UserGameState,
+        evaluate_user_state,
+        resolve_possession,
+    )
+
+    actor = UserGameState(-70.0, 0.6, False, True)
+    target = UserGameState(length, 0.4, False, completed)
+    result = resolve_possession(actor, target)
+    assert isinstance(result, PossessionSettlement)
+    assert result.half == half
+    assert result.actor == UserGameState(half, 0.6, False, half >= 25)
+    assert result.target == UserGameState(final_target, 0.4, False, half >= 25)
+    assert evaluate_user_state(result.actor).state == result.actor
+    assert (result.target_status == "challenge_completed_reduce") is (
+        completed and half < 25
+    )
+
+
+def test_possession_rejection_order_has_no_state_changes() -> None:
+    from dataclasses import replace
+
+    from nonebot_plugin_impart_plus.impart.core import (
+        PossessionStatus,
+        UserGameState,
+        resolve_possession,
+    )
+
+    actor = UserGameState(-32.0, 0.5, False, True)
+    target = UserGameState(20.0, 0.5, False, False)
+    cases = (
+        (replace(actor, length=32.0), target, PossessionStatus.LOCKED),
+        (replace(actor, challenge_completed=False), target, PossessionStatus.LOCKED),
+        (actor, actor, PossessionStatus.WRONG_TARGET),
+        (
+            actor,
+            replace(target, length=32.0, is_challenging=True),
+            PossessionStatus.TARGET_CHALLENGING,
+        ),
+        (actor, replace(target, length=32.0), PossessionStatus.TARGET_TOO_LONG),
+    )
+    for requester, victim, reason in cases:
+        assert resolve_possession(requester, victim) is reason
 
 
 def test_pk_settlement_applies_base_changes_before_challenge_updates() -> None:

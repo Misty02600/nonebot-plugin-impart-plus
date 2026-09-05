@@ -100,6 +100,211 @@ def game_harness(database_harness):
     )
 
 
+@pytest.fixture
+async def possession_harness(game_harness, database_harness):
+    from nonebot_plugin_uniref import encode_ref
+
+    from nonebot_plugin_impart_plus.infra.database import UserData
+
+    await game_harness.manager.set_scene_enabled(game_harness.scene, True)
+    async with database_harness.session_factory() as session, session.begin():
+        session.add_all(
+            UserData(
+                user_ref=encode_ref(user),
+                user_namespace=user.namespace,
+                jj_length=length,
+                win_probability=probability,
+                is_challenging=False,
+                challenge_completed=True,
+            )
+            for user, length, probability in (
+                (game_harness.user, -70.0, 0.6),
+                (game_harness.target, 49.998, 0.4),
+            )
+        )
+    return game_harness
+
+
+async def test_possession_persists_both_states_and_preserves_other_data(
+    possession_harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode, PossessionStatus
+
+    h = possession_harness
+    for user in (h.user, h.target):
+        await h.manager.settle_interaction_volume(user, 250.0, feminization_roll=None)
+
+    def unexpected_random(*_):
+        raise AssertionError("夺舍不应消耗结算随机数")
+
+    monkeypatch.setattr(app_module.random, "random", unexpected_random)
+    result = await h.application.execute_possession(h.scene, h.user, h.target)
+    assert result.type is PossessionStatus.COMPLETED
+    assert result.half == 24.999
+    assert result.target_status == "challenge_completed_reduce"
+    actor = await h.manager.get_user_query_data(h.user, history=True)
+    target = await h.manager.get_user_query_data(h.target, history=True)
+    assert actor is not None
+    assert target is not None
+    assert (actor.length, target.length) == (24.999, 19.999)
+    assert not actor.challenge_completed
+    assert not target.challenge_completed
+    assert actor.records == target.records == {h.manager.get_today(): 250.0}
+    assert await h.manager.get_win_probability(h.user) == 0.6
+    assert await h.manager.get_win_probability(h.target) == 0.4
+    assert (
+        h.cooldown.cd_data
+        == h.cooldown.pk_cd_data
+        == h.cooldown.suo_cd_data
+        == h.cooldown.ejaculation_cd
+        == {}
+    )
+
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 0.0)
+    growth = await h.application.grow_self(h.scene, h.user, GrowthMode.LENGTH)
+    assert growth.new_length == 24.999
+
+
+async def test_possession_guards_and_initialization(game_harness) -> None:
+    from nonebot_plugin_impart_plus.impart.core import PossessionStatus
+
+    h = game_harness
+    disabled = await h.application.execute_possession(h.scene, h.user, None)
+    assert disabled.type is PossessionStatus.DISABLED
+    await h.manager.set_scene_enabled(h.scene, True)
+    missing = await h.application.execute_possession(h.scene, h.user, None)
+    assert missing.type is PossessionStatus.MISSING_TARGET
+    assert not await h.manager.has_user(h.user)
+    created = await h.application.execute_possession(h.scene, h.user, h.target)
+    assert created.type is PossessionStatus.USERS_CREATED
+    assert created.created_users == (h.user, h.target)
+    locked = await h.application.execute_possession(h.scene, h.user, h.target)
+    assert locked.type is PossessionStatus.LOCKED
+    assert await h.manager.get_jj_length(h.user) == 10.0
+    assert await h.manager.get_jj_length(h.target) == 10.0
+
+
+async def test_possession_rolls_back_then_releases_application_lock(
+    possession_harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from nonebot_plugin_impart_plus.impart.core import PossessionStatus
+
+    h = possession_harness
+    original_flush = AsyncSession.flush
+
+    async def fail_after_flush(session, *args, **kwargs):
+        await original_flush(session, *args, **kwargs)
+        raise RuntimeError("possession flush failed")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(AsyncSession, "flush", fail_after_flush)
+        with pytest.raises(RuntimeError, match="possession flush failed"):
+            await h.application.execute_possession(h.scene, h.user, h.target)
+    actor = await h.manager.get_user_query_data(h.user, history=False)
+    target = await h.manager.get_user_query_data(h.target, history=False)
+    assert actor is not None
+    assert target is not None
+    assert (actor.length, target.length) == (-70.0, 49.998)
+    assert actor.challenge_completed
+    assert target.challenge_completed
+    retry = await asyncio.wait_for(
+        h.application.execute_possession(h.scene, h.user, h.target), timeout=3
+    )
+    assert retry.type is PossessionStatus.COMPLETED
+
+
+async def test_possession_serializes_duplicate_calls_and_target_growth(
+    possession_harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode, PossessionStatus
+
+    h = possession_harness
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    original_settle = h.manager.settle_possession
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+
+    async def delayed_settle(*args):
+        entered.set()
+        await release.wait()
+        return await original_settle(*args)
+
+    monkeypatch.setattr(h.manager, "settle_possession", delayed_settle)
+    first = asyncio.create_task(
+        h.application.execute_possession(h.scene, h.user, h.target)
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        second = asyncio.create_task(
+            h.application.execute_possession(h.scene, h.user, h.target)
+        )
+        growth = asyncio.create_task(
+            h.application.grow_target(h.scene, h.target, h.user, GrowthMode.LENGTH)
+        )
+    finally:
+        release.set()
+    results = await asyncio.wait_for(asyncio.gather(first, second, growth), timeout=3)
+    assert [result.type for result in results[:2]] == [
+        PossessionStatus.COMPLETED,
+        PossessionStatus.LOCKED,
+    ]
+    assert await h.manager.get_jj_length(h.target) == 19.999
+    assert await h.manager.get_jj_length(h.user) == 25.999
+
+
+async def test_pk_and_growth_report_only_new_possession_unlocks(
+    game_harness, database_harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import time
+
+    from nonebot_plugin_uniref import encode_ref
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode, LengthState
+    from nonebot_plugin_impart_plus.infra.database import UserData
+
+    h = game_harness
+    await h.manager.set_scene_enabled(h.scene, True)
+    async with database_harness.session_factory() as session, session.begin():
+        session.add_all(
+            UserData(
+                user_ref=encode_ref(user),
+                user_namespace=user.namespace,
+                jj_length=length,
+                win_probability=0.4,
+                is_challenging=True,
+                challenge_completed=False,
+            )
+            for user, length in ((h.user, -29.8), (h.target, -30.0))
+        )
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+    pk = await h.application.execute_pk(h.scene, h.user, h.target)
+    assert pk.unlocked_users == (h.user,)
+    h.cooldown.pk_cd_data.clear()
+    repeated = await h.application.execute_pk(h.scene, h.user, h.target)
+    assert repeated.unlocked_users == ()
+    # 回落到25～30的既有称号也应该由同一查询快照展示。
+    await h.manager.set_jj_length(h.user, 3.0)
+    query = await h.application.query_user(h.scene, h.user, h.user)
+    assert query.state is LengthState.ABYSS_LORD
+
+    # 尚未刷新的完成状态在成长门禁阶段提交，冷却回复后也应携带解锁通知。
+    await h.manager.set_jj_length(h.target, -3.0)
+    h.cooldown.cd_data[h.target] = time.time()
+    growth = await h.application.grow_self(h.scene, h.target, GrowthMode.DEPTH)
+    assert growth.type.value == "cooling_down"
+    assert growth.unlocked_users == (h.target,)
+
+
 async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
     from sqlalchemy.dialects import mysql, postgresql, sqlite
     from sqlalchemy.schema import CreateIndex, CreateTable
@@ -818,7 +1023,7 @@ async def test_self_growth_applies_signed_direction_and_checks_both_challenges(
     original_update = manager.update_challenge_status
     calls = 0
 
-    async def track_challenge(user_ref) -> str:
+    async def track_challenge(user_ref):
         nonlocal calls
         calls += 1
         return await original_update(user_ref)
@@ -883,7 +1088,7 @@ async def test_target_growth_enforces_boundaries_and_signed_direction(
     original_update = manager.update_challenge_status
     challenge_calls = 0
 
-    async def track_challenge(user_ref) -> str:
+    async def track_challenge(user_ref):
         nonlocal challenge_calls
         challenge_calls += 1
         return await original_update(user_ref)
@@ -970,12 +1175,10 @@ async def test_growth_challenge_guards_precede_cooldown_and_random(
     await manager.set_jj_length(negative_normal, -20.0)
     assert (
         await manager.update_challenge_status(positive_challenger)
-        == "challenge_started_low_win"
-    )
+    ).status == "challenge_started_low_win"
     assert (
         await manager.update_challenge_status(negative_challenger)
-        == "challenge_started_low_win"
-    )
+    ).status == "challenge_started_low_win"
 
     generated = 0
 

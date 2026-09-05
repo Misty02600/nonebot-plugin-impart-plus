@@ -50,6 +50,26 @@ class UserGameState:
 class StateEvaluation:
     status: str
     state: UserGameState
+    possession_unlocked: bool = False
+
+
+class PossessionStatus(StrEnum):
+    DISABLED = "disabled"
+    MISSING_TARGET = "missing_target"
+    USERS_CREATED = "users_created"
+    LOCKED = "locked"
+    WRONG_TARGET = "wrong_target"
+    TARGET_CHALLENGING = "target_challenging"
+    TARGET_TOO_LONG = "target_too_long"
+    COMPLETED = "completed"
+
+
+@dataclass(frozen=True, slots=True)
+class PossessionSettlement:
+    half: float
+    actor: UserGameState
+    target: UserGameState
+    target_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,10 +121,10 @@ def is_xnn(length: float) -> bool:
     return 0 < length < 5
 
 
-def classify_length(length: float) -> LengthState:
-    if length >= 30:
+def classify_length(length: float, *, challenge_completed: bool = False) -> LengthState:
+    if length >= 30 or (challenge_completed and length >= 25):
         return LengthState.GOD
-    if length <= -30:
+    if length <= -30 or (challenge_completed and length <= -25):
         return LengthState.ABYSS_LORD
     if length >= 5:
         return LengthState.NORMAL
@@ -155,6 +175,7 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
         return StateEvaluation(
             "challenge_completed",
             replace(state, challenge_completed=True),
+            possession_unlocked=state.length < 0,
         )
     if state.is_challenging and not state.challenge_completed and magnitude < 25:
         return StateEvaluation(
@@ -175,6 +196,7 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
                 is_challenging=False,
                 challenge_completed=True,
             ),
+            possession_unlocked=state.length < 0,
         )
     if state.is_challenging and 25 <= magnitude < 30:
         return StateEvaluation("is_challenging", state)
@@ -194,6 +216,42 @@ def evaluate_user_state(state: UserGameState) -> StateEvaluation:
 
 def crossed_challenge_threshold(current_length: float, new_length: float) -> bool:
     return abs(current_length) < 25 <= abs(new_length)
+
+
+def resolve_possession(
+    actor: UserGameState, target: UserGameState
+) -> PossessionSettlement | PossessionStatus:
+    """检查夺舍资格并平分目标长度，只有目标承担既有称号惩罚。
+
+    Returns:
+        拒绝原因，或含双方最终状态的结算；发起者直接按半长决定完成标记。
+    """
+    if actor.length >= 0 or not actor.challenge_completed:
+        return PossessionStatus.LOCKED
+    if target.length <= 0:
+        return PossessionStatus.WRONG_TARGET
+    if target.is_challenging:
+        return PossessionStatus.TARGET_CHALLENGING
+    if target.length >= abs(actor.length):
+        return PossessionStatus.TARGET_TOO_LONG
+
+    half = ((round(target.length * 1000) + 1) // 2) / 1000
+    new_actor = replace(
+        actor,
+        length=half,
+        is_challenging=False,
+        challenge_completed=half >= 25,
+    )
+    new_target = replace(target, length=half)
+    if half >= 25:
+        new_target = replace(new_target, challenge_completed=True)
+    target_evaluation = evaluate_user_state(new_target)
+    return PossessionSettlement(
+        half=half,
+        actor=new_actor,
+        target=target_evaluation.state,
+        target_status=target_evaluation.status,
+    )
 
 
 def _apply_pk_delta(

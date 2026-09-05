@@ -17,6 +17,7 @@ from .core import (
     InteractionResolution,
     LengthState,
     PkResolution,
+    PossessionStatus,
     classify_length,
     crossed_challenge_threshold,
     growth_delta,
@@ -46,6 +47,15 @@ class PkOutcome:
     attacker_status: str = ""
     defender_status: str = ""
     attacker_probability: float = 0.5
+    unlocked_users: tuple[UserRef, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PossessionOutcome:
+    type: PossessionStatus
+    created_users: tuple[UserRef, ...] = ()
+    half: float = 0
+    target_status: str = ""
 
 
 class GrowthOutcomeType(StrEnum):
@@ -68,6 +78,7 @@ class GrowthOutcome:
     random_num: float = 0
     new_length: float = 0
     challenge_started: bool = False
+    unlocked_users: tuple[UserRef, ...] = ()
 
 
 class QueryOutcomeType(StrEnum):
@@ -163,10 +174,30 @@ class GameApplication:
                 created_users.append(user_ref)
         return tuple(created_users)
 
-    async def _active_challenge_blocks_growth(self, user_ref: UserRef) -> bool:
-        if not await self._data.is_challenging(user_ref):
-            return False
-        return _growth_is_blocked(await self._data.update_challenge_status(user_ref))
+    async def execute_possession(
+        self,
+        scene_ref: SceneRef,
+        actor_ref: UserRef,
+        target_ref: UserRef | None,
+    ) -> PossessionOutcome:
+        if not await self._data.is_scene_enabled(scene_ref):
+            return PossessionOutcome(PossessionStatus.DISABLED)
+        if target_ref is None:
+            return PossessionOutcome(PossessionStatus.MISSING_TARGET)
+        async with self._state_lock:
+            created_users = await self._create_missing_users(actor_ref, target_ref)
+            if created_users:
+                return PossessionOutcome(
+                    PossessionStatus.USERS_CREATED, created_users=created_users
+                )
+            result = await self._data.settle_possession(actor_ref, target_ref)
+            if isinstance(result, PossessionStatus):
+                return PossessionOutcome(result)
+            return PossessionOutcome(
+                PossessionStatus.COMPLETED,
+                half=result.half,
+                target_status=result.target_status,
+            )
 
     async def execute_pk(
         self,
@@ -228,6 +259,16 @@ class GameApplication:
             attacker_status=settlement.attacker.status,
             defender_status=settlement.defender.status,
             attacker_probability=settlement.attacker.final.win_probability,
+            unlocked_users=tuple(
+                user
+                for user, participant in (
+                    (attacker_ref, settlement.attacker),
+                    (defender_ref, settlement.defender),
+                )
+                if not participant.before.challenge_completed
+                and participant.final.challenge_completed
+                and participant.final.length < 0
+            ),
         )
 
     async def grow_self(
@@ -258,8 +299,9 @@ class GameApplication:
         if not supports_growth_mode(current_length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
-        status = await self._data.update_challenge_status(user_ref)
-        if _growth_is_blocked(status):
+        evaluation = await self._data.update_challenge_status(user_ref)
+        unlocked_users = (user_ref,) if evaluation.possession_unlocked else ()
+        if _growth_is_blocked(evaluation.status):
             return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
 
         if not await self._cooldown.cd_check(user_ref):
@@ -268,7 +310,11 @@ class GameApplication:
                 - (time.time() - self._cooldown.cd_data[user_ref]),
                 3,
             )
-            return GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=remaining)
+            return GrowthOutcome(
+                GrowthOutcomeType.COOLING_DOWN,
+                remaining=remaining,
+                unlocked_users=unlocked_users,
+            )
 
         self._cooldown.cd_data[user_ref] = time.time()
         random_num = get_random_num()
@@ -276,7 +322,9 @@ class GameApplication:
         new_length = await self._data.get_jj_length(user_ref)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
         if challenge_started:
-            await self._data.update_challenge_status(user_ref)
+            evaluation = await self._data.update_challenge_status(user_ref)
+            if evaluation.possession_unlocked:
+                unlocked_users = (user_ref,)
         else:
             new_length = await self._data.get_jj_length(user_ref)
         return GrowthOutcome(
@@ -284,6 +332,7 @@ class GameApplication:
             random_num=random_num,
             new_length=new_length,
             challenge_started=challenge_started,
+            unlocked_users=unlocked_users,
         )
 
     async def grow_target(
@@ -324,12 +373,21 @@ class GameApplication:
 
         actor_length = await self._data.get_jj_length(user_ref)
         actor_uses_mode = supports_growth_mode(actor_length, mode)
-        if actor_uses_mode and await self._active_challenge_blocks_growth(user_ref):
-            return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
+        unlocked_users: tuple[UserRef, ...] = ()
+        if actor_uses_mode and await self._data.is_challenging(user_ref):
+            actor_evaluation = await self._data.update_challenge_status(user_ref)
+            if _growth_is_blocked(actor_evaluation.status):
+                return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
+            if actor_evaluation.possession_unlocked:
+                unlocked_users = (user_ref,)
 
-        target_status = await self._data.update_challenge_status(target_ref)
-        if _growth_is_blocked(target_status):
-            return GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)
+        target_evaluation = await self._data.update_challenge_status(target_ref)
+        if target_evaluation.possession_unlocked:
+            unlocked_users += (target_ref,)
+        if _growth_is_blocked(target_evaluation.status):
+            return GrowthOutcome(
+                GrowthOutcomeType.TARGET_CHALLENGING, unlocked_users=unlocked_users
+            )
 
         if not await self._cooldown.suo_cd_check(user_ref):
             remaining = round(
@@ -337,7 +395,11 @@ class GameApplication:
                 - (time.time() - self._cooldown.suo_cd_data[user_ref]),
                 3,
             )
-            return GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=remaining)
+            return GrowthOutcome(
+                GrowthOutcomeType.COOLING_DOWN,
+                remaining=remaining,
+                unlocked_users=unlocked_users,
+            )
 
         self._cooldown.suo_cd_data[user_ref] = time.time()
         random_num = get_random_num()
@@ -345,12 +407,15 @@ class GameApplication:
         new_length = await self._data.get_jj_length(target_ref)
         challenge_started = crossed_challenge_threshold(current_length, new_length)
         if challenge_started:
-            await self._data.update_challenge_status(target_ref)
+            target_evaluation = await self._data.update_challenge_status(target_ref)
+            if target_evaluation.possession_unlocked:
+                unlocked_users += (target_ref,)
         return GrowthOutcome(
             GrowthOutcomeType.COMPLETED,
             random_num=random_num,
             new_length=new_length,
             challenge_started=challenge_started,
+            unlocked_users=unlocked_users,
         )
 
     async def query_user(
@@ -377,7 +442,9 @@ class GameApplication:
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=data.length,
-            state=classify_length(data.length),
+            state=classify_length(
+                data.length, challenge_completed=data.challenge_completed
+            ),
             today_total=data.today_total,
             history_total=round(sum(data.records.values()), 3) if history else None,
             history=data.records if history else {},

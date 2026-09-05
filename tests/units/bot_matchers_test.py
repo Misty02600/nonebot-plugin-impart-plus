@@ -190,6 +190,24 @@ def test_pk_accepts_multiple_targets_and_keeps_their_order():
     assert result.all_matched_args["targets"] == targets
 
 
+def test_possession_command_uses_first_at_grammar_without_alias():
+    from nonebot_plugin_alconna import At, AtAll, Text, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.matchers import POSSESSION_COMMAND
+
+    targets = (At("user", "1"), At("user", "2"))
+    for prefix in ("", "/"):
+        assert POSSESSION_COMMAND.parse(f"{prefix}夺舍").matched
+        result = POSSESSION_COMMAND.parse(
+            UniMessage([Text(f"{prefix}夺舍 "), *targets])
+        )
+        assert result.matched
+        assert result.all_matched_args["targets"] == targets
+    assert not POSSESSION_COMMAND.parse("吸阳").matched
+    assert not POSSESSION_COMMAND.parse("夺舍尾巴").matched
+    assert not POSSESSION_COMMAND.parse(UniMessage([Text("夺舍 "), AtAll()])).matched
+
+
 @pytest.mark.parametrize(
     ("command_name", "message", "matched"),
     [

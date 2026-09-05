@@ -65,7 +65,7 @@ def test_alconna_matcher_registration(app: App):
     plugin = get_plugin("nonebot_plugin_impart_plus")
 
     assert plugin is not None
-    assert len(plugin.matcher) == 10
+    assert len(plugin.matcher) == 11
     assert all(issubclass(matcher, AlconnaMatcher) for matcher in plugin.matcher)
 
     dispatch_matchers: dict[str, type[AlconnaMatcher]] = {}

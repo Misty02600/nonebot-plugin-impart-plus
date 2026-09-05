@@ -10,6 +10,7 @@ from nonebot_plugin_uninfo import ADMIN, GROUP, GUILD
 from ..impart.core import GrowthMode, InteractionAction
 
 PK_COMMAND = Alconna("pk", Args["targets?", MultiVar(At)])
+POSSESSION_COMMAND = Alconna("夺舍", Args["targets?", MultiVar(At)])
 
 SELF_GROW_MODES = {
     "打胶": GrowthMode.LENGTH,
@@ -75,6 +76,14 @@ pk_matcher = on_alconna(
     use_cmd_start=True,
     priority=20,
     block=False,
+)
+
+possession_matcher = on_alconna(
+    POSSESSION_COMMAND,
+    rule=GROUP | GUILD,
+    use_cmd_start=True,
+    priority=20,
+    block=True,
 )
 
 self_growth_matcher = on_alconna(

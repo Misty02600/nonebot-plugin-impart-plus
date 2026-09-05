@@ -13,6 +13,11 @@ NOT_ALLOWED_TEXT = (
 )
 JJ_NAMES = ("牛子", "牛牛", "newnew")
 HOLE_NAME = "小学"
+OPPONENT_TITLE_LOSS = (
+    "\n由于{cause}，{botname}检测到TA的{name}长度已不足25cm，很遗憾，TA跌落神坛，"
+    "{botname}替TA感谢你的鞭策喵！"
+    "\nTA的{penalty_name}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
+)
 
 
 def created_user_message(

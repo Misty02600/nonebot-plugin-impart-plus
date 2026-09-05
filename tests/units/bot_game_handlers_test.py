@@ -287,6 +287,72 @@ async def test_pk_handler_renders_world_specific_results(
     assert result_messages[2].endswith("你的胜率现在为51%喵")
 
 
+async def test_game_reply_notifies_actual_unlocked_member_after_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from nonebot_plugin_alconna import At, UniMessage
+
+    from nonebot_plugin_impart_plus.bot.handlers import game
+    from nonebot_plugin_impart_plus.bot.matchers import SELF_GROW_COMMAND
+    from nonebot_plugin_impart_plus.impart.app import (
+        GrowthOutcome,
+        GrowthOutcomeType,
+        PkOutcome,
+        PkOutcomeType,
+    )
+    from nonebot_plugin_impart_plus.impart.core import GrowthMode, PkResolution
+
+    for won, member in ((True, make_user_ref()), (False, make_user_ref("2"))):
+        outcome = PkOutcome(
+            PkOutcomeType.COMPLETED,
+            mode=GrowthMode.DEPTH,
+            resolution=PkResolution(won, 0.5, 1.0),
+            unlocked_users=(member,),
+        )
+        matcher = FinishingMatcherStub()
+        handler = game._handle_pk_win if won else game._handle_pk_loss
+        with pytest.raises(FinishedException):
+            await handler(cast(Matcher, matcher), outcome)
+        assert len(matcher.raw_messages) == 2
+        assert "对决" in matcher.messages[0]
+        notification = matcher.raw_messages[1]
+        assert isinstance(notification, UniMessage)
+        assert notification[0] == At("user", member.id)
+        assert "现在可以使用指令「夺舍」了！" in str(notification)
+        assert "at_sender" not in matcher.options[1]
+
+    monkeypatch.setattr(
+        game.game_app,
+        "grow_self",
+        AsyncMock(
+            return_value=GrowthOutcome(
+                GrowthOutcomeType.COOLING_DOWN,
+                remaining=10.0,
+                unlocked_users=(make_user_ref(),),
+            )
+        ),
+    )
+    matcher = FinishingMatcherStub()
+    with pytest.raises(FinishedException):
+        await game.grow_self(
+            cast(Matcher, matcher), make_ref_context(), SELF_GROW_COMMAND.parse("开扣")
+        )
+    assert len(matcher.messages) == 2
+    assert "请等待10.0秒" in matcher.messages[0]
+
+    failing_matcher = FinishingMatcherStub()
+    monkeypatch.setattr(
+        failing_matcher, "send", AsyncMock(side_effect=RuntimeError("send failed"))
+    )
+    with pytest.raises(RuntimeError, match="send failed"):
+        await game._finish_game_reply(
+            cast(Matcher, failing_matcher), "result", unlocked_users=(make_user_ref(),)
+        )
+    assert failing_matcher.messages == []
+
+
 async def test_target_growth_handler_requires_target_and_uses_mode(
     monkeypatch: pytest.MonkeyPatch,
 ):

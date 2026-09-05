@@ -11,10 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..impart.core import (
     InteractionVolumeSettlement,
     PkSettlement,
+    PossessionSettlement,
+    PossessionStatus,
+    StateEvaluation,
     UserGameState,
     evaluate_user_state,
     resolve_interaction_volume,
     resolve_pk_settlement,
+    resolve_possession,
 )
 from .database import (
     PERSISTED_NAMESPACE_MAX_LENGTH,
@@ -28,6 +32,7 @@ from .database import (
 @dataclass(frozen=True, slots=True)
 class UserQueryData:
     length: float
+    challenge_completed: bool
     today_total: float
     records: dict[str, float]
 
@@ -96,7 +101,7 @@ class DataManager:
     ) -> None:
         self._session_factory = session_factory
 
-    async def update_challenge_status(self, user_ref: UserRef) -> str:
+    async def update_challenge_status(self, user_ref: UserRef) -> StateEvaluation:
         """根据用户当前状态更新挑战状态与胜率。"""
         encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
@@ -105,13 +110,13 @@ class DataManager:
             )
             user = result.scalar()
             if not user:
-                return "user_not_found"
+                raise LookupError("challenge user does not exist")
 
             evaluation = evaluate_user_state(_to_game_state(user))
             _apply_game_state(user, evaluation.state)
 
             await session.commit()
-            return evaluation.status
+            return evaluation
 
     async def settle_pk(
         self,
@@ -158,6 +163,31 @@ class DataManager:
             )
             _apply_game_state(attacker, settlement.attacker.final)
             _apply_game_state(defender, settlement.defender.final)
+            await session.flush()
+        return settlement
+
+    async def settle_possession(
+        self, actor_ref: UserRef, target_ref: UserRef
+    ) -> PossessionSettlement | PossessionStatus:
+        """在一个事务中检查夺舍并写回双方；拒绝时不修改任何状态。"""
+        actor_key = _encode_persistent_ref(actor_ref)
+        target_key = _encode_persistent_ref(target_ref)
+        async with self._session_factory() as session, session.begin():
+            result = await session.execute(
+                select(UserData).where(UserData.user_ref.in_((actor_key, target_key)))
+            )
+            users = {user.user_ref: user for user in result.scalars()}
+            actor = users.get(actor_key)
+            target = users.get(target_key)
+            if actor is None or target is None:
+                raise LookupError("possession participant does not exist")
+            settlement = resolve_possession(
+                _to_game_state(actor), _to_game_state(target)
+            )
+            if isinstance(settlement, PossessionStatus):
+                return settlement
+            _apply_game_state(actor, settlement.actor)
+            _apply_game_state(target, settlement.target)
             await session.flush()
         return settlement
 
@@ -344,6 +374,7 @@ class DataManager:
         statement = (
             select(
                 UserData.jj_length,
+                UserData.challenge_completed,
                 EjaculationData.date,
                 EjaculationData.volume,
             )
@@ -364,6 +395,7 @@ class DataManager:
         }
         return UserQueryData(
             length=rows[0].jj_length,
+            challenge_completed=rows[0].challenge_completed,
             today_total=records.get(today, 0.0),
             records=records,
         )
