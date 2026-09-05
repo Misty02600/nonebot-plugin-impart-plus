@@ -199,6 +199,22 @@ class DataManager:
             )
             return bool(result.scalar())
 
+    async def get_user_states(
+        self, *user_refs: UserRef
+    ) -> dict[UserRef, UserGameState]:
+        """一次读取参与者状态；调用方在共享锁内使用该快照决定本次动作或随机值。"""
+        keys = {_encode_persistent_ref(user): user for user in user_refs}
+        async with self._session_factory() as session:
+            rows = await session.execute(
+                select(UserData).where(UserData.user_ref.in_(keys))
+            )
+            states = {
+                keys[user.user_ref]: _to_game_state(user) for user in rows.scalars()
+            }
+        if len(states) != len(keys):
+            raise LookupError("interaction participant does not exist")
+        return states
+
     async def is_challenging(self, user_ref: UserRef) -> bool:
         encoded = _encode_persistent_ref(user_ref)
         async with self._session_factory() as session:
@@ -311,53 +327,58 @@ class DataManager:
         """获取当前年月日格式，例如 2024-10-20。"""
         return time.strftime("%Y-%m-%d", time.localtime())
 
-    async def settle_interaction_volume(
+    async def settle_interaction_volumes(
         self,
-        user_ref: UserRef,
-        volume: float,
-        *,
-        feminization_roll: float | None,
-    ) -> InteractionVolumeSettlement:
-        """在一个事务中累计当日互动量，并按需完成雌堕。"""
-        encoded = _encode_persistent_ref(user_ref)
+        receipts: dict[UserRef, tuple[float, float | None]],
+    ) -> dict[UserRef, InteractionVolumeSettlement]:
+        """将本次所有接收者的累计量及转换在同一天、同一事务内提交。
+
+        Args:
+            receipts: 按接收者保存的本次数量及可选雌堕随机值。
+
+        Raises:
+            LookupError: 任一接收者不存在；本次所有写入均回滚。
+        """
+        keys = {user: _encode_persistent_ref(user) for user in receipts}
         today = self.get_today()
         async with self._session_factory() as session, session.begin():
-            user = (
-                await session.execute(
-                    select(UserData).where(UserData.user_ref == encoded)
-                )
-            ).scalar_one_or_none()
-            if user is None:
-                raise LookupError("interaction recipient does not exist")
-
-            daily = (
-                await session.execute(
-                    select(EjaculationData).where(
-                        EjaculationData.user_ref == encoded,
-                        EjaculationData.date == today,
-                    )
-                )
-            ).scalar_one_or_none()
-            settlement = resolve_interaction_volume(
-                user.jj_length,
-                daily.volume if daily else 0.0,
-                volume,
-                feminization_roll=feminization_roll,
+            rows = await session.execute(
+                select(UserData).where(UserData.user_ref.in_(keys.values()))
             )
-            if daily is None:
-                session.add(
-                    EjaculationData(
-                        user_ref=encoded,
-                        date=today,
-                        volume=settlement.total,
-                    )
+            users = {user.user_ref: user for user in rows.scalars()}
+            if len(users) != len(keys):
+                raise LookupError("interaction recipient does not exist")
+            rows = await session.execute(
+                select(EjaculationData).where(
+                    EjaculationData.user_ref.in_(keys.values()),
+                    EjaculationData.date == today,
                 )
-            else:
-                daily.volume = settlement.total
-            if settlement.feminized:
-                user.jj_length = settlement.length
+            )
+            daily_records = {record.user_ref: record for record in rows.scalars()}
+            settlements: dict[UserRef, InteractionVolumeSettlement] = {}
+            for user_ref, (volume, roll) in receipts.items():
+                encoded = keys[user_ref]
+                user = users[encoded]
+                daily = daily_records.get(encoded)
+                settlement = resolve_interaction_volume(
+                    user.jj_length,
+                    daily.volume if daily else 0.0,
+                    volume,
+                    feminization_roll=roll,
+                )
+                settlements[user_ref] = settlement
+                if daily is None:
+                    session.add(
+                        EjaculationData(
+                            user_ref=encoded, date=today, volume=settlement.total
+                        )
+                    )
+                else:
+                    daily.volume = settlement.total
+                if settlement.feminized:
+                    user.jj_length = settlement.length
             await session.flush()
-        return settlement
+        return settlements
 
     async def get_user_query_data(
         self,

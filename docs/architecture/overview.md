@@ -15,7 +15,7 @@
 | 群开关与帮助 | `银趴` 根命令把开启/开始、禁止/关闭直接解析为一个布尔参数，帮助/介绍保留独立子命令；compact 允许有/无空格，开关限管理员、群主或超级用户 | 一个 toggle dispatch 和 Handler 持久化场景级 `allow` 状态；帮助 dispatch 保留独立权限与优先级；完整帮助文本来自 `PluginMetadata.usage`；与其他顶层命令一样从 NoneBot `COMMAND_START` 取得前缀 | [`__init__.py`](../../src/nonebot_plugin_impart_plus/__init__.py)、[`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/control.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/control.py) |
 | 长度与深度成长、查询 | `打胶/开导` 服务 `length > 0` 并增加本人长度，`开扣/挖矿` 服务 `length <= 0` 并增加绝对深度；`嗦` 只增加被 `@` 正值用户的长度，`舔` 只增加被 `@` 非正值用户的深度；`银趴查询` 显示状态和当日注入量，`查询历史/全部` 再显示历史总量和折线图 | 自我成长和目标成长分别各用一个 Alconna matcher；目标成长允许多个 At 但只使用第一个。状态与记录查询共用 `query.py` Handler，DataManager 按普通/历史模式取得一致快照 | [`bot/matchers.py`](../../src/nonebot_plugin_impart_plus/bot/matchers.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py)、[`bot/handlers/query.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/query.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 同世界 PK 与正负挑战 | `pk/对决` 必须 `@` 同世界其他用户；允许多个用户 At，但严格只使用第一个。正值双方结算长度，负值双方以相反方向结算深度，跨世界拒绝；胜负继续由发起者胜率判定 | 正负世界都按绝对量级评估挑战；PK 与挑战惩罚被锁在原世界的 `±0.001cm`，普通玩法不能跨零。core 一次计算双方完整结果，DataManager 在一个事务中提交双方状态 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
-| 群友互动与雌堕 | `透/日/榨` 由同一个命令头解析；正值用户主动透，负值用户主动榨，动作与自身世界不匹配或 XNN 透触发反制时，由目标按其世界反制一次 | 透与榨共用无类型当日总量。只有实际被透且结算时仍满足 `0 < length < 5` 的接收者会按当日总量判定雌堕：`200ml` 后概率线性增加，`1000ml` 必定触发；累计量和长度转换在一个事务内提交 | [`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
+| 群友互动与雌堕 | `透/日/榨` 共用一个命令头；普通男性透、女性榨，XNN 对普通男性榨、对女性透，双 XNN 自动贴贴；错误动作由目标反制一次 | 普通互动一笔收量，贴贴双方互收；共用无类型当日总量。实际接收且结算时仍是 XNN 的成员独立判定雌堕，覆盖透、榨与贴贴；所有人的累计量和转换同日、同事务提交 | [`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
 | 夺舍 | 完成深渊试炼的负值用户可 `夺舍 @用户`，目标须为正值、未在挑战且长度短于自身深度；只取首个At，无别名 | 向上保留三位小数平分目标长度；发起者直接转正并按半长是否达到25决定称号，目标仍承受既有称号跌落惩罚；无额外冷却或成功率随机，双方原子提交 | [`bot/handlers/possession.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/possession.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
 | 排行榜 | 在当前 `UserRef.namespace` 内显示长度前五、后五和本人排名 | DataManager 通过 namespace 索引分榜，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 | `Config` | 配置四类冷却时长 | 牛牛与负值部位名称是代码内玩法常量，不属于部署配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
@@ -38,15 +38,15 @@
 2. 所有顶层 matcher 先把 NoneBot `COMMAND_START` 作为命令前缀，再由 Alconna 解析结构化命令、子命令、Option 与 At；Uninfo 提供场景、用户、成员和角色。
 3. Handler 注入 UniRef `RefContext`，在业务副作用前取得当前 UserRef/SceneRef，并通过 `build_user_ref()` 构造 Alconna At 目标；上下文本身无法建立时当前 Handler 被跳过，属性或目标构造失败则保留异常。
 4. `GameApplication` 先检查场景与命令语义；PK、嗦或舔缺少目标以及 At 自己时先返回，不创建用户或执行其他副作用。有效目标与打胶、开扣、查询所涉及的缺失用户会创建默认状态；只要这些长度相关用例发生创建就返回实际 Ref，不执行冷却或结算。群友互动同样会在发起者首次创建后立即返回，但缺失目标会初始化为默认正值并继续本次互动。
-5. 用户均已存在时，PK 与成长从状态读取起取得 application 的共享结算锁。互动先完成目标选择、提示和两秒等待，再按“数量、耗时”的顺序生成原有随机值并取得同一把锁；锁内重新读取实际接收者长度，只有实际被透的 XNN 才额外生成一次雌堕随机值。
-6. PK 和夺舍分别由 DataManager 在一个事务中写回双方完整状态；互动由另一个事务同时累计当日总量并按 core 结果更新长度，异常时各自整体回滚。普通查询只联接当天记录，历史查询读取按日期升序排列的全部记录。
-7. bot 根据 outcome 选择文案；风险警告或雌堕文案追加在正常互动结算之后，需要图片时再调用 `ChartRenderer`，最后通过 UniMessage 发送。消息发送失败不回滚已经提交的游戏状态。
+5. PK 与成长从状态读取起取得 application 的共享结算锁。互动早期初始化发起者也使用该锁；目标选择在锁外，选定后在锁内复核发起者冷却、初始化目标、批量读取双方并固定动作、流向、液体与数量档位，再记录冷却。资料查询、前置提示和两秒等待均在锁外；不会占用目标冷却。
+6. 互动最终阶段按流向顺序生成一至两份数量，再生成一次耗时；重新取得同一把锁、批量读取实际接收者最新状态，按发起者→目标顺序只为当前 XNN 接收者各抽一次雌堕随机值。DataManager 的 `settle_interaction_volumes()` 只捕获一次日期，以一个事务同时提交所有人的总量与转换；任一写入失败共同回滚。开始快照不因等待期间的成长、PK 或夺舍而重解析。
+7. PK 和夺舍也各用一个事务写回双方状态。普通查询只联接当天记录，历史查询读取按日期升序排列的全部记录。bot 先生成完整互动报告，再按发起者→目标追加各自事件，通过 UniMessage 发送；贴贴两份输出与各自收到的总量分开对应。消息发送失败不回滚或重放已提交状态，既有冷却不因失败回滚。
 
 ## 数据和状态放在哪里
 
 - `UserData` 以编码 `user_ref` 为主键，保存 `user_namespace` 查询投影、长度、内部胜率和两项挑战状态；XNN 与正负世界完全由长度推导，不保存展示缓存。
 - `SceneData` 以编码 `scene_ref` 为主键，保存 `scene_namespace`、`scene_type` 查询投影和场景开关。
-- `EjaculationData` 按编码 UserRef 和日期保存透或榨产生的无类型互动总量；`(user_ref, date)` 具有唯一约束，记录归属实际获得液体者，公开查询统一称为“注入量”。
+- `EjaculationData` 按编码 UserRef 和日期保存透、榨或贴贴产生的无类型互动总量；`(user_ref, date)` 具有唯一约束，记录归属实际获得液体者，公开查询统一称为“注入量”。贴贴双方各累计对方输出，无额外逐次互动日志或状态字段。
 - 数据库连接、Engine 和 Session 由 NoneBot ORM 管理；默认未配置时使用 `[default]` extra 提供的 SQLite，也可安装其他驱动并用 `SQLALCHEMY_DATABASE_URL` 切换默认连接。包内 generic migration 管理 schema；自动化在 SQLite 执行 migration、旧库导入和并发持久化测试，并为 PostgreSQL、MySQL 编译模型 DDL，但不连接这两种数据库做集成验证。
 - 打胶、PK、目标成长和群友互动冷却保存在 `CooldownManager` 的四个 UserRef 字典中；嗦与舔共享现有 `suo_cd_data`，进程重启后清空。所有用户使用相同冷却规则，不提供超级用户豁免。
 - PK、打胶、开扣、嗦、舔、夺舍和互动最终结算通过同一个 application 级锁串行访问用户游戏状态；多个 Bot 在同一进程共享该锁。锁和冷却一样不跨进程，数据库后端可以替换，但多进程或外部直接写库不属于并发保证。
@@ -58,7 +58,9 @@
 - 挑战中跌到 `abs(length) < 25` 会退出挑战、恢复内部胜率系数，并向零方向额外惩罚 5cm；达到 `abs(length) >= 30` 会完成挑战。完成后再次跌破 25cm 会取消称号并执行同方向惩罚。
 - `0 < length < 5` 是唯一 XNN 范围，恰好 `5cm` 属于普通正值；负值状态查询显示固定名称“小学”和绝对深度，`length <= -30` 显示“深淵の主”。XNN 当日总量超过 `200ml` 时，查询改为提示“快要变成女孩子”。
 - PK 只使用发起者自身的内部胜率判定胜负；胜者内部胜率减 `0.01`，败者增加 `0.01`。PK 与挑战惩罚不能改变正负号，跨零候选值分别钳制为 `0.001/-0.001`；只有雌堕可以把正值转换为负值。
-- XNN 主动透时仍有 50% 概率被反制。正值主动榨或负值主动透时必定反制；目标按其世界反透或反榨，最多反制一次。实际被透的 XNN 使用包含本次数量的当日总量按 `clamp((total - 200) / 800, 0, 1)` 判定雌堕，命中后长度减去 `5cm`；实际榨不检查也不消费该随机数。
+- 普通男性的合法动作是透，女性是榨；XNN 对普通男性榨、对女性透。双方 XNN 优先贴贴，其他错误动作由目标选择其合法动作反制一次，不存在反制随机数。群友、管理和群主选定成员后共用该规则；贴贴不是公开命令。
+- XNN 的实际透或反透为1～10ml，贴贴每方向独立1～10ml；其他动作均为1～100ml，包括女性榨 XNN。数量保留三位小数，贴贴共用一次1～20秒耗时。普通报告沿用原格式，贴贴先写双方输出、再写各自累计；两者顺序不能混用。
+- 当前 XNN 接收者按包含本次数量的当日总量，以 `clamp((total - 200) / 800, 0, 1)` 独立判定雌堕，命中后长度减去 `5cm`；不超过200不触发、达到1000必定触发。风险警告仅在 `previous_total <= 200 < total` 且未转换时产生，转换覆盖本人的警告。未收量或已离开 XNN 者不抽该随机数；一人的转换不会取消另一人的收量或判定。
 
 - 夺舍资格由负值长度及共享 `challenge_completed` 标记决定；没有正负各一套标记或永久能力字段。发起者的新状态直接写为 `length=half, is_challenging=False, challenge_completed=(half >= 25)`，低于25不追加失去称号的提示与惩罚，也不会留待下一次操作补扣。目标半长达到25直接持有正值称号；低于25且原本有称号则额外缩短5cm。半长先舍入再判断阈值，因此49.999平分成25，49.998平分成24.999。
 - 夺舍不调整胜率或清空当日/历史注入量，不触发雌堕随机，也不额外播报XNN；目标称号惩罚会使双方最终长度不同。普通游戏结算仍锁住原世界，夺舍是负转正的显式入口。

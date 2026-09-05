@@ -16,7 +16,7 @@ from nonebot_plugin_alconna import (
 from nonebot_plugin_uninfo import Member, QryItrface, Uninfo
 from nonebot_plugin_uniref import RefContext
 
-from ...impart.app import InteractionGuardType, InteractionResult
+from ...impart.app import InteractionGuard, InteractionGuardType, InteractionResult
 from ...impart.core import (
     InteractionAction,
     InteractionParticipant,
@@ -76,13 +76,16 @@ async def send_interaction_prompt(
     matcher: Matcher,
     requested_action: InteractionAction,
     resolution: InteractionResolution,
+    target_card: str,
 ) -> None:
     target_text = {
         "群友": "随机一位幸运群友",
         "管理": "随机一位管理",
         "群主": "群主",
     }[kind]
-    if resolution.reversal is InteractionReversal.WRONG_ACTION:
+    if resolution.action is InteractionAction.CUDDLE:
+        message = f"{botname}发现你俩都是xnn喵~现在咱将{req_user_card}\n送给{target_card}色色！"
+    elif resolution.reversal is InteractionReversal.WRONG_ACTION:
         message = (
             f"唔...你{requested_action.value}不了哦~\n"
             f"现在咱将{req_user_card}\n送给{target_text}色色！"
@@ -105,43 +108,69 @@ def interaction_report(
     lucky_user_card: str,
     lucky_user: str,
 ) -> str:
-    requester = (req_user_card, uid)
-    target = (lucky_user_card, lucky_user)
-    if result.resolution.actor is InteractionParticipant.REQUESTER:
-        actor, counterpart = requester, target
+    requester = InteractionParticipant.REQUESTER
+    target = InteractionParticipant.TARGET
+    people = {
+        requester: f"{req_user_card}({uid})",
+        target: f"{lucky_user_card}({lucky_user})",
+    }
+    if result.resolution.action is InteractionAction.CUDDLE:
+        self_receipt = result.receipts[requester]
+        target_receipt = result.receipts[target]
+        report = (
+            f"好欸！{people[requester]}和{people[target]}蹭蹭贴贴了{result.seconds}秒\n"
+            f"分别挤出了{target_receipt.volume}毫升和{self_receipt.volume}毫升的脱氧核糖核酸，"
+            f"当日总注入量分别为：{self_receipt.settlement.total}毫升、"
+            f"{target_receipt.settlement.total}毫升\n"
+        )
     else:
-        actor, counterpart = target, requester
-    recipient = (
-        requester
-        if result.resolution.recipient is InteractionParticipant.REQUESTER
-        else target
-    )
+        transfer = result.resolution.transfers[0]
+        receipt = result.receipts[transfer.recipient]
+        if result.resolution.action is InteractionAction.INJECT:
+            actor = transfer.source
+            action = (
+                f"给 {people[transfer.recipient]} 注入了"
+                f"{receipt.volume}毫升的{transfer.fluid.value}"
+            )
+        else:
+            actor = transfer.recipient
+            action = (
+                f"从 {people[transfer.source]} 榨出了"
+                f"{receipt.volume}毫升的{transfer.fluid.value}"
+            )
+        report = (
+            f"好欸！{people[actor]}用时{result.seconds}秒 \n"
+            f"{action}, 当日总注入量为：{receipt.settlement.total}毫升\n"
+        )
 
-    prefix = f"好欸！{actor[0]}({actor[1]})用时{result.seconds}秒 \n"
-    if result.resolution.action is InteractionAction.INJECT:
-        action = (
-            f"给 {counterpart[0]}({counterpart[1]}) "
-            f"注入了{result.ejaculation}毫升的{result.resolution.fluid.value}"
-        )
-    else:
-        action = (
-            f"从 {counterpart[0]}({counterpart[1]}) "
-            f"榨出了{result.ejaculation}毫升的{result.resolution.fluid.value}"
-        )
-    report = f"{prefix}{action}, 当日总注入量为：{result.today_total}毫升\n"
-    if result.feminized:
-        name = choice(JJ_NAMES)
-        return (
-            f"{report}\n{recipient[0]}({recipient[1]})被注入了太多脱氧核糖核酸……"
-            f"\n\n在{actor[0]}({actor[1]})的猛烈攻势下，TA的{name}彻底萎缩消失了♡"
-            f"\n\n取而代之的是一个深度{abs(result.recipient_length)}cm的小学♡"
-            f"\n\n{recipient[0]}({recipient[1]})已经完全雌堕，变成女孩子了喵！"
-        )
-    if result.risk_warning:
-        return (
-            f"{report}\n由于{recipient[0]}({recipient[1]})的当日注入量过多，"
-            f"TA的{choice(JJ_NAMES)}开始变得不稳定了..."
-        )
+    transfers = {
+        transfer.recipient: transfer for transfer in result.resolution.transfers
+    }
+    for person in (requester, target):
+        receipt = result.receipts.get(person)
+        if receipt is None:
+            continue
+        settlement = receipt.settlement
+        transfer = transfers[person]
+        if settlement.feminized:
+            if result.resolution.action is InteractionAction.CUDDLE:
+                cause = "在一阵缠绵后"
+            elif result.resolution.action is InteractionAction.SQUEEZE:
+                cause = f"在{people[person]}的主动索求下"
+            else:
+                cause = f"在{people[transfer.source]}的猛烈攻势下"
+            name = choice(JJ_NAMES)
+            report += (
+                f"\n{people[person]}被注入了太多{transfer.fluid.value}……"
+                f"\n\n{cause}，TA的{name}彻底萎缩消失了♡"
+                f"\n\n取而代之的是一个深度{abs(settlement.length)}cm的小学♡"
+                f"\n\n{people[person]}已经完全雌堕，变成了女孩子喵！"
+            )
+        elif settlement.risk_warning:
+            report += (
+                f"\n由于{people[person]}的当日注入量过多，"
+                f"TA的{choice(JJ_NAMES)}开始变得不稳定了..."
+            )
     return report
 
 
@@ -198,11 +227,6 @@ async def yinpa(
             message = "请@指定目标" if kind == "群友" else _missing_target_message(kind)
             await matcher.finish(message)
 
-    reverse_roll = (
-        game_app.roll_interaction()
-        if requested_action is InteractionAction.INJECT
-        else None
-    )
     lucky_user = mentioned or select_interaction_target(kind, members, uid)
     if lucky_user is None:
         await matcher.finish(_missing_target_message(kind))
@@ -214,16 +238,13 @@ async def yinpa(
         user_ref,
         lucky_user_ref,
         requested_action,
-        reverse_roll,
     )
-    if mentioned is None:
-        await send_interaction_prompt(
-            kind,
-            req_user_card,
-            matcher,
-            requested_action,
-            resolution,
+    if isinstance(resolution, InteractionGuard):
+        await matcher.finish(
+            f"你已经榨不出来任何东西了, 请先休息{resolution.remaining}秒",
+            at_sender=True,
         )
+        return
 
     lucky_member = next(
         (member for member in members if member.user.id == lucky_user),
@@ -241,6 +262,10 @@ async def yinpa(
     lucky_user_avatar = (lucky_member.user.avatar if lucky_member else None) or (
         lucky_user_info.avatar if lucky_user_info else None
     )
+    if mentioned is None:
+        await send_interaction_prompt(
+            kind, req_user_card, matcher, requested_action, resolution, lucky_user_card
+        )
     await asyncio.sleep(2)
     interaction_result = await game_app.complete_interaction(
         user_ref,

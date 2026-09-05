@@ -24,6 +24,22 @@ def _parse_interaction(action: str, kind: str) -> Arparma:
     return result
 
 
+def _receipt(
+    volume: float,
+    total: float,
+    length: float,
+    *,
+    warning: bool = False,
+    feminized: bool = False,
+):
+    from nonebot_plugin_impart_plus.impart.app import InteractionReceipt
+    from nonebot_plugin_impart_plus.impart.core import InteractionVolumeSettlement
+
+    return InteractionReceipt(
+        volume, InteractionVolumeSettlement(total, length, warning, feminized)
+    )
+
+
 async def test_explicit_interaction_uses_only_first_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -47,10 +63,9 @@ async def test_explicit_interaction_uses_only_first_target(
         InteractionAction.INJECT,
         10.0,
         10.0,
-        reverse_roll=0.75,
     )
     prepare_calls: list[tuple[SceneRef, UserRef]] = []
-    begin_calls: list[tuple[UserRef, UserRef, InteractionAction, float | None]] = []
+    begin_calls: list[tuple[UserRef, UserRef, InteractionAction]] = []
 
     async def prepare_interaction(
         scene_ref: SceneRef,
@@ -63,9 +78,8 @@ async def test_explicit_interaction_uses_only_first_target(
         user_ref: UserRef,
         target_ref: UserRef,
         requested_action: InteractionAction,
-        reverse_roll: float | None,
     ) -> InteractionResolution:
-        begin_calls.append((user_ref, target_ref, requested_action, reverse_roll))
+        begin_calls.append((user_ref, target_ref, requested_action))
         return resolution
 
     async def complete_interaction(
@@ -75,13 +89,9 @@ async def test_explicit_interaction_uses_only_first_target(
     ) -> InteractionResult:
         assert prepared is resolution
         return InteractionResult(
-            resolution=resolution,
-            ejaculation=2.5,
-            today_total=8.0,
-            seconds=3,
-            recipient_length=10.0,
-            risk_warning=False,
-            feminized=False,
+            resolution,
+            3,
+            {resolution.transfers[0].recipient: _receipt(2.5, 8.0, 10.0)},
         )
 
     class InterfaceStub:
@@ -107,7 +117,6 @@ async def test_explicit_interaction_uses_only_first_target(
     monkeypatch.setattr(
         interaction.game_app, "complete_interaction", complete_interaction
     )
-    monkeypatch.setattr(interaction.game_app, "roll_interaction", lambda: 0.75)
     monkeypatch.setattr(interaction.asyncio, "sleep", AsyncMock())
     matcher = MatcherStub()
 
@@ -127,7 +136,6 @@ async def test_explicit_interaction_uses_only_first_target(
             make_user_ref(),
             make_user_ref("67890"),
             InteractionAction.INJECT,
-            0.75,
         )
     ]
     assert len(matcher.messages) == 1
@@ -260,7 +268,6 @@ async def test_invalid_automatic_targets_do_not_begin_interaction(
     )
     begin_interaction = AsyncMock()
     monkeypatch.setattr(interaction.game_app, "begin_interaction", begin_interaction)
-    monkeypatch.setattr(interaction.game_app, "roll_interaction", lambda: 0.75)
     matcher = FinishingMatcherStub()
     ignored_targets = (
         Match((At("user", "67890"), At("user", "99999")), True)
@@ -302,85 +309,40 @@ def test_role_target_selection_excludes_requester_from_admins() -> None:
 
 
 @pytest.mark.parametrize(
-    ("action", "expected_calls"),
-    [
-        ("透", ["roll", "select"]),
-        ("榨", ["select"]),
-    ],
-)
-async def test_automatic_interaction_random_order(
-    monkeypatch: pytest.MonkeyPatch,
-    action: str,
-    expected_calls: list[str],
-) -> None:
-    from nonebot_plugin_alconna import Match
-    from nonebot_plugin_uninfo import Interface, Member, User
-
-    from nonebot_plugin_impart_plus.bot.handlers import interaction
-    from nonebot_plugin_impart_plus.impart.app import (
-        InteractionGuard,
-        InteractionGuardType,
-    )
-
-    class SelectionReached(Exception):
-        pass
-
-    calls: list[str] = []
-
-    def roll_interaction() -> float:
-        calls.append("roll")
-        return 0.75
-
-    def select_interaction_target(*_: object) -> None:
-        calls.append("select")
-        raise SelectionReached
-
-    class InterfaceStub:
-        async def get_members(self, *_: object) -> list[Member]:
-            return [Member(User(id="20002"))]
-
-    monkeypatch.setattr(
-        interaction.game_app,
-        "prepare_interaction",
-        AsyncMock(return_value=InteractionGuard(InteractionGuardType.ALLOWED)),
-    )
-    monkeypatch.setattr(interaction.game_app, "roll_interaction", roll_interaction)
-    monkeypatch.setattr(
-        interaction,
-        "select_interaction_target",
-        select_interaction_target,
-    )
-
-    with pytest.raises(SelectionReached):
-        await interaction.yinpa(
-            cast(Matcher, MatcherStub()),
-            make_session(1, "12345"),
-            cast(Interface, InterfaceStub()),
-            make_ref_context(scene_id="12345"),
-            _parse_interaction(action, "群友"),
-            "群友",
-            Match((), False),
-        )
-
-    assert calls == expected_calls
-
-
-@pytest.mark.parametrize(
     (
         "requested",
         "requester_length",
         "target_length",
-        "roll",
         "kind",
         "expected",
     ),
     [
-        ("INJECT", 10.0, 10.0, 0.75, "群主", "现在咱将把群主\n送给发起者色色！"),
+        ("INJECT", 10.0, 10.0, "群主", "现在咱将把群主\n送给发起者色色！"),
+        (
+            "INJECT",
+            3.0,
+            4.0,
+            "群友",
+            "BOT发现你俩都是xnn喵~现在咱将发起者\n送给目标色色！",
+        ),
+        (
+            "SQUEEZE",
+            3.0,
+            4.0,
+            "管理",
+            "BOT发现你俩都是xnn喵~现在咱将发起者\n送给目标色色！",
+        ),
+        (
+            "INJECT",
+            3.0,
+            4.0,
+            "群主",
+            "BOT发现你俩都是xnn喵~现在咱将发起者\n送给目标色色！",
+        ),
         (
             "INJECT",
             -10.0,
             10.0,
-            0.75,
             "管理",
             "唔...你透不了哦~\n现在咱将发起者\n送给随机一位管理色色！",
         ),
@@ -388,7 +350,6 @@ async def test_automatic_interaction_random_order(
             "SQUEEZE",
             10.0,
             -10.0,
-            None,
             "群友",
             "唔...你榨不了哦~\n现在咱将发起者\n送给随机一位幸运群友色色！",
         ),
@@ -396,7 +357,6 @@ async def test_automatic_interaction_random_order(
             "INJECT",
             3.0,
             10.0,
-            0.25,
             "群友",
             "BOT发现你是xnn~现在咱将发起者\n送给随机一位幸运群友色色！",
         ),
@@ -407,7 +367,6 @@ async def test_interaction_prompt_matches_resolution(
     requested: str,
     requester_length: float,
     target_length: float,
-    roll: float | None,
     kind: str,
     expected: str,
 ) -> None:
@@ -423,7 +382,6 @@ async def test_interaction_prompt_matches_resolution(
         action,
         requester_length,
         target_length,
-        reverse_roll=roll,
     )
     matcher = MatcherStub()
 
@@ -433,6 +391,7 @@ async def test_interaction_prompt_matches_resolution(
         cast(Matcher, matcher),
         action,
         resolution,
+        "目标",
     )
 
     assert matcher.messages == [expected]
@@ -443,7 +402,6 @@ async def test_interaction_prompt_matches_resolution(
         "requested",
         "requester_length",
         "target_length",
-        "roll",
         "expected",
     ),
     [
@@ -451,28 +409,24 @@ async def test_interaction_prompt_matches_resolution(
             "INJECT",
             10.0,
             10.0,
-            0.75,
             "好欸！发起者(10001)用时4秒 \n给 目标(20002) 注入了12.5毫升的脱氧核糖核酸, 当日总注入量为：20.0毫升\n",
         ),
         (
             "INJECT",
             -10.0,
             10.0,
-            0.75,
             "好欸！目标(20002)用时4秒 \n给 发起者(10001) 注入了12.5毫升的脱氧核糖核酸, 当日总注入量为：20.0毫升\n",
         ),
         (
             "SQUEEZE",
             -10.0,
             -10.0,
-            None,
             "好欸！发起者(10001)用时4秒 \n从 目标(20002) 榨出了12.5毫升的妹汁, 当日总注入量为：20.0毫升\n",
         ),
         (
             "SQUEEZE",
             10.0,
             -10.0,
-            None,
             "好欸！目标(20002)用时4秒 \n从 发起者(10001) 榨出了12.5毫升的脱氧核糖核酸, 当日总注入量为：20.0毫升\n",
         ),
     ],
@@ -481,7 +435,6 @@ def test_interaction_report_matches_actual_action(
     requested: str,
     requester_length: float,
     target_length: float,
-    roll: float | None,
     expected: str,
 ) -> None:
     from nonebot_plugin_impart_plus.bot.handlers.interaction import interaction_report
@@ -495,16 +448,11 @@ def test_interaction_report_matches_actual_action(
         InteractionAction[requested],
         requester_length,
         target_length,
-        reverse_roll=roll,
     )
     result = InteractionResult(
-        resolution=resolution,
-        ejaculation=12.5,
-        today_total=20.0,
-        seconds=4,
-        recipient_length=target_length,
-        risk_warning=False,
-        feminized=False,
+        resolution,
+        4,
+        {resolution.transfers[0].recipient: _receipt(12.5, 20.0, target_length)},
     )
 
     assert interaction_report(result, "发起者", "10001", "目标", "20002") == expected
@@ -524,26 +472,14 @@ def test_interaction_report_appends_risk_events(
         InteractionAction.INJECT,
         10.0,
         4.0,
-        reverse_roll=0.75,
     )
     monkeypatch.setattr(interaction, "choice", lambda _: "牛牛")
+    recipient = resolution.transfers[0].recipient
     warning = InteractionResult(
-        resolution,
-        20.0,
-        210.0,
-        4,
-        4.0,
-        True,
-        False,
+        resolution, 4, {recipient: _receipt(20.0, 210.0, 4.0, warning=True)}
     )
     feminized = InteractionResult(
-        resolution,
-        20.0,
-        1010.0,
-        4,
-        -1.0,
-        False,
-        True,
+        resolution, 4, {recipient: _receipt(20.0, 1010.0, -1.0, feminized=True)}
     )
 
     warning_text = interaction.interaction_report(
@@ -567,7 +503,119 @@ def test_interaction_report_appends_risk_events(
     assert "目标(20002)被注入了太多脱氧核糖核酸……" in feminized_text
     assert "在发起者(10001)的猛烈攻势下，TA的牛牛彻底萎缩消失了♡" in feminized_text
     assert "取而代之的是一个深度1.0cm的小学♡" in feminized_text
-    assert feminized_text.endswith("目标(20002)已经完全雌堕，变成女孩子了喵！")
+    assert feminized_text.endswith("目标(20002)已经完全雌堕，变成了女孩子喵！")
+
+
+def test_cuddle_report_keeps_outputs_totals_and_events_in_member_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.impart.app import InteractionResult
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionParticipant,
+        resolve_interaction,
+    )
+
+    resolution = resolve_interaction(InteractionAction.INJECT, 3.0, 4.0)
+    result = InteractionResult(
+        resolution,
+        4,
+        {
+            InteractionParticipant.REQUESTER: _receipt(
+                3.0, 993.0, -2.0, feminized=True
+            ),
+            InteractionParticipant.TARGET: _receipt(7.0, 207.0, 4.0, warning=True),
+        },
+    )
+    monkeypatch.setattr(interaction, "choice", lambda _: "牛牛")
+    report = interaction.interaction_report(result, "发起者", "10001", "目标", "20002")
+    assert "发起者(10001)和目标(20002)蹭蹭贴贴了4秒" in report
+    assert "分别挤出了7.0毫升和3.0毫升" in report
+    assert "当日总注入量分别为：993.0毫升、207.0毫升" in report
+    assert "在一阵缠绵后" in report
+    assert report.index("发起者(10001)被注入了太多") < report.index("由于目标(20002)")
+    assert "由于发起者" not in report
+
+
+def test_squeeze_event_uses_recipient_and_frozen_fluid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.impart.app import InteractionResult
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionParticipant,
+        resolve_interaction,
+    )
+
+    resolution = resolve_interaction(InteractionAction.SQUEEZE, -30.0, -10.0)
+    result = InteractionResult(
+        resolution,
+        4,
+        {
+            InteractionParticipant.REQUESTER: _receipt(
+                20.0, 1010.0, -2.0, feminized=True
+            ),
+        },
+    )
+    monkeypatch.setattr(interaction, "choice", lambda _: "牛牛")
+    report = interaction.interaction_report(result, "发起者", "10001", "目标", "20002")
+    assert "榨出了20.0毫升的妹汁" in report
+    assert "发起者(10001)被注入了太多妹汁" in report
+    assert "在发起者(10001)的主动索求下" in report
+    assert "猛烈攻势" not in report
+
+
+async def test_late_cooldown_rejection_stops_before_profile_and_animation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from nonebot_plugin_alconna import At, Match
+    from nonebot_plugin_uninfo import Interface
+
+    from nonebot_plugin_impart_plus.bot.handlers import interaction
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+
+    monkeypatch.setattr(
+        interaction.game_app,
+        "prepare_interaction",
+        AsyncMock(
+            return_value=InteractionGuard(InteractionGuardType.ALLOWED),
+        ),
+    )
+    monkeypatch.setattr(
+        interaction.game_app,
+        "begin_interaction",
+        AsyncMock(
+            return_value=InteractionGuard(
+                InteractionGuardType.COOLING_DOWN, remaining=60
+            ),
+        ),
+    )
+    complete = AsyncMock()
+    sleep = AsyncMock()
+    profile = AsyncMock()
+    monkeypatch.setattr(interaction.game_app, "complete_interaction", complete)
+    monkeypatch.setattr(interaction.asyncio, "sleep", sleep)
+    monkeypatch.setattr(interaction, "get_member_or_none", profile)
+    matcher = FinishingMatcherStub()
+    with pytest.raises(FinishedException):
+        await interaction.yinpa(
+            cast(Matcher, matcher),
+            make_session(1, "12345"),
+            cast(Interface, object()),
+            make_ref_context(scene_id="12345"),
+            _parse_interaction("透", "群友"),
+            "群友",
+            Match((At("user", "67890"),), True),
+        )
+    assert "请先休息60秒" in matcher.messages[0]
+    complete.assert_not_awaited()
+    sleep.assert_not_awaited()
+    profile.assert_not_awaited()
 
 
 async def test_member_query_exception_is_logged(

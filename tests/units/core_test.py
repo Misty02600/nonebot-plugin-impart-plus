@@ -17,141 +17,54 @@ def test_growth_mode_boundaries_and_signed_delta() -> None:
 
 
 @pytest.mark.parametrize(
-    (
-        "requested",
-        "requester_length",
-        "target_length",
-        "roll",
-        "actual",
-        "actor",
-        "recipient",
-        "fluid",
-        "reversal",
-    ),
+    ("requester_length", "target_length", "expected"),
     [
-        ("INJECT", 10.0, 10.0, 0.75, "INJECT", "REQUESTER", "TARGET", "DNA", "NONE"),
-        ("INJECT", 10.0, -10.0, 0.75, "INJECT", "REQUESTER", "TARGET", "DNA", "NONE"),
+        (5, 5, (("INJECT", "A>B", 100, "DNA"), ("INJECT", "B>A", 100, "DNA"))),
+        (5, 4.999, (("INJECT", "A>B", 100, "DNA"), ("SQUEEZE", "A>B", 100, "DNA"))),
+        (5, -10, (("INJECT", "A>B", 100, "DNA"), ("SQUEEZE", "A>B", 100, "DNA"))),
+        (4.999, 5, (("INJECT", "B>A", 100, "DNA"), ("SQUEEZE", "B>A", 100, "DNA"))),
         (
-            "INJECT",
-            -10.0,
-            10.0,
-            0.75,
-            "INJECT",
-            "TARGET",
-            "REQUESTER",
-            "DNA",
-            "WRONG_ACTION",
+            4.999,
+            4.999,
+            (("CUDDLE", "A>B,B>A", 10, "DNA"), ("CUDDLE", "A>B,B>A", 10, "DNA")),
         ),
+        (4.999, -10, (("INJECT", "A>B", 10, "DNA"), ("SQUEEZE", "A>B", 100, "DNA"))),
+        (-10, 5, (("INJECT", "B>A", 100, "DNA"), ("SQUEEZE", "B>A", 100, "DNA"))),
+        (-10, 4.999, (("INJECT", "B>A", 10, "DNA"), ("SQUEEZE", "B>A", 100, "DNA"))),
         (
-            "INJECT",
-            -10.0,
-            -10.0,
-            0.75,
-            "SQUEEZE",
-            "TARGET",
-            "TARGET",
-            "GIRL_JUICE",
-            "WRONG_ACTION",
-        ),
-        (
-            "SQUEEZE",
-            -10.0,
-            10.0,
-            None,
-            "SQUEEZE",
-            "REQUESTER",
-            "REQUESTER",
-            "DNA",
-            "NONE",
-        ),
-        (
-            "SQUEEZE",
-            -10.0,
-            -10.0,
-            None,
-            "SQUEEZE",
-            "REQUESTER",
-            "REQUESTER",
-            "GIRL_JUICE",
-            "NONE",
-        ),
-        (
-            "SQUEEZE",
-            10.0,
-            10.0,
-            None,
-            "INJECT",
-            "TARGET",
-            "REQUESTER",
-            "DNA",
-            "WRONG_ACTION",
-        ),
-        (
-            "SQUEEZE",
-            10.0,
-            -10.0,
-            None,
-            "SQUEEZE",
-            "TARGET",
-            "TARGET",
-            "DNA",
-            "WRONG_ACTION",
-        ),
-        (
-            "INJECT",
-            3.0,
-            10.0,
-            0.25,
-            "INJECT",
-            "TARGET",
-            "REQUESTER",
-            "DNA",
-            "XNN",
-        ),
-        (
-            "INJECT",
-            3.0,
-            -10.0,
-            0.25,
-            "SQUEEZE",
-            "TARGET",
-            "TARGET",
-            "DNA",
-            "XNN",
+            -10,
+            -10,
+            (
+                ("SQUEEZE", "A>B", 100, "GIRL_JUICE"),
+                ("SQUEEZE", "B>A", 100, "GIRL_JUICE"),
+            ),
         ),
     ],
 )
 def test_interaction_resolution_is_symmetric(
-    requested: str,
-    requester_length: float,
-    target_length: float,
-    roll: float | None,
-    actual: str,
-    actor: str,
-    recipient: str,
-    fluid: str,
-    reversal: str,
+    requester_length: float, target_length: float, expected: tuple
 ) -> None:
     from nonebot_plugin_impart_plus.impart.core import (
         InteractionAction,
-        InteractionFluid,
         InteractionParticipant,
-        InteractionReversal,
         resolve_interaction,
     )
 
-    resolution = resolve_interaction(
-        InteractionAction[requested],
-        requester_length,
-        target_length,
-        reverse_roll=roll,
-    )
-
-    assert resolution.action is InteractionAction[actual]
-    assert resolution.actor is InteractionParticipant[actor]
-    assert resolution.recipient is InteractionParticipant[recipient]
-    assert resolution.fluid is InteractionFluid[fluid]
-    assert resolution.reversal is InteractionReversal[reversal]
+    people = {InteractionParticipant.REQUESTER: "A", InteractionParticipant.TARGET: "B"}
+    for requested, (action, directions, maximum, fluid) in zip(
+        (InteractionAction.INJECT, InteractionAction.SQUEEZE), expected, strict=True
+    ):
+        resolution = resolve_interaction(requested, requester_length, target_length)
+        assert resolution.action.name == action
+        assert (
+            ",".join(
+                f"{people[flow.source]}>{people[flow.recipient]}"
+                for flow in resolution.transfers
+            )
+            == directions
+        )
+        assert all(flow.max_volume == maximum for flow in resolution.transfers)
+        assert all(flow.fluid.name == fluid for flow in resolution.transfers)
 
 
 @pytest.mark.parametrize(

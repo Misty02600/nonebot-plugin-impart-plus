@@ -15,6 +15,7 @@ from .core import (
     InteractionAction,
     InteractionParticipant,
     InteractionResolution,
+    InteractionVolumeSettlement,
     LengthState,
     PkResolution,
     PossessionStatus,
@@ -133,14 +134,16 @@ class InteractionGuard:
 
 
 @dataclass(frozen=True, slots=True)
+class InteractionReceipt:
+    volume: float
+    settlement: InteractionVolumeSettlement
+
+
+@dataclass(frozen=True, slots=True)
 class InteractionResult:
     resolution: InteractionResolution
-    ejaculation: float
-    today_total: float
     seconds: int
-    recipient_length: float
-    risk_warning: bool
-    feminized: bool
+    receipts: dict[InteractionParticipant, InteractionReceipt]
 
 
 def get_random_num() -> float:
@@ -473,21 +476,7 @@ class GameApplication:
             index=indexes[0],
         )
 
-    async def prepare_interaction(
-        self,
-        scene_ref: SceneRef,
-        user_ref: UserRef,
-    ) -> InteractionGuard:
-        if not await self._data.is_scene_enabled(scene_ref):
-            return InteractionGuard(InteractionGuardType.DISABLED)
-
-        created_users = await self._create_missing_users(user_ref)
-        if created_users:
-            return InteractionGuard(
-                InteractionGuardType.USER_CREATED,
-                created_users=created_users,
-            )
-
+    async def _check_interaction_cooldown(self, user_ref: UserRef) -> InteractionGuard:
         if not await self._cooldown.fuck_cd_check(user_ref):
             remaining = round(
                 self._cooldown.fuck_cd_time
@@ -495,50 +484,50 @@ class GameApplication:
                 3,
             )
             return InteractionGuard(
-                InteractionGuardType.COOLING_DOWN,
-                remaining=remaining,
+                InteractionGuardType.COOLING_DOWN, remaining=remaining
             )
         return InteractionGuard(InteractionGuardType.ALLOWED)
 
-    @staticmethod
-    def roll_interaction() -> float:
-        return random.uniform(0, 1)
+    async def prepare_interaction(
+        self, scene_ref: SceneRef, user_ref: UserRef
+    ) -> InteractionGuard:
+        if not await self._data.is_scene_enabled(scene_ref):
+            return InteractionGuard(InteractionGuardType.DISABLED)
+        async with self._state_lock:
+            created_users = await self._create_missing_users(user_ref)
+            if created_users:
+                return InteractionGuard(
+                    InteractionGuardType.USER_CREATED, created_users=created_users
+                )
+            return await self._check_interaction_cooldown(user_ref)
 
     async def begin_interaction(
         self,
         user_ref: UserRef,
         target_ref: UserRef,
         requested_action: InteractionAction,
-        reverse_roll: float | None,
-    ) -> InteractionResolution:
-        """初始化互动目标、固定结算结果并开始计算冷却。
-
-        Args:
-            user_ref: 命令发起者。
-            target_ref: 已由接入层选定的有效目标。
-            requested_action: 发起者请求的互动动作。
-            reverse_roll: 透命令已生成的反制随机值；榨命令传入 ``None``。
+    ) -> InteractionResolution | InteractionGuard:
+        """在选定目标后复核冷却，固定本次动作与数量档位。
 
         Returns:
-            供选择提示和最终结算共同使用的领域结果。
+            已开始的互动，或被并发请求占用冷却后的拒绝结果。
 
         Raises:
             ValueError: 目标与发起者相同。
         """
         if target_ref == user_ref:
             raise ValueError("互动目标不能是发起者")
-
-        await self._create_missing_users(target_ref)
-        requester_length = await self._data.get_jj_length(user_ref)
-        target_length = await self._data.get_jj_length(target_ref)
-        resolution = resolve_interaction(
-            requested_action,
-            requester_length,
-            target_length,
-            reverse_roll=reverse_roll,
-        )
-        self._cooldown.record_interaction(user_ref)
-        return resolution
+        async with self._state_lock:
+            guard = await self._check_interaction_cooldown(user_ref)
+            if guard.type is not InteractionGuardType.ALLOWED:
+                return guard
+            await self._create_missing_users(target_ref)
+            states = await self._data.get_user_states(user_ref, target_ref)
+            resolution = resolve_interaction(
+                requested_action, states[user_ref].length, states[target_ref].length
+            )
+            self._cooldown.record_interaction(user_ref)
+            return resolution
 
     async def complete_interaction(
         self,
@@ -546,34 +535,37 @@ class GameApplication:
         lucky_user_ref: UserRef,
         resolution: InteractionResolution,
     ) -> InteractionResult:
-        ejaculation = round(random.uniform(1, 100), 3)
+        volumes = {
+            transfer.recipient: round(random.uniform(1, transfer.max_volume), 3)
+            for transfer in resolution.transfers
+        }
         seconds = random.randint(1, 20)
-        recipient = (
-            user_ref
-            if resolution.recipient is InteractionParticipant.REQUESTER
-            else lucky_user_ref
-        )
+        participants = {
+            InteractionParticipant.REQUESTER: user_ref,
+            InteractionParticipant.TARGET: lucky_user_ref,
+        }
+        recipients = [part for part in participants if part in volumes]
         async with self._state_lock:
-            recipient_length = await self._data.get_jj_length(recipient)
-            feminization_roll = (
-                random.random()
-                if resolution.action is InteractionAction.INJECT
-                and is_xnn(recipient_length)
-                else None
+            states = await self._data.get_user_states(
+                *(participants[part] for part in recipients)
             )
-            settlement = await self._data.settle_interaction_volume(
-                recipient,
-                ejaculation,
-                feminization_roll=feminization_roll,
-            )
+            entries = {
+                participants[part]: (
+                    volumes[part],
+                    random.random()
+                    if is_xnn(states[participants[part]].length)
+                    else None,
+                )
+                for part in recipients
+            }
+            settlements = await self._data.settle_interaction_volumes(entries)
         return InteractionResult(
             resolution=resolution,
-            ejaculation=ejaculation,
-            today_total=settlement.total,
             seconds=seconds,
-            recipient_length=settlement.length,
-            risk_warning=settlement.risk_warning,
-            feminized=settlement.feminized,
+            receipts={
+                part: InteractionReceipt(volumes[part], settlements[participants[part]])
+                for part in recipients
+            },
         )
 
     async def set_scene_enabled(

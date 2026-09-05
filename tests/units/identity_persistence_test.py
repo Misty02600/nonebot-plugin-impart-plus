@@ -133,7 +133,7 @@ async def test_possession_persists_both_states_and_preserves_other_data(
 
     h = possession_harness
     for user in (h.user, h.target):
-        await h.manager.settle_interaction_volume(user, 250.0, feminization_roll=None)
+        await h.manager.settle_interaction_volumes({user: (250.0, None)})
 
     def unexpected_random(*_):
         raise AssertionError("夺舍不应消耗结算随机数")
@@ -394,16 +394,8 @@ async def test_data_manager_isolates_same_id_by_namespace(database_harness) -> N
     await manager.add_new_user(telegram_user)
     await manager.set_jj_length(qq_user, 1.0)
     await manager.set_jj_length(telegram_user, 2.0)
-    await manager.settle_interaction_volume(
-        qq_user,
-        3.0,
-        feminization_roll=None,
-    )
-    await manager.settle_interaction_volume(
-        telegram_user,
-        4.0,
-        feminization_roll=None,
-    )
+    await manager.settle_interaction_volumes({qq_user: (3.0, None)})
+    await manager.settle_interaction_volumes({telegram_user: (4.0, None)})
 
     assert await manager.get_jj_length(qq_user) == 11.0
     assert await manager.get_jj_length(telegram_user) == 12.0
@@ -432,10 +424,8 @@ async def test_application_serializes_concurrent_interaction_updates(
     from nonebot_plugin_impart_plus.impart import app as app_module
     from nonebot_plugin_impart_plus.impart.core import (
         InteractionAction,
-        InteractionFluid,
         InteractionParticipant,
-        InteractionResolution,
-        InteractionReversal,
+        resolve_interaction,
     )
 
     manager = game_harness.manager
@@ -445,18 +435,8 @@ async def test_application_serializes_concurrent_interaction_updates(
     await manager.add_new_user(requester)
     await manager.add_new_user(recipient)
     await manager.set_jj_length(recipient, -6.0)
-    await manager.settle_interaction_volume(
-        recipient,
-        990.0,
-        feminization_roll=None,
-    )
-    resolution = InteractionResolution(
-        action=InteractionAction.INJECT,
-        actor=InteractionParticipant.REQUESTER,
-        recipient=InteractionParticipant.TARGET,
-        fluid=InteractionFluid.DNA,
-        reversal=InteractionReversal.NONE,
-    )
+    await manager.settle_interaction_volumes({recipient: (990.0, None)})
+    resolution = resolve_interaction(InteractionAction.INJECT, 10.0, 4.0)
     feminization_calls = 0
 
     def feminization_roll() -> float:
@@ -476,7 +456,13 @@ async def test_application_serializes_concurrent_interaction_updates(
     data = await manager.get_user_query_data(recipient, history=False)
     assert data is not None
     assert data.records[manager.get_today()] == 1030.0
-    assert sum(result.feminized for result in results) == 1
+    assert (
+        sum(
+            result.receipts[InteractionParticipant.TARGET].settlement.feminized
+            for result in results
+        )
+        == 1
+    )
     assert feminization_calls == 1
     assert await manager.get_jj_length(recipient) == -1.0
 
@@ -595,16 +581,15 @@ async def test_gameplay_commands_initialize_missing_users_without_action(
         "requested",
         "requester_length",
         "target_length",
-        "roll",
         "expected_action",
         "expected_recipient",
         "expected_fluid",
     ),
     [
-        ("INJECT", 10.0, None, 0.75, "INJECT", "target", "DNA"),
-        ("INJECT", -10.0, 10.0, 0.75, "INJECT", "requester", "DNA"),
-        ("SQUEEZE", -10.0, -10.0, None, "SQUEEZE", "requester", "GIRL_JUICE"),
-        ("SQUEEZE", 10.0, -10.0, None, "SQUEEZE", "target", "DNA"),
+        ("INJECT", 10.0, None, "INJECT", "target", "DNA"),
+        ("INJECT", -10.0, 10.0, "INJECT", "requester", "DNA"),
+        ("SQUEEZE", -10.0, -10.0, "SQUEEZE", "requester", "GIRL_JUICE"),
+        ("SQUEEZE", 10.0, -10.0, "SQUEEZE", "target", "DNA"),
     ],
 )
 async def test_interaction_records_volume_for_actual_recipient(
@@ -613,7 +598,6 @@ async def test_interaction_records_volume_for_actual_recipient(
     requested: str,
     requester_length: float,
     target_length: float | None,
-    roll: float | None,
     expected_action: str,
     expected_recipient: str,
     expected_fluid: str,
@@ -622,6 +606,8 @@ async def test_interaction_records_volume_for_actual_recipient(
     from nonebot_plugin_impart_plus.impart.core import (
         InteractionAction,
         InteractionFluid,
+        InteractionParticipant,
+        InteractionResolution,
     )
 
     manager = game_harness.manager
@@ -639,8 +625,8 @@ async def test_interaction_records_volume_for_actual_recipient(
         requester,
         target,
         InteractionAction[requested],
-        roll,
     )
+    assert isinstance(resolution, InteractionResolution)
     assert await manager.has_user(target)
     assert requester in cooldown.ejaculation_cd
 
@@ -666,10 +652,11 @@ async def test_interaction_records_volume_for_actual_recipient(
     recipient = requester if expected_recipient == "requester" else target
     other = target if recipient == requester else requester
     assert result.resolution.action is InteractionAction[expected_action]
-    assert result.resolution.fluid is InteractionFluid[expected_fluid]
-    assert result.ejaculation == 12.5
+    assert result.resolution.transfers[0].fluid is InteractionFluid[expected_fluid]
+    receipt = result.receipts[InteractionParticipant(expected_recipient)]
+    assert receipt.volume == 12.5
     assert result.seconds == 4
-    assert result.today_total == 12.5
+    assert receipt.settlement.total == 12.5
     recipient_data = await manager.get_user_query_data(recipient, history=False)
     other_data = await manager.get_user_query_data(other, history=False)
     assert recipient_data is not None
@@ -679,12 +666,17 @@ async def test_interaction_records_volume_for_actual_recipient(
     assert random_calls == ["volume", "seconds"]
 
 
+@pytest.mark.parametrize("squeeze", [False, True])
 async def test_xnn_interaction_feminizes_actual_recipient(
     game_harness,
     monkeypatch: pytest.MonkeyPatch,
+    squeeze: bool,
 ) -> None:
     from nonebot_plugin_impart_plus.impart import app as app_module
-    from nonebot_plugin_impart_plus.impart.core import InteractionAction
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionResolution,
+    )
 
     manager = game_harness.manager
     application = game_harness.application
@@ -693,17 +685,13 @@ async def test_xnn_interaction_feminizes_actual_recipient(
     await manager.add_new_user(requester)
     await manager.add_new_user(recipient)
     await manager.set_jj_length(recipient, -6.0)
-    await manager.settle_interaction_volume(
-        recipient,
-        990.0,
-        feminization_roll=None,
-    )
+    await manager.settle_interaction_volumes({recipient: (990.0, None)})
+    participants = (recipient, requester) if squeeze else (requester, recipient)
     resolution = await application.begin_interaction(
-        requester,
-        recipient,
-        InteractionAction.INJECT,
-        0.75,
+        *participants,
+        InteractionAction.SQUEEZE if squeeze else InteractionAction.INJECT,
     )
+    assert isinstance(resolution, InteractionResolution)
     random_calls: list[str] = []
 
     def volume(*_: object) -> float:
@@ -722,13 +710,14 @@ async def test_xnn_interaction_feminizes_actual_recipient(
     monkeypatch.setattr(app_module.random, "randint", seconds)
     monkeypatch.setattr(app_module.random, "random", feminization)
 
-    result = await application.complete_interaction(requester, recipient, resolution)
+    result = await application.complete_interaction(*participants, resolution)
 
     assert random_calls == ["volume", "seconds", "feminization"]
-    assert result.feminized
-    assert not result.risk_warning
-    assert result.today_total == 1010.0
-    assert result.recipient_length == -1.0
+    settlement = result.receipts[resolution.transfers[0].recipient].settlement
+    assert settlement.feminized
+    assert not settlement.risk_warning
+    assert settlement.total == 1010.0
+    assert settlement.length == -1.0
     assert await manager.get_jj_length(recipient) == -1.0
 
 
@@ -736,7 +725,7 @@ async def test_interaction_settlement_rolls_back_volume_and_length(
     database_harness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from nonebot_plugin_uniref import UserRef, encode_ref
+    from nonebot_plugin_uniref import UserRef
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from nonebot_plugin_impart_plus.infra.database import EjaculationData, UserData
@@ -745,6 +734,10 @@ async def test_interaction_settlement_rolls_back_volume_and_length(
     recipient = UserRef("QQClient", "rollback-recipient")
     await manager.add_new_user(recipient)
     await manager.set_jj_length(recipient, -6.0)
+    other = UserRef("QQClient", "rollback-other")
+    await manager.add_new_user(other)
+    await manager.set_jj_length(other, -7.0)
+    await manager.settle_interaction_volumes({other: (100.0, None)})
 
     original_flush = AsyncSession.flush
 
@@ -759,24 +752,194 @@ async def test_interaction_settlement_rolls_back_volume_and_length(
     with monkeypatch.context() as patch:
         patch.setattr(AsyncSession, "flush", fail_after_flush)
         with pytest.raises(RuntimeError, match="injected flush failure"):
-            await manager.settle_interaction_volume(
-                recipient,
-                1000.0,
-                feminization_roll=0.0,
+            await manager.settle_interaction_volumes(
+                {recipient: (1000.0, 0.0), other: (1000.0, 0.0)}
             )
 
-    encoded = encode_ref(recipient)
     async with database_harness.session_factory() as session:
-        user = (
-            await session.execute(select(UserData).where(UserData.user_ref == encoded))
-        ).scalar_one()
-        records = (
-            await session.execute(
-                select(EjaculationData).where(EjaculationData.user_ref == encoded)
-            )
-        ).scalars()
-        assert user.jj_length == 4.0
-        assert list(records) == []
+        users = (await session.execute(select(UserData))).scalars().all()
+        records = (await session.execute(select(EjaculationData))).scalars().all()
+        assert sorted(user.jj_length for user in users) == [3.0, 4.0]
+        assert len(records) == 1
+        assert records[0].volume == 100.0
+
+
+@pytest.mark.parametrize(
+    ("initial", "rolls", "final_lengths"),
+    [
+        ((100.0, 200.0), (0.999, 0.999), (3.0, 4.0)),
+        ((990.0, 990.0), (0.999, 0.999), (3.0, 4.0)),
+        ((990.0, 990.0), (0.0, 0.999), (-2.0, 4.0)),
+        ((990.0, 990.0), (0.0, 0.0), (-2.0, -1.0)),
+    ],
+)
+async def test_cuddle_settles_opposite_outputs_and_independent_events(
+    game_harness, monkeypatch: pytest.MonkeyPatch, initial, rolls, final_lengths
+) -> None:
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionParticipant,
+        InteractionResolution,
+    )
+
+    h = game_harness
+    people = (h.user, h.target)
+    for user, length in zip(people, (3.0, 4.0), strict=True):
+        await h.manager.add_new_user(user)
+        await h.manager.set_jj_length(user, length - 10.0)
+    await h.manager.settle_interaction_volumes(
+        {user: (total, None) for user, total in zip(people, initial, strict=True)}
+    )
+    resolution = await h.application.begin_interaction(
+        *people, InteractionAction.INJECT
+    )
+    assert isinstance(resolution, InteractionResolution)
+    outputs = iter((7.0, 3.0))
+    random_rolls = iter(rolls)
+    calls = []
+
+    def volume(low, high):
+        calls.append("volume")
+        assert (low, high) == (1, 10)
+        return next(outputs)
+
+    def seconds(*_):
+        calls.append("seconds")
+        return 4
+
+    def feminization():
+        calls.append("feminization")
+        return next(random_rolls)
+
+    today = h.manager.get_today()
+    date_calls = 0
+
+    def get_today():
+        nonlocal date_calls
+        date_calls += 1
+        return today
+
+    monkeypatch.setattr(app_module.random, "uniform", volume)
+    monkeypatch.setattr(app_module.random, "randint", seconds)
+    monkeypatch.setattr(app_module.random, "random", feminization)
+    monkeypatch.setattr(h.manager, "get_today", get_today)
+    result = await h.application.complete_interaction(*people, resolution)
+    assert calls == ["volume", "volume", "seconds", "feminization", "feminization"]
+    assert date_calls == 1
+    for part, user, amount, previous, length in zip(
+        InteractionParticipant, people, (3.0, 7.0), initial, final_lengths, strict=True
+    ):
+        receipt = result.receipts[part]
+        assert receipt.volume == amount
+        assert receipt.settlement.total == previous + amount
+        assert receipt.settlement.length == length
+        assert receipt.settlement.feminized == (length < 0)
+        assert receipt.settlement.risk_warning == (previous <= 200 < previous + amount)
+        snapshot = await h.manager.get_user_query_data(user, history=True)
+        assert snapshot is not None
+        assert snapshot.records == {today: previous + amount}
+        assert await h.manager.get_jj_length(user) == length
+
+
+@pytest.mark.parametrize("enter_xnn", [False, True])
+async def test_interaction_freezes_action_but_uses_latest_recipient_state(
+    game_harness, monkeypatch: pytest.MonkeyPatch, enter_xnn: bool
+) -> None:
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionFluid,
+        InteractionParticipant,
+        InteractionResolution,
+    )
+
+    h = game_harness
+    people = (h.user, h.target)
+    starts = (-30.0, -10.0) if enter_xnn else (3.0, 4.0)
+    for user, length in zip(people, starts, strict=True):
+        await h.manager.add_new_user(user)
+        await h.manager.set_jj_length(user, length - 10.0)
+    await h.manager.settle_interaction_volumes(dict.fromkeys(people, (990.0, None)))
+    resolution = await h.application.begin_interaction(
+        *people, InteractionAction.SQUEEZE
+    )
+    assert isinstance(resolution, InteractionResolution)
+    # 等待期间形态改变：成长离开 XNN，或夺舍进入 XNN。
+    await h.manager.set_jj_length(h.user, 33.0 if enter_xnn else 2.0)
+    rolls = []
+
+    def volume(low, high):
+        assert (low, high) == (1, 100 if enter_xnn else 10)
+        return high
+
+    def feminization():
+        rolls.append("roll")
+        return 0.0
+
+    monkeypatch.setattr(app_module.random, "uniform", volume)
+    monkeypatch.setattr(app_module.random, "randint", lambda *_: 4)
+    monkeypatch.setattr(app_module.random, "random", feminization)
+    result = await h.application.complete_interaction(*people, resolution)
+    assert len(rolls) == 1
+    assert result.resolution is resolution
+    self_result = result.receipts[InteractionParticipant.REQUESTER].settlement
+    assert self_result.feminized is enter_xnn
+    assert self_result.length == (-2.0 if enter_xnn else 5.0)
+    if enter_xnn:
+        assert resolution.action is InteractionAction.SQUEEZE
+        assert resolution.transfers[0].fluid is InteractionFluid.GIRL_JUICE
+    else:
+        assert resolution.action is InteractionAction.CUDDLE
+        assert result.receipts[InteractionParticipant.TARGET].settlement.feminized
+
+
+async def test_interaction_rechecks_cooldown_after_target_selection(
+    game_harness,
+) -> None:
+    from asyncio import gather
+
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuard,
+        InteractionGuardType,
+    )
+    from nonebot_plugin_impart_plus.impart.core import (
+        InteractionAction,
+        InteractionResolution,
+    )
+
+    h = game_harness
+    await h.manager.set_scene_enabled(h.scene, True)
+    await h.manager.add_new_user(h.user)
+    guards = await gather(
+        h.application.prepare_interaction(h.scene, h.user),
+        h.application.prepare_interaction(h.scene, h.user),
+    )
+    assert all(guard.type is InteractionGuardType.ALLOWED for guard in guards)
+    targets = (h.target, UserRef("QQClient", "other-target"))
+    for target in targets:
+        h.cooldown.record_interaction(target)
+    results = await gather(
+        *(
+            h.application.begin_interaction(h.user, target, InteractionAction.INJECT)
+            for target in targets
+        )
+    )
+    assert sum(isinstance(result, InteractionResolution) for result in results) == 1
+    for target, result in zip(targets, results, strict=True):
+        if isinstance(result, InteractionGuard):
+            assert result.type is InteractionGuardType.COOLING_DOWN
+            assert not await h.manager.has_user(target)
+        else:
+            assert await h.manager.has_user(target)
+    h.cooldown.fuck_cd_time = 0
+    for target in targets:
+        result = await h.application.begin_interaction(
+            h.user, target, InteractionAction.INJECT
+        )
+        assert isinstance(result, InteractionResolution)
 
 
 async def test_query_snapshot_filters_today_and_orders_history(

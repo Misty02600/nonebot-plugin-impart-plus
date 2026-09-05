@@ -20,6 +20,7 @@ class GrowthMode(StrEnum):
 class InteractionAction(StrEnum):
     INJECT = "透"
     SQUEEZE = "榨"
+    CUDDLE = "贴贴"
 
 
 class InteractionParticipant(StrEnum):
@@ -96,12 +97,18 @@ class PkSettlement:
 
 
 @dataclass(frozen=True, slots=True)
-class InteractionResolution:
-    action: InteractionAction
-    actor: InteractionParticipant
+class InteractionTransfer:
+    source: InteractionParticipant
     recipient: InteractionParticipant
     fluid: InteractionFluid
+    max_volume: float
+
+
+@dataclass(frozen=True, slots=True)
+class InteractionResolution:
+    action: InteractionAction
     reversal: InteractionReversal
+    transfers: tuple[InteractionTransfer, ...]
 
 
 FEMINIZATION_WARNING_VOLUME = 200.0
@@ -286,7 +293,7 @@ def resolve_interaction_volume(
     *,
     feminization_roll: float | None,
 ) -> InteractionVolumeSettlement:
-    """累计一次互动量，并计算实际被透的 XNN 是否雌堕。"""
+    """累计一次收到的互动量，并计算当前 XNN 是否雌堕。"""
     total = round(previous_total + amount, 3)
     if feminization_roll is not None and is_xnn(current_length):
         feminized = feminization_roll < feminization_probability(total)
@@ -399,85 +406,66 @@ def resolve_pk_settlement(
     )
 
 
+def _preferred_interaction(
+    actor_length: float, other_length: float
+) -> InteractionAction:
+    if actor_length >= 5 or (is_xnn(actor_length) and other_length <= 0):
+        return InteractionAction.INJECT
+    return InteractionAction.SQUEEZE
+
+
 def resolve_interaction(
     requested_action: InteractionAction,
     requester_length: float,
     target_length: float,
-    *,
-    reverse_roll: float | None,
 ) -> InteractionResolution:
-    """将请求动作解析为最多反制一次的实际互动。
-
-    Args:
-        requested_action: 发起者请求的透或榨。
-        requester_length: 发起者当前长度；正值与非正值代表两个世界。
-        target_length: 目标当前长度，用于确定反制动作与榨取液体。
-        reverse_roll: 透命令的 xnn 反制随机值；榨命令传入 ``None``。
-
-    Returns:
-        固定实际动作、行动者、液体接收者、液体名称和反制原因的结果。
-
-    Raises:
-        ValueError: 透命令缺少反制随机值，或榨命令错误携带该随机值。
+    """按双方开始时的状态固定动作、流向与数量档位。
 
     Note:
-        动作与发起者世界不匹配时必定反制，目标不会再次触发反制。
+        双 XNN 优先贴贴；其他错误动作由目标反制一次。透由行动者输出，
+        榨由另一方输出；贴贴依次为发起者向目标、目标向发起者。
+
+    Raises:
+        ValueError: 将仅由状态触发的贴贴作为主动命令。
     """
-    if (requested_action is InteractionAction.INJECT) != (reverse_roll is not None):
-        raise ValueError("只有透命令必须提供反制随机值")
-
-    requester_positive = requester_length > 0
-    requester_can_act = (
-        requester_positive
-        if requested_action is InteractionAction.INJECT
-        else not requester_positive
-    )
-    xnn_reversal = (
-        requested_action is InteractionAction.INJECT
-        and requester_positive
-        and is_xnn(requester_length)
-        and reverse_roll is not None
-        and reverse_roll < 0.5
-    )
-
-    if not requester_can_act:
-        reversal = InteractionReversal.WRONG_ACTION
-    elif xnn_reversal:
-        reversal = InteractionReversal.XNN
-    else:
-        reversal = InteractionReversal.NONE
-
-    if reversal is InteractionReversal.NONE:
-        action = requested_action
-        actor = InteractionParticipant.REQUESTER
-    else:
-        action = (
-            InteractionAction.INJECT if target_length > 0 else InteractionAction.SQUEEZE
+    if requested_action is InteractionAction.CUDDLE:
+        raise ValueError("贴贴只能由双方 XNN 状态触发")
+    requester = InteractionParticipant.REQUESTER
+    target = InteractionParticipant.TARGET
+    if is_xnn(requester_length) and is_xnn(target_length):
+        return InteractionResolution(
+            InteractionAction.CUDDLE,
+            InteractionReversal.NONE,
+            (
+                InteractionTransfer(requester, target, InteractionFluid.DNA, 10),
+                InteractionTransfer(target, requester, InteractionFluid.DNA, 10),
+            ),
         )
-        actor = InteractionParticipant.TARGET
+
+    if requested_action is _preferred_interaction(requester_length, target_length):
+        action = requested_action
+        actor, other = requester, target
+        actor_length, other_length = requester_length, target_length
+        reversal = InteractionReversal.NONE
+    else:
+        action = _preferred_interaction(target_length, requester_length)
+        actor, other = target, requester
+        actor_length, other_length = target_length, requester_length
+        reversal = (
+            InteractionReversal.XNN
+            if is_xnn(requester_length)
+            else InteractionReversal.WRONG_ACTION
+        )
 
     if action is InteractionAction.INJECT:
-        recipient = (
-            InteractionParticipant.TARGET
-            if actor is InteractionParticipant.REQUESTER
-            else InteractionParticipant.REQUESTER
+        transfer = InteractionTransfer(
+            actor, other, InteractionFluid.DNA, 10 if is_xnn(actor_length) else 100
         )
-        fluid = InteractionFluid.DNA
     else:
-        recipient = actor
-        source_length = (
-            target_length
-            if actor is InteractionParticipant.REQUESTER
-            else requester_length
+        transfer = InteractionTransfer(
+            other,
+            actor,
+            InteractionFluid.DNA if other_length > 0 else InteractionFluid.GIRL_JUICE,
+            100,
         )
-        fluid = (
-            InteractionFluid.DNA if source_length > 0 else InteractionFluid.GIRL_JUICE
-        )
-
-    return InteractionResolution(
-        action=action,
-        actor=actor,
-        recipient=recipient,
-        fluid=fluid,
-        reversal=reversal,
-    )
+    return InteractionResolution(action, reversal, (transfer,))
