@@ -1636,6 +1636,61 @@ async def test_negative_growth_can_start_challenge(
     assert await manager.get_win_probability(target) == 0.45
 
 
+@pytest.mark.parametrize("ranking", [False, True], ids=["query", "ranking"])
+async def test_query_and_interaction_share_user_initialization(
+    game_harness, monkeypatch: pytest.MonkeyPatch, ranking: bool
+) -> None:
+    import asyncio
+
+    from nonebot_plugin_uniref import UserRef
+
+    from nonebot_plugin_impart_plus.impart.app import (
+        InteractionGuardType,
+        QueryOutcomeType,
+        RankingOutcomeType,
+    )
+
+    h = game_harness
+    await h.manager.set_scene_enabled(h.scene, True)
+    if ranking:
+        for index in range(5):
+            await h.manager.add_new_user(UserRef("QQClient", f"seed-{index}"))
+
+    original_add = h.manager.add_new_user
+    insert_started = asyncio.Event()
+    calls = []
+
+    async def slow_add(user_ref: UserRef) -> None:
+        calls.append(user_ref)
+        insert_started.set()
+        await asyncio.sleep(0.05)
+        await original_add(user_ref)
+
+    monkeypatch.setattr(h.manager, "add_new_user", slow_add)
+
+    async def query_after_insert_started():
+        await insert_started.wait()
+        if ranking:
+            return await h.application.query_ranking(h.scene, h.user)
+        return await h.application.query_user(h.scene, h.user, h.user)
+
+    interaction, query = await asyncio.wait_for(
+        asyncio.gather(
+            h.application.prepare_interaction(h.scene, h.user),
+            query_after_insert_started(),
+        ),
+        timeout=3,
+    )
+
+    assert interaction.type is InteractionGuardType.USER_CREATED
+    assert query.type is (
+        RankingOutcomeType.COMPLETED if ranking else QueryOutcomeType.COMPLETED
+    )
+    assert calls == [h.user]
+    assert await h.manager.get_jj_length(h.user) == 10.0
+    assert h.cooldown.ejaculation_cd == {}
+
+
 async def test_application_ranking_is_partitioned_by_namespace(
     database_harness,
 ) -> None:
@@ -1678,3 +1733,9 @@ async def test_application_ranking_is_partitioned_by_namespace(
     assert qq_outcome.index == 2
     assert [entry.user.namespace for entry in qq_outcome.ranking] == ["QQClient"] * 6
     assert telegram_outcome.type is RankingOutcomeType.TOO_FEW
+
+    newcomer = UserRef("Telegram", "newcomer")
+    assert (
+        await application.query_ranking(telegram_scene, newcomer)
+    ).type is RankingOutcomeType.TOO_FEW
+    assert not await manager.has_user(newcomer)

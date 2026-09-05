@@ -474,7 +474,8 @@ class GameApplication:
         if not await self._data.is_scene_enabled(scene_ref):
             return QueryOutcome(QueryOutcomeType.DISABLED)
 
-        created_users = await self._create_missing_users(requester_ref, target_ref)
+        async with self._state_lock:
+            created_users = await self._create_missing_users(requester_ref, target_ref)
         if created_users:
             return QueryOutcome(
                 QueryOutcomeType.USER_CREATED,
@@ -501,16 +502,19 @@ class GameApplication:
     ) -> RankingOutcome:
         if not await self._data.is_scene_enabled(scene_ref):
             return RankingOutcome(RankingOutcomeType.DISABLED)
-        ranking = [
-            RankingEntry(user=user, length=length)
-            for user, length in await self._data.get_ranking(user_ref.namespace)
-        ]
-        if len(ranking) < 5:
-            return RankingOutcome(RankingOutcomeType.TOO_FEW)
-        indexes = [index for index, item in enumerate(ranking) if item.user == user_ref]
-        if not indexes:
-            await self._data.add_new_user(user_ref)
-            return RankingOutcome(RankingOutcomeType.USER_CREATED)
+        async with self._state_lock:
+            ranking = [
+                RankingEntry(user=user, length=length)
+                for user, length in await self._data.get_ranking(user_ref.namespace)
+            ]
+            if len(ranking) < 5:
+                return RankingOutcome(RankingOutcomeType.TOO_FEW)
+            indexes = [
+                index for index, item in enumerate(ranking) if item.user == user_ref
+            ]
+            if not indexes:
+                await self._data.add_new_user(user_ref)
+                return RankingOutcome(RankingOutcomeType.USER_CREATED)
         return RankingOutcome(
             RankingOutcomeType.COMPLETED,
             ranking=ranking,
