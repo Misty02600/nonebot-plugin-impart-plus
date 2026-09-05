@@ -59,6 +59,11 @@ def test_alconna_matcher_registration(app: App):
     from nonebot_plugin_impart_plus.bot.matchers import (
         impart_matcher,
         interaction_matcher,
+        pk_matcher,
+        possession_matcher,
+        rank_matcher,
+        self_growth_matcher,
+        target_growth_matcher,
     )
 
     plugin = get_plugin("nonebot_plugin_impart_plus")
@@ -82,6 +87,17 @@ def test_alconna_matcher_registration(app: App):
     assert len(dispatch_matchers["history_query"].permission.checkers) == 0
     assert len(dispatch_matchers["help"].permission.checkers) == 0
     assert all(matcher.block for matcher in dispatch_matchers.values())
+
+    public_matchers = (
+        pk_matcher,
+        possession_matcher,
+        self_growth_matcher,
+        target_growth_matcher,
+        rank_matcher,
+        interaction_matcher,
+        impart_matcher,
+    )
+    assert all(len(matcher.permission.checkers) == 2 for matcher in public_matchers)
 
     assert interaction_matcher.priority == 20
     assert interaction_matcher.block is True

@@ -72,7 +72,7 @@ IMPART_COMMAND = Alconna(
 pk_matcher = on_alconna(
     PK_COMMAND,
     aliases={"对决"},
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,
     block=False,
@@ -80,7 +80,7 @@ pk_matcher = on_alconna(
 
 possession_matcher = on_alconna(
     POSSESSION_COMMAND,
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,
     block=True,
@@ -88,7 +88,7 @@ possession_matcher = on_alconna(
 
 self_growth_matcher = on_alconna(
     SELF_GROW_COMMAND,
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,
     block=True,
@@ -96,7 +96,7 @@ self_growth_matcher = on_alconna(
 
 target_growth_matcher = on_alconna(
     TARGET_GROW_COMMAND,
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,
     block=True,
@@ -104,7 +104,7 @@ target_growth_matcher = on_alconna(
 
 rank_matcher = on_alconna(
     RANK_COMMAND,
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,
     block=True,
@@ -112,7 +112,7 @@ rank_matcher = on_alconna(
 
 interaction_matcher = on_alconna(
     INTERACTION_COMMAND,
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=20,
     block=True,
@@ -121,7 +121,7 @@ interaction_matcher = on_alconna(
 impart_matcher = on_alconna(
     IMPART_COMMAND,
     aliases={"impart"},
-    rule=GROUP | GUILD,
+    permission=GROUP | GUILD,
     use_cmd_start=True,
     priority=1,
     block=False,
