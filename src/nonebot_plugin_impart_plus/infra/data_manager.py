@@ -33,6 +33,7 @@ from .database import (
 @dataclass(frozen=True, slots=True)
 class UserQueryData:
     length: float
+    win_probability: float
     challenge_tier: int
     today_total: float
     records: dict[str, float]
@@ -394,7 +395,7 @@ class DataManager:
         *,
         history: bool,
     ) -> UserQueryData | None:
-        """用一条查询取得用户长度和所需范围内的互动记录。"""
+        """用一条查询取得用户状态和所需范围内的互动记录。"""
         encoded = _encode_persistent_ref(user_ref)
         today = self.get_today()
         join_condition = EjaculationData.user_ref == UserData.user_ref
@@ -403,6 +404,7 @@ class DataManager:
         statement = (
             select(
                 UserData.jj_length,
+                UserData.win_probability,
                 UserData.challenge_tier,
                 EjaculationData.date,
                 EjaculationData.volume,
@@ -424,6 +426,7 @@ class DataManager:
         }
         return UserQueryData(
             length=rows[0].jj_length,
+            win_probability=rows[0].win_probability,
             challenge_tier=rows[0].challenge_tier,
             today_total=records.get(today, 0.0),
             records=records,

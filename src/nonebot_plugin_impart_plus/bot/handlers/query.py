@@ -62,30 +62,31 @@ async def query_user(
         )
 
     if outcome.state is LengthState.GOD:
-        message = f"✨{challenge_title(outcome.challenge_tier, GrowthMode.LENGTH)}✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
+        message = f"✨{challenge_title(outcome.challenge_tier, GrowthMode.LENGTH)}✨ {pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm"
     elif outcome.state is LengthState.ABYSS_LORD:
-        message = f"🕳️{challenge_title(outcome.challenge_tier, GrowthMode.DEPTH)}🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm喵"
+        message = f"🕳️{challenge_title(outcome.challenge_tier, GrowthMode.DEPTH)}🕳️ {pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm"
     elif outcome.state is LengthState.NORMAL:
-        message = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
+        message = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm"
     elif outcome.state is LengthState.XNN:
         status = "快要变成女孩子啦" if outcome.today_total > 200 else "已经是xnn啦"
         message = (
-            f"{pronoun}{status}！\n{pronoun}的{choice(JJ_NAMES)}目前长度为"
-            f"{outcome.length}cm喵"
+            f"{pronoun}{status}！{pronoun}的{choice(JJ_NAMES)}目前长度为"
+            f"{outcome.length}cm"
         )
     else:
         message = (
-            f"{pronoun}已经是女孩子啦！\n{pronoun}的{HOLE_NAME}目前深度为"
-            f"{abs(outcome.length)}cm喵"
+            f"{pronoun}已经是女孩子啦！{pronoun}的{HOLE_NAME}目前深度为"
+            f"{abs(outcome.length)}cm"
         )
 
-    message += f"\n{pronoun}当日总注入量为{outcome.today_total}ml"
+    message += f"，{pronoun}目前的胜率为{round(outcome.win_probability * 100, 3):g}%"
+    message += f"，{pronoun}当日总注入量为{outcome.today_total}ml"
     if outcome.history_total is None:
-        await matcher.finish(message, at_sender=True)
+        await matcher.finish(f"{message}喵", at_sender=True)
 
-    message += f"\n{pronoun}历史总注入量为{outcome.history_total}ml"
+    message += f"，{pronoun}历史总注入量为{outcome.history_total}ml"
     if len(outcome.history) < 2:
-        await matcher.finish(message, at_sender=True)
+        await matcher.finish(f"{message}喵", at_sender=True)
     user = await get_user_or_none(interface, target_ref.id)
     try:
         img_bytes = await chart_renderer.render_history(
@@ -96,9 +97,9 @@ async def query_user(
         )
     except Exception:
         logger.exception("历史图表生成失败")
-        await matcher.finish(f"{message}\n图表生成失败", at_sender=True)
+        await matcher.finish(f"{message}，图表生成失败喵", at_sender=True)
     await cast(AlconnaMatcher, matcher).finish(
-        UniMessage.text(message).image(
+        UniMessage.text(f"{message}喵").image(
             raw=img_bytes,
         ),
         fallback=AUTO,

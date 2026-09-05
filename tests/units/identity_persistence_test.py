@@ -971,9 +971,11 @@ async def test_interaction_rechecks_cooldown_after_target_selection(
         assert isinstance(result, InteractionResolution)
 
 
+@pytest.mark.parametrize("probability", [0.0, 0.45])
 async def test_query_snapshot_filters_today_and_orders_history(
     game_harness,
     database_harness,
+    probability: float,
 ) -> None:
     from nonebot_plugin_uniref import encode_ref
 
@@ -985,6 +987,7 @@ async def test_query_snapshot_filters_today_and_orders_history(
     user = game_harness.user
     today = manager.get_today()
     await manager.add_new_user(user)
+    await manager.set_win_probability(user, probability - 0.5)
     await manager.set_scene_enabled(scene, True)
     async with database_harness.session_factory() as session, session.begin():
         session.add_all(
@@ -1006,6 +1009,8 @@ async def test_query_snapshot_filters_today_and_orders_history(
     outcome = await application.query_user(scene, user, user, history=True)
 
     assert daily is not None
+    assert daily.win_probability == probability
+    assert outcome.win_probability == probability
     assert list(daily.records) == [today]
     assert list(outcome.history) == sorted(("2026-08-30", today))
     assert outcome.today_total == 5.5

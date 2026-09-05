@@ -43,6 +43,7 @@ async def test_query_merges_xnn_state_and_daily_total(
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=4.0,
+            win_probability=0.45678,
             state=LengthState.XNN,
             today_total=total,
         )
@@ -64,7 +65,8 @@ async def test_query_merges_xnn_state_and_daily_total(
         (make_scene_ref("12345"), make_user_ref(), make_user_ref("67890"), False)
     ]
     assert matcher.messages == [
-        f"TA{status}！\nTA的牛牛目前长度为4.0cm喵\nTA当日总注入量为{total}ml"
+        f"TA{status}！TA的牛牛目前长度为4.0cm"
+        f"，TA目前的胜率为45.678%，TA当日总注入量为{total}ml喵"
     ]
 
 
@@ -104,6 +106,7 @@ async def test_history_query_appends_total_and_chart(
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=-2.5,
+            win_probability=0.0,
             state=LengthState.GIRL,
             today_total=5.5,
             history_total=8.5,
@@ -145,14 +148,18 @@ async def test_history_query_appends_total_and_chart(
 
     assert user_calls == ["67890" if mentioned else "10001"]
     pronoun = "TA" if mentioned else "你"
-    assert f"{pronoun}的小学目前深度为2.5cm喵" in matcher.messages[0]
+    assert f"{pronoun}的小学目前深度为2.5cm" in matcher.messages[0]
+    assert f"{pronoun}目前的胜率为0%" in matcher.messages[0]
     assert f"{pronoun}当日总注入量为5.5ml" in matcher.messages[0]
     assert f"{pronoun}历史总注入量为8.5ml" in matcher.messages[0]
+    assert "\n" not in matcher.messages[0]
+    assert matcher.messages[0].count("喵") == 1
     if render_fails:
-        assert matcher.messages[0].endswith("\n图表生成失败")
+        assert matcher.messages[0].endswith("，图表生成失败喵")
         return
     assert isinstance(matcher.raw_messages[0], UniMessage)
     assert isinstance(matcher.raw_messages[0][0], Text)
+    assert matcher.raw_messages[0][0].text.endswith("ml喵")
     assert isinstance(matcher.raw_messages[0][1], Image)
     assert matcher.options[0]["fallback"] is AUTO
 
@@ -195,3 +202,6 @@ async def test_query_uses_held_tier_for_title_in_retention_band(
                     cast(Interface, None),
                 )
             assert title in matcher.messages[0]
+            assert "\n" not in matcher.messages[0]
+            assert matcher.messages[0].count("喵") == 1
+            assert matcher.messages[0].endswith("喵")

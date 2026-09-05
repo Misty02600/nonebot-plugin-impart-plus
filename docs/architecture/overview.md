@@ -84,7 +84,7 @@ HTMLKit 是唯一图片实现。资料查询失败退回用户 ID、头像获取
 - 英文根命令 alias `impart` 只接受小写；排行榜自身的 `rank` 正则仍保持大小写不敏感。上游 `IMPART帮助` 等大小写变体不再作为兼容入口。
 - `bot/handlers/` 已按 `game`、`interaction`、`possession`、`query`、`records`、`control` 拆分；普通查询和历史查询共享一个 Handler，`records.py` 只负责排行榜。群友、管理、群主共享互动 Handler，打胶与开扣共享成长 Handler。
 - `get_jj_length()` 和 `get_win_probability()` 使用真假值回退默认值，持久化的精确 `0` 与“没有查询结果”不能被区分。
-- 用户文案与底层字段均保留“胜率”语义；当前 PK 直接使用发起者的 `win_probability` 判定，查询暂不展示该值，双方胜率归一化延后为独立玩法改动。
+- 用户文案与底层字段均保留“胜率”语义；当前 PK 直接使用发起者的 `win_probability` 判定，普通与历史查询从同一 SQL 快照取得该值并显示为百分比（最多三位小数），包含已生效的挑战减益，不重复应用倍率。双方胜率归一化延后为独立玩法改动。
 - UniRef 0.4 的 QQAPI 群成员和频道用户使用复合完整 `UserRef.id`；排行榜当前不能据此可靠查询 Uninfo 用户资料，查询失败时退回 Ref ID 展示，不拆解上游私有格式，等待 UniRef 提供 Ref 到资料的公开查询入口。
 - Discord 的群主身份不能从普通角色权限可靠推导；Uninfo 0.11.1 的 `OWNER` 映射尚不足以证明真实 Guild owner。该限制仅作为理论兼容边界记录，不是当前发布闸门，本插件也不添加 Discord 专用查询分支。
 - 旧库导入只识别 `nonebot_plugin_impart` 在当前 LocalStore 配置下的标准 `impart.db`，不提供手工路径、合并、覆盖或反向同步；源库缺少必要表或基础列时启动失败，后加的挑战列缺失时使用上游默认值，派生展示列会被忽略，零长度统一导入为 `-0.001`。

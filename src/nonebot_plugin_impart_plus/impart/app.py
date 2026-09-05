@@ -110,6 +110,7 @@ class QueryOutcome:
     type: QueryOutcomeType
     created_users: tuple[UserRef, ...] = ()
     length: float = 0
+    win_probability: float = 0
     challenge_tier: int = 0
     state: LengthState = LengthState.NORMAL
     today_total: float = 0
@@ -488,6 +489,7 @@ class GameApplication:
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=data.length,
+            win_probability=data.win_probability,
             challenge_tier=data.challenge_tier,
             state=classify_length(data.length, challenge_tier=data.challenge_tier),
             today_total=data.today_total,
