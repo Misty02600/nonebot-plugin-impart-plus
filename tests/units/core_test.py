@@ -69,72 +69,129 @@ def test_interaction_resolution_is_symmetric(
 
 def test_challenge_transitions_are_derived_from_tier_and_length() -> None:
     from nonebot_plugin_impart_plus.impart.core import (
-        LengthState,
+        CHALLENGE_TIERS,
         UserGameState,
         active_challenge,
-        classify_length,
         evaluate_state_transition,
         resolve_pk_settlement,
     )
 
-    cases = (
-        (24.9, 25.0, 0, 0.5, "challenge_started_low_win", 25.0, 0.4, 0),
-        (-24.9, -25.0, 0, 0.5, "challenge_started_low_win", -25.0, 0.4, 0),
-        (25.0, 30.0, 0, 0.4, "challenge_success_high_win", 30.0, 0.5, 1),
-        (-25.0, -30.0, 0, 0.4, "challenge_success_high_win", -30.0, 0.5, 1),
-        (25.1, 24.9, 0, 0.4, "challenge_failed_high_win", 19.9, 0.5, 0),
-        (-25.1, -24.9, 0, 0.4, "challenge_failed_high_win", -19.9, 0.5, 0),
-        (25.1, 24.9, 1, 0.5, "challenge_completed_reduce", 19.9, 0.5, 0),
-        (24.8, 30.1, 0, 0.5, "challenge_completed", 30.1, 0.5, 1),
-    )
-    for (
-        before_length,
-        base_length,
-        tier,
-        probability,
-        status,
-        length,
-        final_probability,
-        final_tier,
-    ) in cases:
-        before = UserGameState(before_length, probability, tier)
-        evaluation = evaluate_state_transition(
-            before,
-            UserGameState(base_length, probability, tier),
+    assert [
+        (r.entry, r.target, r.penalty, r.win_multiplier) for r in CHALLENGE_TIERS
+    ] == [
+        (25, 30, 5, 0.9),
+        (300, 320, 20, 0.8),
+        (1000, 1050, 50, 0.7),
+    ]
+    for rule in CHALLENGE_TIERS:
+        tier = rule.tier
+        reduced = 0.5 * rule.win_multiplier
+        cases = (
+            (
+                rule.entry - 0.1,
+                rule.entry,
+                tier - 1,
+                0.5,
+                "challenge_started_low_win",
+                rule.entry,
+                reduced,
+                tier - 1,
+            ),
+            (
+                rule.entry,
+                rule.target - 0.001,
+                tier - 1,
+                reduced,
+                "is_challenging",
+                rule.target - 0.001,
+                reduced,
+                tier - 1,
+            ),
+            (
+                rule.target - 0.1,
+                rule.target,
+                tier - 1,
+                reduced,
+                "challenge_success_high_win",
+                rule.target,
+                0.5,
+                tier,
+            ),
+            (
+                rule.entry + 0.1,
+                rule.entry - 0.1,
+                tier - 1,
+                reduced,
+                "challenge_failed_high_win",
+                rule.entry - 0.1 - rule.penalty,
+                0.5,
+                tier - 1,
+            ),
+            (
+                rule.entry + 0.1,
+                rule.entry - 0.1,
+                tier,
+                0.5,
+                "challenge_completed_reduce",
+                rule.entry - 0.1 - rule.penalty,
+                0.5,
+                tier - 1,
+            ),
+            (
+                rule.entry - 0.1,
+                rule.target + 0.1,
+                tier - 1,
+                0.5,
+                "challenge_completed",
+                rule.target + 0.1,
+                0.5,
+                tier,
+            ),
         )
-        assert (
-            evaluation.status,
-            evaluation.state.length,
-            evaluation.state.win_probability,
-            evaluation.state.challenge_tier,
-        ) == (status, length, final_probability, final_tier)
+        for sign in (1, -1):
+            for (
+                old,
+                new,
+                held,
+                probability,
+                status,
+                final,
+                final_probability,
+                final_tier,
+            ) in cases:
+                result = evaluate_state_transition(
+                    UserGameState(sign * old, probability, held),
+                    UserGameState(sign * new, probability, held),
+                )
+                assert result.status == status
+                assert result.state.length == pytest.approx(sign * final)
+                assert result.state.win_probability == pytest.approx(final_probability)
+                assert result.state.challenge_tier == final_tier
+                assert result.challenge == (
+                    None if status == "is_challenging" else rule
+                )
+            assert (
+                active_challenge(UserGameState(sign * rule.entry, reduced, tier - 1))
+                == rule
+            )
+            held_state = UserGameState(sign * rule.entry, 0.5, tier)
+            assert active_challenge(held_state) is None
+            assert evaluate_state_transition(held_state, held_state).state == held_state
 
-    assert active_challenge(UserGameState(25, 0.4, 0))
-    assert active_challenge(UserGameState(-29.999, 0.4, 0))
-    assert active_challenge(UserGameState(25, 0.5, 1)) is None
-    restored = evaluate_state_transition(
-        UserGameState(25.1, 0.4),
-        UserGameState(24.9, 0.41),
-    )
-    assert restored.state.win_probability == pytest.approx(0.5125)
-    assert classify_length(27, challenge_tier=1) is LengthState.GOD
-    assert classify_length(-27, challenge_tier=1) is LengthState.ABYSS_LORD
-    assert classify_length(30, challenge_tier=0) is LengthState.NORMAL
-
-    # 保留乘1.25的浮点路径；改成除0.8会使下一局舍入为0.477。
+    # 二阶仍保留乘1.25的浮点路径，改为除0.8会让下一局舍入为0.477。
     completed = resolve_pk_settlement(
-        UserGameState(29.9, 0.4),
-        (UserGameState(40, 0.5, 1),),
+        UserGameState(319.9, 0.4, 1),
+        (UserGameState(350, 0.5, 2),),
         win_roll=0,
-        random_num=0.2,
+        random_num=0.1,
     )
     following = resolve_pk_settlement(
         completed.attacker.final,
-        tuple(target.final for target in completed.defenders),
+        tuple(p.final for p in completed.defenders),
         win_roll=0,
-        random_num=0.2,
+        random_num=0.1,
     )
-    assert completed.attacker.final.challenge_tier == 1
+    assert completed.attacker.final.challenge_tier == 2
     assert following.attacker.final.win_probability == 0.478
 
 
@@ -146,7 +203,7 @@ def test_growth_multiplier_uses_the_tier_before_settlement() -> None:
     )
 
     completed = resolve_growth_settlement(
-        UserGameState(29.8, 0.4),
+        UserGameState(29.8, 0.45),
         GrowthMode.LENGTH,
         0.3,
     )
@@ -161,7 +218,11 @@ def test_growth_multiplier_uses_the_tier_before_settlement() -> None:
         0.3,
     )
 
-    assert (completed.amount, completed.final.length, completed.completed_tier) == (
+    assert (
+        completed.amount,
+        completed.final.length,
+        completed.final.challenge_tier,
+    ) == (
         0.3,
         30.1,
         1,
@@ -170,49 +231,57 @@ def test_growth_multiplier_uses_the_tier_before_settlement() -> None:
     assert (depth.amount, depth.final.length) == (0.6, -30.6)
 
 
-def test_temporary_second_tier_keeps_lower_reward_and_drops_once() -> None:
+def test_higher_tier_pk_and_growth_use_personal_starting_multipliers() -> None:
     from nonebot_plugin_impart_plus.impart.core import (
-        CHALLENGE_TIERS,
-        ChallengeTier,
+        GrowthMode,
         UserGameState,
-        evaluate_state_transition,
-        personal_length_multiplier,
+        resolve_growth_settlement,
+        resolve_pk_settlement,
     )
 
-    tiers = (
-        *CHALLENGE_TIERS,
-        ChallengeTier(2, 300, 305, 0.7, 10 / 7, 20),
-    )
-    challenger = UserGameState(301, 0.35, 1)
-    success = evaluate_state_transition(
-        challenger,
-        UserGameState(305, 0.35, 1),
-        tiers,
-    )
-    failure = evaluate_state_transition(
-        challenger,
-        UserGameState(299, 0.35, 1),
-        tiers,
-    )
+    for tier, length, count, gain, loss in (
+        (2, 500, 3, 2.7, -5.4),
+        (3, 1500, 4, 4.8, -9.6),
+    ):
+        for sign, mode in ((1, GrowthMode.LENGTH), (-1, GrowthMode.DEPTH)):
+            actor = UserGameState(sign * length, 0.5, tier)
+            for targets in (1, count):
+                opponents = tuple(UserGameState(sign * 10, 0.5) for _ in range(targets))
+                for roll, expected in (
+                    (0, gain * targets / count),
+                    (1, loss * targets / count),
+                ):
+                    result = resolve_pk_settlement(
+                        actor, opponents, win_roll=roll, random_num=0.6
+                    )
+                    assert result.attacker.length_change == pytest.approx(expected)
+                    assert result.attacker.final.win_probability == (
+                        0.49 if roll == 0 else 0.51
+                    )
+                    assert all(
+                        p.length_change == (-0.6 if roll == 0 else 0.3)
+                        for p in result.defenders
+                    )
+            growth = resolve_growth_settlement(actor, mode, 0.3)
+            assert growth.amount == pytest.approx(0.3 * (tier + 1))
 
-    assert personal_length_multiplier(challenger) == 2
-    assert (success.status, success.state.challenge_tier) == (
-        "challenge_success_high_win",
-        2,
+    dropped = resolve_pk_settlement(
+        UserGameState(1001, 0.5, 3),
+        tuple(UserGameState(10, 0.5) for _ in range(4)),
+        win_roll=1,
+        random_num=0.1,
     )
-    assert success.state.win_probability == pytest.approx(0.5)
     assert (
-        failure.status,
-        failure.state.length,
-        failure.state.challenge_tier,
-        failure.state.win_probability,
-    ) == ("challenge_failed_high_win", 279, 1, pytest.approx(0.5))
+        dropped.attacker.base.length,
+        dropped.attacker.final.length,
+        dropped.attacker.final.challenge_tier,
+    ) == (999.4, 949.4, 2)
+    assert dropped.attacker.challenge is not None
+    assert dropped.attacker.challenge.penalty == 50
 
 
 def test_possession_assigns_tier_by_half_and_handles_active_challenge() -> None:
     from nonebot_plugin_impart_plus.impart.core import (
-        CHALLENGE_TIERS,
-        ChallengeTier,
         PossessionSettlement,
         PossessionStatus,
         UserGameState,
@@ -222,15 +291,16 @@ def test_possession_assigns_tier_by_half_and_handles_active_challenge() -> None:
     actor = UserGameState(-70, 0.6, 1)
     lost_title = resolve_possession(actor, UserGameState(49.998, 0.4, 1))
     kept_title = resolve_possession(actor, UserGameState(49.999, 0.4, 1))
-    gained_title = resolve_possession(actor, UserGameState(60, 0.4))
+    gained_title = resolve_possession(actor, UserGameState(60, 0.4, 1))
 
     assert isinstance(lost_title, PossessionSettlement)
     assert (lost_title.half, lost_title.actor.challenge_tier) == (24.999, 0)
     assert (
         lost_title.target.length,
         lost_title.target.challenge_tier,
-        lost_title.target_status,
-    ) == (19.999, 0, "challenge_completed_reduce")
+    ) == (19.999, 0)
+    assert lost_title.target_challenge is not None
+    assert lost_title.target_challenge.tier == 1
     assert isinstance(kept_title, PossessionSettlement)
     assert (kept_title.half, kept_title.target.challenge_tier) == (25, 1)
     assert isinstance(gained_title, PossessionSettlement)
@@ -251,29 +321,52 @@ def test_possession_assigns_tier_by_half_and_handles_active_challenge() -> None:
         is PossessionStatus.LOCKED
     )
 
-    tiers = (
-        *CHALLENGE_TIERS,
-        ChallengeTier(2, 300, 305, 0.7, 10 / 7, 20),
-    )
-    active_actor = resolve_possession(
-        UserGameState(-302, 0.35, 1),
-        UserGameState(280, 0.5, 1),
-        tiers,
-    )
-    high_actor = resolve_possession(
-        UserGameState(-700, 0.5, 2),
-        UserGameState(640, 0.5, 2),
-        tiers,
-    )
-    assert isinstance(active_actor, PossessionSettlement)
-    assert (
-        active_actor.half,
-        active_actor.actor.challenge_tier,
-        active_actor.actor.win_probability,
-    ) == (140, 1, pytest.approx(0.5))
-    assert isinstance(high_actor, PossessionSettlement)
-    assert (high_actor.half, high_actor.actor.challenge_tier) == (320, 2)
-    assert high_actor.target.challenge_tier == 2
+    for actor, target, half, actor_tier, target_length, target_tier, probability in (
+        (UserGameState(-302, 0.4, 1), UserGameState(280, 0.5, 1), 140, 1, 140, 1, 0.5),
+        (UserGameState(-700, 0.5, 2), UserGameState(640, 0.5, 2), 320, 2, 320, 2, 0.5),
+        (
+            UserGameState(-1020, 0.35, 2),
+            UserGameState(900, 0.5, 2),
+            450,
+            2,
+            450,
+            2,
+            0.5,
+        ),
+        (
+            UserGameState(-2500, 0.5, 3),
+            UserGameState(2000, 0.5, 3),
+            1000,
+            3,
+            1000,
+            3,
+            0.5,
+        ),
+        (
+            UserGameState(-2500, 0.5, 3),
+            UserGameState(1500, 0.5, 3),
+            750,
+            2,
+            700,
+            2,
+            0.5,
+        ),
+    ):
+        result = resolve_possession(actor, target)
+        assert isinstance(result, PossessionSettlement)
+        assert (
+            result.half,
+            result.actor.challenge_tier,
+            result.target.length,
+            result.target.challenge_tier,
+        ) == (half, actor_tier, target_length, target_tier)
+        assert result.actor.win_probability == pytest.approx(probability)
+        if result.target_challenge:
+            assert result.target_challenge.tier == target.challenge_tier
+        assert (
+            resolve_possession(actor, UserGameState(1001, 0.35, 2))
+            is PossessionStatus.TARGET_CHALLENGING
+        )
 
 
 def test_pk_uses_one_roll_and_personal_multiplier_for_all_participants() -> None:

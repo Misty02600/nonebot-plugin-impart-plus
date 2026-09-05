@@ -141,7 +141,8 @@ async def test_possession_persists_both_states_and_preserves_other_data(
     result = await h.application.execute_possession(h.scene, h.user, h.target)
     assert result.type is PossessionStatus.COMPLETED
     assert result.half == 24.999
-    assert result.target_status == "challenge_completed_reduce"
+    assert result.target_challenge is not None
+    assert result.target_challenge.tier == 1
     actor = await h.manager.get_user_query_data(h.user, history=True)
     target = await h.manager.get_user_query_data(h.target, history=True)
     assert actor is not None
@@ -282,10 +283,10 @@ async def test_pk_and_growth_report_only_new_possession_unlocks(
     monkeypatch.setattr(app_module.random, "random", lambda: 0.0)
     monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
     pk = await h.application.execute_pk(h.scene, h.user, (h.target,))
-    assert pk.unlocked_users == (h.user,)
+    assert pk.unlocked_users == {h.user: 1}
     h.cooldown.pk_cd_data.clear()
     repeated = await h.application.execute_pk(h.scene, h.user, (h.target,))
-    assert repeated.unlocked_users == ()
+    assert repeated.unlocked_users == {}
     # 回落到25～30的既有称号也应该由同一查询快照展示。
     await h.manager.set_jj_length(h.user, 3.0)
     query = await h.application.query_user(h.scene, h.user, h.user)
@@ -343,6 +344,44 @@ async def test_ref_schema_contains_no_legacy_identity(database_harness) -> None:
             str(CreateTable(table).compile(dialect=dialect))
             for index in table.indexes:
                 str(CreateIndex(index).compile(dialect=dialect))
+
+
+async def test_pk_reports_each_opponents_actual_completed_tier(
+    game_harness, database_harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nonebot_plugin_uniref import UserRef, encode_ref
+
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.infra.database import UserData
+
+    h = game_harness
+    second = UserRef("QQClient", "second-target")
+    await h.manager.set_scene_enabled(h.scene, True)
+    async with database_harness.session_factory() as session, session.begin():
+        session.add_all(
+            UserData(
+                user_ref=encode_ref(user),
+                user_namespace=user.namespace,
+                jj_length=length,
+                win_probability=probability,
+                challenge_tier=tier,
+            )
+            for user, length, probability, tier in (
+                (h.user, -100, 0.5, 1),
+                (h.target, -319.8, 0.4, 1),
+                (second, -1049.8, 0.35, 2),
+            )
+        )
+    monkeypatch.setattr(app_module.random, "random", lambda: 1.0)
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+    outcome = await h.application.execute_pk(h.scene, h.user, (h.target, second))
+    assert outcome.unlocked_users == {h.target: 2, second: 3}
+    assert list(outcome.unlocked_users) == [h.target, second]
+    assert [p.challenge.tier for p in outcome.targets if p.challenge] == [2, 3]
+    states = await h.manager.get_user_states(h.target, second)
+    assert (states[h.target].length, states[second].length) == (-320.8, -1051.3)
+    assert states[h.target].win_probability == pytest.approx(0.4875)
+    assert states[second].win_probability == pytest.approx(0.34 * 10 / 7)
 
 
 async def test_persistence_rejects_refs_outside_schema_limits(
@@ -1056,17 +1095,34 @@ async def test_pk_settlement_rolls_back_all_users_after_flush(
     database_harness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from nonebot_plugin_uniref import UserRef
+    from nonebot_plugin_uniref import UserRef, encode_ref
+    from sqlalchemy import update
     from sqlalchemy.ext.asyncio import AsyncSession
+
+    from nonebot_plugin_impart_plus.infra.database import UserData
 
     manager = database_harness.manager
     attacker = UserRef("QQClient", "pk-rollback-attacker")
     defenders = (
         UserRef("QQClient", "pk-rollback-defender-1"),
         UserRef("QQClient", "pk-rollback-defender-2"),
+        UserRef("QQClient", "pk-rollback-defender-3"),
+        UserRef("QQClient", "pk-rollback-defender-4"),
     )
     for user in (attacker, *defenders):
         await manager.add_new_user(user)
+    async with database_harness.session_factory() as session, session.begin():
+        await session.execute(
+            update(UserData).values(
+                jj_length=319.9, challenge_tier=1, win_probability=0.4
+            )
+        )
+        await session.execute(
+            update(UserData)
+            .where(UserData.user_ref == encode_ref(attacker))
+            .values(jj_length=1001, challenge_tier=3, win_probability=0.5)
+        )
+    before_states = await manager.get_user_states(attacker, *defenders)
     original_flush = AsyncSession.flush
 
     async def fail_after_flush(
@@ -1083,19 +1139,25 @@ async def test_pk_settlement_rolls_back_all_users_after_flush(
             await manager.settle_pk(
                 attacker,
                 defenders,
-                win_roll=0.0,
+                win_roll=1.0,
                 random_num=1.0,
             )
 
-    for user in (attacker, *defenders):
-        assert await manager.get_jj_length(user) == 10.0
-        assert await manager.get_win_probability(user) == 0.5
+    assert await manager.get_user_states(attacker, *defenders) == before_states
 
 
-async def test_dual_target_pk_uses_one_roll_and_one_cooldown(
+@pytest.mark.parametrize(
+    ("tier", "count", "initial_length", "gain"),
+    [(1, 2, 100.0, 1.2), (2, 3, 500.0, 2.7), (3, 4, 1500.0, 4.8)],
+)
+async def test_ranked_pk_uses_one_roll_and_one_cooldown(
     game_harness,
     database_harness,
     monkeypatch: pytest.MonkeyPatch,
+    tier: int,
+    count: int,
+    initial_length: float,
+    gain: float,
 ) -> None:
     from nonebot_plugin_uniref import UserRef, encode_ref
     from sqlalchemy import update
@@ -1108,19 +1170,18 @@ async def test_dual_target_pk_uses_one_roll_and_one_cooldown(
     application = game_harness.application
     scene = game_harness.scene
     attacker = UserRef("QQClient", "pk-dual-attacker")
-    defenders = (
-        UserRef("QQClient", "pk-dual-defender-1"),
-        UserRef("QQClient", "pk-dual-defender-2"),
+    defenders = tuple(
+        UserRef("QQClient", f"pk-defender-{index}") for index in range(count)
     )
     await manager.set_scene_enabled(scene, True)
     for user in (attacker, *defenders):
         await manager.add_new_user(user)
-    await manager.set_jj_length(attacker, 90.0)
+    await manager.set_jj_length(attacker, initial_length - 10.0)
     async with database_harness.session_factory() as session, session.begin():
         await session.execute(
             update(UserData)
             .where(UserData.user_ref == encode_ref(attacker))
-            .values(challenge_tier=1)
+            .values(challenge_tier=tier)
         )
 
     calls = {"win": 0, "growth": 0}
@@ -1139,28 +1200,41 @@ async def test_dual_target_pk_uses_one_roll_and_one_cooldown(
     preparation = await application.prepare_pk(scene, attacker)
     outcome = await application.execute_pk(scene, attacker, defenders)
 
-    assert (preparation.enabled, preparation.max_targets) == (True, 2)
+    assert (preparation.enabled, preparation.max_targets) == (True, count)
     assert outcome.type is PkOutcomeType.COMPLETED
-    assert outcome.unlocked_users == ()
-    assert outcome.attacker_change == 1.2
-    assert [target.length_change for target in outcome.targets] == [-0.6, -0.6]
+    assert outcome.unlocked_users == {}
+    assert outcome.attacker_change == gain
+    assert [target.length_change for target in outcome.targets] == [-0.6] * count
     assert calls == {"win": 1, "growth": 1}
     assert set(game_harness.cooldown.pk_cd_data) == {attacker}
-    assert await manager.get_jj_length(attacker) == 101.2
+    assert await manager.get_jj_length(attacker) == initial_length + gain
     states = await manager.get_user_states(*defenders)
-    assert [states[user].length for user in defenders] == [9.4, 9.4]
+    assert [states[user].length for user in defenders] == [9.4] * count
     assert all(state.challenge_tier == 0 for state in states.values())
     assert await manager.get_win_probability(attacker) == 0.49
     assert [await manager.get_win_probability(user) for user in defenders] == [
-        0.51,
-        0.51,
-    ]
+        0.51
+    ] * count
+
+    mode = game_harness.growth_mode.LENGTH
+    gave = await application.grow_target(scene, attacker, defenders[0], mode)
+    received = await application.grow_target(scene, defenders[1], attacker, mode)
+    own = await application.grow_self(scene, attacker, mode)
+    assert gave.amount == 0.6
+    assert received.amount == own.amount == round(0.6 * (tier + 1), 3)
+    assert calls == {"win": 1, "growth": 4}
 
 
-async def test_dual_target_pk_guards_before_cooldown_and_random(
+@pytest.mark.parametrize(
+    ("tier", "length", "lower_length"), [(1, 100, 20), (2, 500, 100), (3, 1500, 500)]
+)
+async def test_ranked_pk_guards_before_cooldown_and_random(
     game_harness,
     database_harness,
     monkeypatch: pytest.MonkeyPatch,
+    tier: int,
+    length: float,
+    lower_length: float,
 ) -> None:
     from nonebot_plugin_uniref import UserRef, encode_ref
     from sqlalchemy import update
@@ -1174,17 +1248,20 @@ async def test_dual_target_pk_guards_before_cooldown_and_random(
     scene = game_harness.scene
     attacker = UserRef("QQClient", "pk-guard-attacker")
     negative = UserRef("QQClient", "pk-guard-negative")
-    missing = UserRef("QQClient", "pk-guard-missing")
+    missing = tuple(
+        UserRef("QQClient", f"pk-guard-missing-{index}") for index in range(tier)
+    )
+    targets = (negative, *missing)
     await manager.set_scene_enabled(scene, True)
     for user in (attacker, negative):
         await manager.add_new_user(user)
-    await manager.set_jj_length(attacker, 90.0)
+    await manager.set_jj_length(attacker, length - 10)
     await manager.set_jj_length(negative, -20.0)
     async with database_harness.session_factory() as session, session.begin():
         await session.execute(
             update(UserData)
             .where(UserData.user_ref == encode_ref(attacker))
-            .values(challenge_tier=1)
+            .values(challenge_tier=tier)
         )
 
     def unexpected_random() -> float:
@@ -1194,23 +1271,24 @@ async def test_dual_target_pk_guards_before_cooldown_and_random(
     monkeypatch.setattr(app_module, "get_random_num", unexpected_random)
 
     preparation = await application.prepare_pk(scene, attacker)
-    created = await application.execute_pk(scene, attacker, (negative, missing))
-    mismatch = await application.execute_pk(scene, attacker, (negative, missing))
+    created = await application.execute_pk(scene, attacker, targets)
+    mismatch = await application.execute_pk(scene, attacker, targets)
     async with database_harness.session_factory() as session, session.begin():
         await session.execute(
             update(UserData)
             .where(UserData.user_ref == encode_ref(attacker))
-            .values(challenge_tier=0, jj_length=20.0)
+            .values(challenge_tier=tier - 1, jj_length=lower_length)
         )
-    lost_entitlement = await application.execute_pk(
-        scene, attacker, (negative, missing)
-    )
+    lost_entitlement = await application.execute_pk(scene, attacker, targets)
 
-    assert preparation.max_targets == 2
+    still_legal = await application.execute_pk(scene, attacker, targets[:-1])
+
+    assert preparation.max_targets == tier + 1
     assert created.type is PkOutcomeType.USERS_CREATED
-    assert created.created_users == (missing,)
+    assert created.created_users == missing
     assert mismatch.type is PkOutcomeType.WORLD_MISMATCH
     assert lost_entitlement.type is PkOutcomeType.MULTI_TARGET_UNAVAILABLE
+    assert still_legal.type is PkOutcomeType.WORLD_MISMATCH
     assert game_harness.cooldown.pk_cd_data == {}
 
 
@@ -1551,11 +1629,11 @@ async def test_negative_growth_can_start_challenge(
     self_outcome = await application.grow_self(scene, self_user, mode.DEPTH)
     target_outcome = await application.grow_target(scene, actor, target, mode.DEPTH)
 
-    assert self_outcome.challenge_started
-    assert target_outcome.challenge_started
+    assert self_outcome.challenge is not None
+    assert target_outcome.challenge is not None
     assert self_outcome.new_length == target_outcome.new_length == -25.0
-    assert await manager.get_win_probability(self_user) == 0.4
-    assert await manager.get_win_probability(target) == 0.4
+    assert await manager.get_win_probability(self_user) == 0.45
+    assert await manager.get_win_probability(target) == 0.45
 
 
 async def test_application_ranking_is_partitioned_by_namespace(

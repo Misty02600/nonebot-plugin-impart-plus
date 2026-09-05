@@ -8,16 +8,32 @@ from nonebot_plugin_alconna import At
 from nonebot_plugin_uninfo import Interface, Member, Uninfo, User
 from nonebot_plugin_uniref import UserRef
 
+from ...impart.core import ChallengeTier, GrowthMode
+
 NOT_ALLOWED_TEXT = (
     '当前未开启impart游戏, 请管理员发送"银趴开启", "银趴禁止"以开启/关闭该功能'
 )
 JJ_NAMES = ("牛子", "牛牛", "newnew")
 HOLE_NAME = "小学"
-OPPONENT_TITLE_LOSS = (
-    "\n由于{cause}，{botname}检测到TA的{name}长度已不足25cm，很遗憾，TA跌落神坛，"
-    "{botname}替TA感谢你的鞭策喵！"
-    "\nTA的{penalty_name}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
-)
+CHALLENGE_TITLES = {
+    GrowthMode.LENGTH: ("日耀の柱", "贯星长枪", "牛々の神"),
+    GrowthMode.DEPTH: ("虛空の眼", "世界大穴", "深淵の主"),
+}
+
+
+def challenge_title(tier: int, mode: GrowthMode) -> str:
+    return CHALLENGE_TITLES[mode][tier - 1]
+
+
+def opponent_title_loss(
+    *, cause: str, botname: str, name: str, penalty_name: str, challenge: ChallengeTier
+) -> str:
+    title = challenge_title(challenge.tier, GrowthMode.LENGTH)
+    return (
+        f"\n由于{cause}，{botname}检测到TA的{name}长度已不足{challenge.entry:g}cm，很遗憾，TA跌落神坛，"
+        f"失去了称号「{title}」，{botname}替TA感谢你的鞭策喵！"
+        f"\nTA的{penalty_name}长度缩短了{challenge.penalty:g}cm喵，请不忘初心，再次冲击更高的境界喵！"
+    )
 
 
 def created_user_message(

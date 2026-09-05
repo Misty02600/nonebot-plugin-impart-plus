@@ -13,8 +13,8 @@ from .shared import (
     HOLE_NAME,
     JJ_NAMES,
     NOT_ALLOWED_TEXT,
-    OPPONENT_TITLE_LOSS,
     created_user_message,
+    opponent_title_loss,
     user_at_target,
 )
 
@@ -59,8 +59,12 @@ async def possess(
         f"\n再次睁眼时，你的{name}被重塑为{outcome.half}cm，"
         f"而对面的{name}也只剩下{outcome.half}cm了喵！"
     )
-    if outcome.target_status == "challenge_completed_reduce":
-        message += OPPONENT_TITLE_LOSS.format(
-            cause="你的夺舍", botname=botname, name=name, penalty_name=name
+    if outcome.target_challenge:
+        message += opponent_title_loss(
+            cause="你的夺舍",
+            botname=botname,
+            name=name,
+            penalty_name=name,
+            challenge=outcome.target_challenge,
         )
     await matcher.finish(message, at_sender=True)

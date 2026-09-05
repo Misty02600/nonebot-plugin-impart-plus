@@ -15,7 +15,7 @@ from nonebot_plugin_alconna import (
 from nonebot_plugin_uniref import RefContext
 
 from ...impart.app import QueryOutcomeType
-from ...impart.core import LengthState
+from ...impart.core import GrowthMode, LengthState
 from ...infra.chart_renderer import draw_bar_chart
 from ..dependencies import game_app
 from ..matchers import history_query_matcher, query_matcher
@@ -23,6 +23,7 @@ from .shared import (
     HOLE_NAME,
     JJ_NAMES,
     NOT_ALLOWED_TEXT,
+    challenge_title,
     created_user_message,
     user_at_target,
 )
@@ -56,13 +57,9 @@ async def query_user(
         )
 
     if outcome.state is LengthState.GOD:
-        message = (
-            f"✨牛々の神✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
-        )
+        message = f"✨{challenge_title(outcome.challenge_tier, GrowthMode.LENGTH)}✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
     elif outcome.state is LengthState.ABYSS_LORD:
-        message = (
-            f"🕳️深淵の主🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm喵"
-        )
+        message = f"🕳️{challenge_title(outcome.challenge_tier, GrowthMode.DEPTH)}🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm喵"
     elif outcome.state is LengthState.NORMAL:
         message = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm喵"
     elif outcome.state is LengthState.XNN:

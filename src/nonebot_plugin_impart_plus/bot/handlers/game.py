@@ -9,7 +9,7 @@ from nonebot_plugin_alconna import AUTO, AlconnaMatcher, At, Match, UniMessage
 from nonebot_plugin_uniref import RefContext, UserRef
 
 from ...impart.app import GrowthOutcomeType, PkOutcome, PkOutcomeType
-from ...impart.core import GrowthMode
+from ...impart.core import ChallengeTier, GrowthMode
 from ..dependencies import botname, game_app
 from ..matchers import (
     SELF_GROW_MODES,
@@ -22,8 +22,9 @@ from .shared import (
     HOLE_NAME,
     JJ_NAMES,
     NOT_ALLOWED_TEXT,
-    OPPONENT_TITLE_LOSS,
+    challenge_title,
     created_user_message,
+    opponent_title_loss,
     user_at_target,
 )
 
@@ -43,7 +44,7 @@ async def _finish_game_reply(
     matcher: Matcher,
     message: str,
     *,
-    unlocked_users: tuple[UserRef, ...],
+    unlocked_users: dict[UserRef, int],
     mode: GrowthMode,
 ) -> None:
     """先回复本局结果，再单独 At 本次解锁成员；最后一条消息结束 matcher。"""
@@ -51,20 +52,19 @@ async def _finish_game_reply(
         await matcher.finish(message, at_sender=True)
         return
     await matcher.send(message, at_sender=True)
-    for index, user in enumerate(unlocked_users):
+    for index, (user, tier) in enumerate(unlocked_users.items()):
         if mode is GrowthMode.DEPTH:
-            text = (
-                " 你感到深渊的禁忌力量正涌入体内..."
-                "\n你的任何基础深度变动将翻倍！"
-                "\nPK现在最多可以指定两个目标了！"
-                "\n现在可以使用指令「夺舍」了！"
-            )
+            text = " 你感到深渊的禁忌力量正涌入体内..."
+            dimension = "深度"
         else:
-            text = (
-                " 你感到一股神性的力量正涌入体内..."
-                "\n你的任何基础长度变动将翻倍！"
-                "\nPK现在最多可以指定两个目标了！"
-            )
+            text = " 你感到一股神性的力量正涌入体内..."
+            dimension = "长度"
+        growth = "将翻倍" if tier == 1 else f"将提升至{tier + 1}倍"
+        target_count = ("两", "三", "四")[tier - 1]
+        text += f"\n你的任何基础{dimension}变动{growth}！"
+        text += f"\nPK现在最多可以指定{target_count}个目标了！"
+        if tier == 1 and mode is GrowthMode.DEPTH:
+            text += "\n现在可以使用指令「夺舍」了！"
         notification = UniMessage.at(user.id).text(text)
         if index == len(unlocked_users) - 1:
             await cast(AlconnaMatcher, matcher).finish(notification, fallback=AUTO)
@@ -72,102 +72,123 @@ async def _finish_game_reply(
             await cast(AlconnaMatcher, matcher).send(notification, fallback=AUTO)
 
 
-def _self_challenge_progress(status: str, mode: GrowthMode) -> str:
+def _self_challenge_progress(
+    status: str, mode: GrowthMode, challenge: ChallengeTier | None
+) -> str:
+    if challenge is None:
+        return ""
+    title = challenge_title(challenge.tier, mode)
     if status == "challenge_started_low_win":
         if mode is GrowthMode.DEPTH:
             return (
-                f"\n{botname}检测到你的{HOLE_NAME}深度超过25cm，已为你开启🕳️“深渊试炼”🕳️"
-                "\n你现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，"
-                f"请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！"
+                f"\n{botname}检测到你的{HOLE_NAME}深度超过{challenge.entry:g}cm，已为你开启🕳️“深渊试炼”🕳️"
+                f"\n你现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“挖矿”与“舔”指令，"
+                f"请以将{HOLE_NAME}深度提升至{challenge.target:g}cm为目标与他人pk吧！"
             )
         return (
-            f"\n{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
-            f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧!"
+            f"\n{botname}检测到你的{choice(JJ_NAMES)}长度超过{challenge.entry:g}cm，已为你开启✨“登神长阶”✨"
+            f"\n你现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至{challenge.target:g}cm为目标与他人pk吧!"
         )
     if status in {"challenge_completed", "challenge_success_high_win"}:
         if mode is GrowthMode.DEPTH:
             return (
-                f"\n🎉恭喜你完成深渊挑战🎉\n你的{HOLE_NAME}深度已超过30cm，授予你🎊“深淵の主”🎊称号"
+                f"\n🎉恭喜你完成深渊挑战🎉\n你的{HOLE_NAME}深度已超过{challenge.target:g}cm，授予你🎊“{title}”🎊称号"
                 "\n你的胜率已恢复，“挖矿”与“舔”指令已重新开放，切记不忘初心，继续探索更深的境界喵！"
             )
         return (
-            f"\n🎉恭喜你完成登神挑战🎉\n你的{choice(JJ_NAMES)}长度已超过30cm，授予你🎊“牛々の神”🎊称号"
+            f"\n🎉恭喜你完成登神挑战🎉\n你的{choice(JJ_NAMES)}长度已超过{challenge.target:g}cm，授予你🎊“{title}”🎊称号"
             "\n你的胜率已恢复，“打胶”与“嗦”指令已重新开放，切记不忘初心，继续冲击更高的境界喵！"
         )
     return ""
 
 
-def _opponent_challenge_progress(status: str, mode: GrowthMode) -> str:
+def _opponent_challenge_progress(
+    status: str, mode: GrowthMode, challenge: ChallengeTier | None
+) -> str:
+    if challenge is None:
+        return ""
+    title = challenge_title(challenge.tier, mode)
     if status == "challenge_started_low_win":
         if mode is GrowthMode.DEPTH:
             return (
-                f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过25cm，已为TA开启🕳️“深渊试炼”🕳️"
-                "\n现在TA的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，"
-                f"请通知TA以将{HOLE_NAME}深度提升至30cm为目标与群友pk吧！"
+                f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过{challenge.entry:g}cm，已为TA开启🕳️“深渊试炼”🕳️"
+                f"\n现在TA的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“挖矿”与“舔”指令，"
+                f"请通知TA以将{HOLE_NAME}深度提升至{challenge.target:g}cm为目标与群友pk吧！"
             )
         return (
-            f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，已为TA开启✨“登神长阶”✨"
-            f"\n现在TA的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(JJ_NAMES)}长度提升至30cm为目标与群友pk吧！"
+            f"\n由于你对决的失败，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过{challenge.entry:g}cm，已为TA开启✨“登神长阶”✨"
+            f"\n现在TA的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“打胶”与“嗦”指令，请通知TA以将{choice(JJ_NAMES)}长度提升至{challenge.target:g}cm为目标与群友pk吧！"
         )
     if status in {"challenge_completed", "challenge_success_high_win"}:
         if mode is GrowthMode.DEPTH:
             return (
-                f"\n🎉恭喜你帮助TA完成深渊挑战🎉\nTA的{HOLE_NAME}深度超过30cm，授予TA🎊“深淵の主”🎊称号"
+                f"\n🎉恭喜你帮助TA完成深渊挑战🎉\nTA的{HOLE_NAME}深度超过{challenge.target:g}cm，授予TA🎊“{title}”🎊称号"
                 "\nTA的胜率已恢复，“挖矿”与“舔”指令已重新开放，请提醒TA继续探索更深的境界喵！"
             )
         return (
-            f"\n🎉恭喜你帮助TA完成登神挑战🎉\nTA的{choice(JJ_NAMES)}长度超过30cm，授予TA🎊“牛々の神”🎊称号"
+            f"\n🎉恭喜你帮助TA完成登神挑战🎉\nTA的{choice(JJ_NAMES)}长度超过{challenge.target:g}cm，授予TA🎊“{title}”🎊称号"
             "\nTA的胜率已恢复，“打胶”与“嗦”指令已重新开放，请提醒TA不忘初心，继续冲击更高的境界喵！"
         )
     return ""
 
 
-def _self_challenge_regress(status: str, mode: GrowthMode) -> str:
+def _self_challenge_regress(
+    status: str, mode: GrowthMode, challenge: ChallengeTier | None
+) -> str:
+    if challenge is None:
+        return ""
+    title = challenge_title(challenge.tier, mode)
     if status == "challenge_failed_high_win":
         if mode is GrowthMode.DEPTH:
             return (
                 "\n很遗憾，深渊挑战失败，别气馁啦！"
-                f"\n你的{HOLE_NAME}深度变浅了5cm喵，胜率已恢复，“挖矿”与“舔”指令已重新开放喵！"
+                f"\n你的{HOLE_NAME}深度变浅了{challenge.penalty:g}cm喵，胜率已恢复，“挖矿”与“舔”指令已重新开放喵！"
             )
         return (
             "\n很遗憾，登神挑战失败，别气馁啦！"
-            f"\n你的{choice(JJ_NAMES)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
+            f"\n你的{choice(JJ_NAMES)}长度缩短了{challenge.penalty:g}cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
         )
     if status == "challenge_completed_reduce":
         if mode is GrowthMode.DEPTH:
             return (
-                "\n很遗憾，你被深渊拒绝了，别气馁啦！"
-                f"\n你的{HOLE_NAME}深度变浅了5cm喵，请不忘初心，再次探索更深的境界喵！"
+                f"\n很遗憾，你被深渊拒绝了，失去了称号「{title}」，别气馁啦！"
+                f"\n你的{HOLE_NAME}深度变浅了{challenge.penalty:g}cm喵，请不忘初心，再次探索更深的境界喵！"
             )
         return (
-            "\n很遗憾，你跌落神坛，别气馁啦！"
-            f"\n你的{choice(JJ_NAMES)}长度缩短了5cm喵，请不忘初心，再次冲击更高的境界喵！"
+            f"\n很遗憾，你跌落神坛，失去了称号「{title}」，别气馁啦！"
+            f"\n你的{choice(JJ_NAMES)}长度缩短了{challenge.penalty:g}cm喵，请不忘初心，再次冲击更高的境界喵！"
         )
     return ""
 
 
-def _opponent_challenge_regress(status: str, mode: GrowthMode) -> str:
+def _opponent_challenge_regress(
+    status: str, mode: GrowthMode, challenge: ChallengeTier | None
+) -> str:
+    if challenge is None:
+        return ""
+    title = challenge_title(challenge.tier, mode)
     if status == "challenge_failed_high_win":
         if mode is GrowthMode.DEPTH:
             return (
-                f"\n由于你对决的胜利，{botname}检测到TA的{HOLE_NAME}深度已不足25cm，很遗憾，TA的深渊挑战失败，{botname}替TA感谢你的鞭策喵！"
-                f"\nTA的{HOLE_NAME}深度变浅了5cm喵，胜率已恢复，“挖矿”与“舔”指令已重新开放喵！"
+                f"\n由于你对决的胜利，{botname}检测到TA的{HOLE_NAME}深度已不足{challenge.entry:g}cm，很遗憾，TA的深渊挑战失败，{botname}替TA感谢你的鞭策喵！"
+                f"\nTA的{HOLE_NAME}深度变浅了{challenge.penalty:g}cm喵，胜率已恢复，“挖矿”与“舔”指令已重新开放喵！"
             )
         return (
-            f"\n由于你对决的胜利，{botname}检测到TA的{choice(JJ_NAMES)}长度已不足25cm，很遗憾，TA的登神挑战失败，{botname}替TA感谢你的鞭策喵！"
-            f"\nTA的{choice(JJ_NAMES)}长度缩短了5cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
+            f"\n由于你对决的胜利，{botname}检测到TA的{choice(JJ_NAMES)}长度已不足{challenge.entry:g}cm，很遗憾，TA的登神挑战失败，{botname}替TA感谢你的鞭策喵！"
+            f"\nTA的{choice(JJ_NAMES)}长度缩短了{challenge.penalty:g}cm喵，胜率已恢复，“打胶”与“嗦”指令已重新开放喵！"
         )
     if status == "challenge_completed_reduce":
         if mode is GrowthMode.DEPTH:
             return (
-                f"\n由于你对决的胜利，{botname}检测到TA的{HOLE_NAME}深度已不足25cm，很遗憾，TA被深渊拒绝了，{botname}替TA感谢你的鞭策喵！"
-                f"\nTA的{HOLE_NAME}深度变浅了5cm喵，请不忘初心，再次探索更深的境界喵！"
+                f"\n由于你对决的胜利，{botname}检测到TA的{HOLE_NAME}深度已不足{challenge.entry:g}cm，很遗憾，TA被深渊拒绝了，失去了称号「{title}」，{botname}替TA感谢你的鞭策喵！"
+                f"\nTA的{HOLE_NAME}深度变浅了{challenge.penalty:g}cm喵，请不忘初心，再次探索更深的境界喵！"
             )
-        return OPPONENT_TITLE_LOSS.format(
+        return opponent_title_loss(
             cause="你对决的胜利",
             botname=botname,
             name=choice(JJ_NAMES),
             penalty_name=choice(JJ_NAMES),
+            challenge=challenge,
         )
     return ""
 
@@ -206,7 +227,7 @@ async def pk(
     if outcome.type is PkOutcomeType.SELF_TARGET:
         await matcher.finish("你不能pk自己喵", at_sender=True)
     if outcome.type is PkOutcomeType.MULTI_TARGET_UNAVAILABLE:
-        await matcher.finish("你尚未解锁同时与两人pk的能力喵", at_sender=True)
+        await matcher.finish("你当前的称号无法同时与这么多人pk喵", at_sender=True)
     if outcome.type is PkOutcomeType.USERS_CREATED:
         await matcher.finish(
             created_user_message(outcome.created_users, user_ref, *target_refs),
@@ -248,9 +269,13 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
                 f"减小了{abs(target.length_change)}cm喵"
             )
 
-    uid_msg += _self_challenge_progress(outcome.attacker_status, outcome.mode)
+    uid_msg += _self_challenge_progress(
+        outcome.attacker_status, outcome.mode, outcome.attacker_challenge
+    )
     for index, target in enumerate(outcome.targets, 1):
-        challenge = _opponent_challenge_regress(target.status, outcome.mode)
+        challenge = _opponent_challenge_regress(
+            target.status, outcome.mode, target.challenge
+        )
         if challenge and target_count > 1:
             uid_msg += f"\n{_target_label(index, target_count)}：" + challenge
         else:
@@ -300,6 +325,7 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
     attacker_challenge = _self_challenge_regress(
         outcome.attacker_status,
         outcome.mode,
+        outcome.attacker_challenge,
     )
     uid_msg += attacker_challenge
     if (
@@ -310,7 +336,9 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
         uid_msg += "\n你醒啦, 你已经变成xnn了！"
 
     for index, target in enumerate(outcome.targets, 1):
-        challenge = _opponent_challenge_progress(target.status, outcome.mode)
+        challenge = _opponent_challenge_progress(
+            target.status, outcome.mode, target.challenge
+        )
         if challenge and target_count > 1:
             uid_msg += f"\n{_target_label(index, target_count)}：" + challenge
         else:
@@ -366,21 +394,22 @@ async def grow_self(
             else f"你的{HOLE_NAME}深度在任务范围内，不允许挖矿，请专心与群友pk！"
         )
         await matcher.finish(message, at_sender=True)
-    if outcome.challenge_started:
+    if outcome.challenge:
+        challenge = outcome.challenge
         if mode is GrowthMode.DEPTH:
             await _finish_game_reply(
                 matcher,
                 f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵"
-                f"\n由于你无休止的挖矿，触犯到了神秘的禁忌，{botname}检测到你的{HOLE_NAME}深度超过25cm，已为你开启🕳️“深渊试炼”🕳️"
-                f"\n你现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！",
+                f"\n由于你无休止的挖矿，触犯到了神秘的禁忌，{botname}检测到你的{HOLE_NAME}深度超过{challenge.entry:g}cm，已为你开启🕳️“深渊试炼”🕳️"
+                f"\n你现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至{challenge.target:g}cm为目标与他人pk吧！",
                 unlocked_users=outcome.unlocked_users,
                 mode=mode,
             )
         await _finish_game_reply(
             matcher,
             f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵"
-            f"\n由于你无休止的打胶，触犯到了神秘的禁忌，{botname}检测到你的{choice(JJ_NAMES)}长度超过25cm，已为你开启✨“登神长阶”✨"
-            f"\n你现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
+            f"\n由于你无休止的打胶，触犯到了神秘的禁忌，{botname}检测到你的{choice(JJ_NAMES)}长度超过{challenge.entry:g}cm，已为你开启✨“登神长阶”✨"
+            f"\n你现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至{challenge.target:g}cm为目标与他人pk吧！",
             unlocked_users=outcome.unlocked_users,
             mode=mode,
         )
@@ -465,21 +494,22 @@ async def grow_target(
         await matcher.finish(message, at_sender=True)
     if outcome.type is not GrowthOutcomeType.COMPLETED:
         return
-    if outcome.challenge_started:
+    if outcome.challenge:
+        challenge = outcome.challenge
         if mode is GrowthMode.DEPTH:
             await _finish_game_reply(
                 matcher,
                 f"TA的{HOLE_NAME}很满意喵, 舔深了{outcome.amount}cm喵"
-                f"\n由于TA无休止的舔与被舔，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过25cm，"
-                f"\n已为TA开启🕳️“深渊试炼”🕳️，TA现在的胜率变为当前的80%，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至30cm为目标与他人pk吧！",
+                f"\n由于TA无休止的舔与被舔，触犯到了神秘的禁忌，{botname}检测到TA的{HOLE_NAME}深度超过{challenge.entry:g}cm，"
+                f"\n已为TA开启🕳️“深渊试炼”🕳️，TA现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至{challenge.target:g}cm为目标与他人pk吧！",
                 unlocked_users=outcome.unlocked_users,
                 mode=mode,
             )
         await _finish_game_reply(
             matcher,
             f"TA的{choice(JJ_NAMES)}很满意喵, 嗦长了{outcome.amount}cm喵"
-            f"\n由于TA无休止的嗦与被嗦，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过25cm，"
-            f"\n已为TA开启✨“登神长阶”✨，TA现在的胜率变为当前的80%，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至30cm为目标与他人pk吧！",
+            f"\n由于TA无休止的嗦与被嗦，触犯到了神秘的禁忌，{botname}检测到TA的{choice(JJ_NAMES)}长度超过{challenge.entry:g}cm，"
+            f"\n已为TA开启✨“登神长阶”✨，TA现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至{challenge.target:g}cm为目标与他人pk吧！",
             unlocked_users=outcome.unlocked_users,
             mode=mode,
         )

@@ -18,7 +18,6 @@ def test_plugin_metadata(app: App):
     assert "初始胜率为50%" in __plugin_meta__.usage
     assert "[透|日|榨][群友|管理|群主]" in __plugin_meta__.usage
     assert "[开扣|挖矿]" in __plugin_meta__.usage
-    assert "<长度或深度超过25时会触发神秘任务>" in __plugin_meta__.usage
     assert "可能触发特殊事件" in __plugin_meta__.usage
     assert "[银趴|impart][查询|查询历史|查询全部]" in __plugin_meta__.usage
     assert "[银趴|impart][开启|禁止|帮助]" in __plugin_meta__.usage

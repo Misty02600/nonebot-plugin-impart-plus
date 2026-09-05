@@ -124,3 +124,41 @@ async def test_history_query_appends_total_and_chart(
     assert "你当日总注入量为5.5ml" in matcher.messages[0]
     assert "你历史总注入量为8.5ml" in matcher.messages[0]
     assert matcher.options[0]["fallback"] is AUTO
+
+
+async def test_query_uses_held_tier_for_title_in_retention_band(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from nonebot_plugin_alconna import At, CommandResult, Match
+
+    from nonebot_plugin_impart_plus.bot.handlers import query
+    from nonebot_plugin_impart_plus.bot.matchers import IMPART_COMMAND
+    from nonebot_plugin_impart_plus.impart.app import QueryOutcome, QueryOutcomeType
+    from nonebot_plugin_impart_plus.impart.core import classify_length
+
+    for tier, length, positive, negative in (
+        (1, 27, "日耀の柱", "虛空の眼"),
+        (2, 310, "贯星长枪", "世界大穴"),
+        (3, 1020, "牛々の神", "深淵の主"),
+    ):
+        for sign, title in ((1, positive), (-1, negative)):
+            outcome = QueryOutcome(
+                QueryOutcomeType.COMPLETED,
+                length=sign * length,
+                challenge_tier=tier,
+                state=classify_length(sign * length, challenge_tier=tier),
+            )
+            monkeypatch.setattr(
+                query.game_app, "query_user", AsyncMock(return_value=outcome)
+            )
+            matcher = FinishingMatcherStub()
+            with pytest.raises(FinishedException):
+                await query.query_user(
+                    cast(Matcher, matcher),
+                    make_ref_context(),
+                    CommandResult(result=IMPART_COMMAND.parse("银趴查询")),
+                    Match(At("user", "unused"), False),
+                )
+            assert title in matcher.messages[0]

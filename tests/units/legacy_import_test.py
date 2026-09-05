@@ -45,6 +45,12 @@ def _create_current_legacy_database(path: Path) -> None:
                 (10002, -8.25, 5678, 0.6, 0, 1, 1, 1),
                 (10003, 26.5, 5678, 0.5, 0, 0, 0, 0),
                 (10004, 30.0, 5678, 0.5, 0, 0, 0, 0),
+                (10005, 300.0, 5678, 0.4, 1, 0, 0, 0),
+                (10006, 319.999, 5678, 0.5, 0, 1, 0, 0),
+                (10007, 320.0, 5678, 0.4, 1, 0, 0, 0),
+                (10008, -1000.0, 5678, 0.5, 0, 1, 0, 0),
+                (10009, -1049.999, 5678, 0.4, 1, 0, 0, 0),
+                (10010, -1050.0, 5678, 0.4, 1, 0, 0, 0),
             ),
         )
         connection.executemany(
@@ -161,7 +167,7 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
             encode_ref(UserRef("QQClient", "10001")): (
                 "QQClient",
                 26.5,
-                0.4,
+                0.45,
                 0,
             ),
             encode_ref(UserRef("QQClient", "10002")): (
@@ -173,7 +179,7 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
             encode_ref(UserRef("QQClient", "10003")): (
                 "QQClient",
                 26.5,
-                0.4,
+                0.45,
                 0,
             ),
             encode_ref(UserRef("QQClient", "10004")): (
@@ -182,6 +188,12 @@ async def test_imports_complete_legacy_snapshot_once(tmp_path: Path) -> None:
                 0.5,
                 1,
             ),
+            encode_ref(UserRef("QQClient", "10005")): ("QQClient", 300.0, 0.4, 1),
+            encode_ref(UserRef("QQClient", "10006")): ("QQClient", 319.999, 0.4, 1),
+            encode_ref(UserRef("QQClient", "10007")): ("QQClient", 320.0, 0.5, 2),
+            encode_ref(UserRef("QQClient", "10008")): ("QQClient", -1000.0, 0.35, 2),
+            encode_ref(UserRef("QQClient", "10009")): ("QQClient", -1049.999, 0.35, 2),
+            encode_ref(UserRef("QQClient", "10010")): ("QQClient", -1050.0, 0.5, 3),
         }
         assert {
             scene.scene_ref: (scene.scene_namespace, scene.scene_type, scene.allow)

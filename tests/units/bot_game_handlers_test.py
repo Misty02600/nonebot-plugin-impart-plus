@@ -259,6 +259,36 @@ async def test_pk_handler_selects_unlocked_window_without_backfill(
         (make_user_ref("1"),),
     ]
 
+    from nonebot.exception import SkippedException
+
+    for max_targets in (3, 4):
+        targets = tuple(At("user", str(index)) for index in range(max_targets))
+        for selected, expected in (
+            (
+                (*targets, At("role", "ignored")),
+                tuple(make_user_ref(str(i)) for i in range(max_targets)),
+            ),
+            (
+                (targets[0], *targets),
+                tuple(make_user_ref(str(i)) for i in range(max_targets - 1)),
+            ),
+        ):
+            with pytest.raises(FinishedException):
+                await game.pk(
+                    cast(Matcher, FinishingMatcherStub()),
+                    make_ref_context(),
+                    Match(selected, True),
+                )
+            assert calls[-1] == expected
+        count = len(calls)
+        with pytest.raises(SkippedException):
+            await game.pk(
+                cast(Matcher, FinishingMatcherStub()),
+                make_ref_context(),
+                Match((At("role", "selected"), *targets), True),
+            )
+        assert len(calls) == count
+
 
 async def test_pk_handler_renders_world_specific_results(
     monkeypatch: pytest.MonkeyPatch,
@@ -273,7 +303,7 @@ async def test_pk_handler_renders_world_specific_results(
         PkPreparation,
         PkTargetOutcome,
     )
-    from nonebot_plugin_impart_plus.impart.core import GrowthMode
+    from nonebot_plugin_impart_plus.impart.core import CHALLENGE_TIERS, GrowthMode
 
     current_mode = GrowthMode.LENGTH
 
@@ -323,9 +353,11 @@ async def test_pk_handler_renders_world_specific_results(
                 PkTargetOutcome(
                     1.5,
                     "challenge_failed_high_win",
+                    CHALLENGE_TIERS[1],
                 ),
             ),
             attacker_status="challenge_started_low_win",
+            attacker_challenge=CHALLENGE_TIERS[1],
             attacker_probability=0.49,
         ),
         PkOutcome(
@@ -337,9 +369,11 @@ async def test_pk_handler_renders_world_specific_results(
                 PkTargetOutcome(
                     -0.75,
                     "challenge_success_high_win",
+                    CHALLENGE_TIERS[2],
                 ),
             ),
             attacker_status="challenge_completed_reduce",
+            attacker_challenge=CHALLENGE_TIERS[2],
             attacker_probability=0.51,
         ),
     )
@@ -363,12 +397,17 @@ async def test_pk_handler_renders_world_specific_results(
     )
     assert "已为你开启🕳️“深渊试炼”🕳️" in result_messages[1]
     assert "TA的深渊挑战失败" in result_messages[1]
-    assert "TA的小学深度变浅了5cm喵" in result_messages[1]
+    assert "深度超过300cm" in result_messages[1]
+    assert "深度提升至320cm" in result_messages[1]
+    assert "TA的小学深度变浅了20cm喵" in result_messages[1]
     assert result_messages[1].endswith("你的胜率现在为49%喵")
     assert result_messages[2].startswith(
         "对决失败喵, 在对面小学的深暗压迫下你的小学变浅了1.5cm喵, 对面加深了0.75cm喵"
     )
     assert "你被深渊拒绝了" in result_messages[2]
+    assert "失去了称号「深淵の主」" in result_messages[2]
+    assert "变浅了50cm" in result_messages[2]
+    assert "深度超过1050cm" in result_messages[2]
     assert "帮助TA完成深渊挑战" in result_messages[2]
     assert "授予TA🎊“深淵の主”🎊称号" in result_messages[2]
     assert result_messages[2].endswith("你的胜率现在为51%喵")
@@ -407,13 +446,13 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
         PkOutcomeType,
         PkTargetOutcome,
     )
-    from nonebot_plugin_impart_plus.impart.core import GrowthMode
+    from nonebot_plugin_impart_plus.impart.core import CHALLENGE_TIERS, GrowthMode
 
     for mode, won, members in (
-        (GrowthMode.LENGTH, True, (make_user_ref(),)),
-        (GrowthMode.LENGTH, False, (make_user_ref("2"), make_user_ref("3"))),
-        (GrowthMode.DEPTH, True, (make_user_ref(),)),
-        (GrowthMode.DEPTH, False, (make_user_ref("2"), make_user_ref("3"))),
+        (GrowthMode.LENGTH, True, {make_user_ref(): 1}),
+        (GrowthMode.LENGTH, False, {make_user_ref("2"): 2, make_user_ref("3"): 3}),
+        (GrowthMode.DEPTH, True, {make_user_ref(): 1}),
+        (GrowthMode.DEPTH, False, {make_user_ref("2"): 2, make_user_ref("3"): 3}),
     ):
         outcome = PkOutcome(
             PkOutcomeType.COMPLETED,
@@ -421,12 +460,14 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
             won=won,
             attacker_change=0.5 if won else -2.0,
             attacker_status="challenge_success_high_win" if won else "",
+            attacker_challenge=CHALLENGE_TIERS[0] if won else None,
             targets=tuple(
                 PkTargetOutcome(
-                    -2.0 if won else 0.25,
+                    -2.0 if won else 0.25 * tier,
                     "" if won else "challenge_success_high_win",
+                    None if won else CHALLENGE_TIERS[tier - 1],
                 )
-                for _ in range(1 if won else 2)
+                for tier in members.values()
             ),
             attacker_probability=0.4875 if won else 0.51,
             unlocked_users=members,
@@ -437,8 +478,8 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
             await handler(cast(Matcher, matcher), outcome)
         assert len(matcher.raw_messages) == len(members) + 1
         assert "对决" in matcher.messages[0]
-        for member, notification, options in zip(
-            members,
+        for (member, tier), notification, options in zip(
+            members.items(),
             matcher.raw_messages[1:],
             matcher.options[1:],
             strict=True,
@@ -446,10 +487,12 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
             assert isinstance(notification, UniMessage)
             assert notification[0] == At("user", member.id)
             dimension = "深度" if mode is GrowthMode.DEPTH else "长度"
-            assert f"你的任何基础{dimension}变动将翻倍！" in str(notification)
-            assert "PK现在最多可以指定两个目标了！" in str(notification)
+            growth = "将翻倍" if tier == 1 else f"将提升至{tier + 1}倍"
+            assert f"你的任何基础{dimension}变动{growth}！" in str(notification)
+            count = ("两", "三", "四")[tier - 1]
+            assert f"PK现在最多可以指定{count}个目标了！" in str(notification)
             assert ("现在可以使用指令「夺舍」了！" in str(notification)) == (
-                mode is GrowthMode.DEPTH
+                mode is GrowthMode.DEPTH and tier == 1
             )
             assert "at_sender" not in options
 
@@ -479,7 +522,7 @@ async def test_game_reply_notifies_actual_unlocked_member_after_result(
         await game._finish_game_reply(
             cast(Matcher, failing_matcher),
             "result",
-            unlocked_users=(make_user_ref(),),
+            unlocked_users={make_user_ref(): 1},
             mode=GrowthMode.DEPTH,
         )
     assert failing_matcher.messages == []

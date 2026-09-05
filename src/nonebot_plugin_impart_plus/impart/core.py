@@ -54,10 +54,12 @@ CHALLENGE_TIERS = (
         tier=1,
         entry=25,
         target=30,
-        win_multiplier=0.8,
-        recovery_multiplier=1.25,
+        win_multiplier=0.9,
+        recovery_multiplier=10 / 9,
         penalty=5,
     ),
+    ChallengeTier(2, 300, 320, 0.8, 1.25, 20),
+    ChallengeTier(3, 1000, 1050, 0.7, 10 / 7, 50),
 )
 
 
@@ -72,7 +74,7 @@ class UserGameState:
 class StateEvaluation:
     status: str
     state: UserGameState
-    completed_tier: int = 0
+    challenge: ChallengeTier | None = None
 
 
 class PossessionStatus(StrEnum):
@@ -91,7 +93,7 @@ class PossessionSettlement:
     half: float
     actor: UserGameState
     target: UserGameState
-    target_status: str
+    target_challenge: ChallengeTier | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +102,7 @@ class PkParticipantSettlement:
     base: UserGameState
     final: UserGameState
     status: str
+    challenge: ChallengeTier | None = None
 
     @property
     def length_change(self) -> float:
@@ -119,7 +122,7 @@ class GrowthSettlement:
     amount: float
     final: UserGameState
     status: str
-    completed_tier: int = 0
+    challenge: ChallengeTier | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,7 +214,11 @@ def tier_for_magnitude(
 
 
 def personal_length_multiplier(state: UserGameState) -> float:
-    return 2.0 if state.challenge_tier >= 1 else 1.0
+    return float(state.challenge_tier + 1)
+
+
+def pk_target_limit(state: UserGameState) -> int:
+    return state.challenge_tier + 1
 
 
 def evaluate_state_transition(
@@ -236,7 +243,7 @@ def evaluate_state_transition(
                         base.win_probability * before_challenge.recovery_multiplier
                     ),
                 ),
-                completed_tier=before_challenge.tier,
+                challenge=before_challenge,
             )
         if magnitude < before_challenge.entry:
             penalty = (
@@ -253,6 +260,7 @@ def evaluate_state_transition(
                         base.win_probability * before_challenge.recovery_multiplier
                     ),
                 ),
+                challenge=before_challenge,
             )
         return StateEvaluation("is_challenging", base)
 
@@ -267,6 +275,7 @@ def evaluate_state_transition(
                 length=length,
                 challenge_tier=tier_for_magnitude(abs(length), tiers),
             ),
+            challenge=held_rule,
         )
 
     next_rule = challenge_tier_rule(before.challenge_tier + 1, tiers)
@@ -274,7 +283,7 @@ def evaluate_state_transition(
         return StateEvaluation(
             "challenge_completed",
             replace(base, challenge_tier=next_rule.tier),
-            completed_tier=next_rule.tier,
+            challenge=next_rule,
         )
     if next_rule and magnitude >= next_rule.entry:
         return StateEvaluation(
@@ -283,6 +292,7 @@ def evaluate_state_transition(
                 base,
                 win_probability=base.win_probability * next_rule.win_multiplier,
             ),
+            challenge=next_rule,
         )
     return StateEvaluation("", base)
 
@@ -305,7 +315,7 @@ def resolve_growth_settlement(
         amount=round(abs(base.length) - abs(state.length), 3),
         final=evaluation.state,
         status=evaluation.status,
-        completed_tier=evaluation.completed_tier,
+        challenge=evaluation.challenge,
     )
 
 
@@ -317,7 +327,7 @@ def resolve_possession(
     """检查夺舍资格并平分目标长度，只有目标承担既有称号惩罚。
 
     Returns:
-        拒绝原因，或含双方最终状态的结算；发起者直接按半长决定完成标记。
+        拒绝原因，或含双方最终状态的结算；发起者直接按半长决定持有阶级。
     """
     if actor.length >= 0 or actor.challenge_tier < 1:
         return PossessionStatus.LOCKED
@@ -340,7 +350,7 @@ def resolve_possession(
     )
     target_tier = tier_for_magnitude(half, tiers)
     new_target = replace(target, length=half, challenge_tier=target_tier)
-    target_status = ""
+    target_challenge = None
     if target_tier < target.challenge_tier:
         held_rule = challenge_tier_rule(target.challenge_tier, tiers)
         if held_rule is None:
@@ -351,12 +361,12 @@ def resolve_possession(
             length=length,
             challenge_tier=tier_for_magnitude(abs(length), tiers),
         )
-        target_status = "challenge_completed_reduce"
+        target_challenge = held_rule
     return PossessionSettlement(
         half=half,
         actor=new_actor,
         target=new_target,
-        target_status=target_status,
+        target_challenge=target_challenge,
     )
 
 
@@ -380,7 +390,9 @@ def _settle_pk_participant(
     status = evaluation.status
     if not status and not is_xnn(state.length) and is_xnn(evaluation.state.length):
         status = "length_near_zero"
-    return PkParticipantSettlement(state, base, evaluation.state, status)
+    return PkParticipantSettlement(
+        state, base, evaluation.state, status, evaluation.challenge
+    )
 
 
 def feminization_probability(total: float) -> float:
@@ -432,7 +444,7 @@ def resolve_pk_settlement(
     random_num: float,
     tiers: tuple[ChallengeTier, ...] = CHALLENGE_TIERS,
 ) -> PkSettlement:
-    """用一次胜负与基础量结算发起者和一至两个目标。
+    """用一次胜负与基础量结算发起者和本局选定的所有目标。
 
     Args:
         attacker: 发起者结算前的完整游戏状态。
@@ -441,7 +453,7 @@ def resolve_pk_settlement(
         random_num: 已由应用层生成的长度变化随机值。
 
     Returns:
-        包含双方基础变化、挑战处理后状态和状态事件的纯结算结果。
+        包含所有参与者基础变化、挑战处理后状态和状态事件的纯结算结果。
 
     Raises:
         ValueError: 没有目标，或参与者不属于同一个正负世界。

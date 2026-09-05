@@ -137,7 +137,7 @@ class DataManager:
 
         Args:
             attacker_ref: 发起者持久身份。
-            defender_refs: 按At顺序排列的一至两个目标。
+            defender_refs: 按At顺序排列、本次实际选定的目标。
             win_roll: 本局固定的胜负随机值。
             random_num: 本局固定的长度变化随机值。
 

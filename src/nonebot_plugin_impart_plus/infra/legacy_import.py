@@ -15,6 +15,7 @@ from nonebot_plugin_uniref import SceneKind, SceneRef, UserRef, encode_ref
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..impart.core import CHALLENGE_TIERS, UserGameState, active_challenge
 from .database import EjaculationData, SceneData, UserData
 
 LEGACY_SOURCE = "nonebot_plugin_impart"
@@ -80,12 +81,20 @@ def _legacy_challenge_state(
     was_challenging = bool(_optional_value(row, columns, "is_challenging", False))
     completed = bool(_optional_value(row, columns, "challenge_completed", False))
     magnitude = abs(length)
-    challenge_tier = 1 if magnitude >= 30 or (completed and magnitude >= 25) else 0
-    is_challenging = challenge_tier == 0 and 25 <= magnitude < 30
-    if was_challenging and not is_challenging:
-        win_probability *= 1.25
-    elif is_challenging and not was_challenging:
-        win_probability *= 0.8
+    challenge_tier = max(
+        (rule.tier for rule in CHALLENGE_TIERS if magnitude >= rule.target),
+        default=0,
+    )
+    if completed and magnitude >= CHALLENGE_TIERS[0].entry:
+        challenge_tier = max(challenge_tier, 1)
+    challenge = active_challenge(UserGameState(length, win_probability, challenge_tier))
+    old_multiplier = 0.8 if was_challenging else 1.0
+    new_multiplier = challenge.win_multiplier if challenge else 1.0
+    if old_multiplier != new_multiplier:
+        # 上游标记对应的始终是旧一阶0.8，不能套用新一阶0.9的恢复系数。
+        if was_challenging:
+            win_probability *= 1.25
+        win_probability *= new_multiplier
     return win_probability, challenge_tier
 
 

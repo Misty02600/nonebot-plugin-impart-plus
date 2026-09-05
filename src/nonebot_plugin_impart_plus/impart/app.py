@@ -11,6 +11,8 @@ from nonebot_plugin_uniref import SceneRef, UserRef
 from ..infra.cooldown import CooldownManager
 from ..infra.data_manager import DataManager
 from .core import (
+    CHALLENGE_TIERS,
+    ChallengeTier,
     GrowthMode,
     InteractionAction,
     InteractionParticipant,
@@ -21,6 +23,7 @@ from .core import (
     active_challenge,
     classify_length,
     is_xnn,
+    pk_target_limit,
     resolve_interaction,
     supports_growth_mode,
 )
@@ -47,6 +50,7 @@ class PkPreparation:
 class PkTargetOutcome:
     length_change: float
     status: str = ""
+    challenge: ChallengeTier | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,9 +62,10 @@ class PkOutcome:
     won: bool = False
     attacker_change: float = 0
     attacker_status: str = ""
+    attacker_challenge: ChallengeTier | None = None
     targets: tuple[PkTargetOutcome, ...] = ()
     attacker_probability: float = 0.5
-    unlocked_users: tuple[UserRef, ...] = ()
+    unlocked_users: dict[UserRef, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +73,7 @@ class PossessionOutcome:
     type: PossessionStatus
     created_users: tuple[UserRef, ...] = ()
     half: float = 0
-    target_status: str = ""
+    target_challenge: ChallengeTier | None = None
 
 
 class GrowthOutcomeType(StrEnum):
@@ -90,8 +95,8 @@ class GrowthOutcome:
     created_users: tuple[UserRef, ...] = ()
     amount: float = 0
     new_length: float = 0
-    challenge_started: bool = False
-    unlocked_users: tuple[UserRef, ...] = ()
+    challenge: ChallengeTier | None = None
+    unlocked_users: dict[UserRef, int] = field(default_factory=dict)
 
 
 class QueryOutcomeType(StrEnum):
@@ -208,7 +213,7 @@ class GameApplication:
             return PossessionOutcome(
                 PossessionStatus.COMPLETED,
                 half=result.half,
-                target_status=result.target_status,
+                target_challenge=result.target_challenge,
             )
 
     async def prepare_pk(
@@ -222,7 +227,7 @@ class GameApplication:
             if not await self._data.has_user(attacker_ref):
                 return PkPreparation(True)
             state = (await self._data.get_user_states(attacker_ref))[attacker_ref]
-            return PkPreparation(True, 2 if state.challenge_tier >= 1 else 1)
+            return PkPreparation(True, pk_target_limit(state))
 
     async def execute_pk(
         self,
@@ -238,8 +243,12 @@ class GameApplication:
 
         if attacker_ref in defender_refs:
             return PkOutcome(PkOutcomeType.SELF_TARGET)
-        if len(defender_refs) > 2 or len(set(defender_refs)) != len(defender_refs):
-            raise ValueError("PK targets must contain one or two unique users")
+        if len(defender_refs) > CHALLENGE_TIERS[-1].tier + 1 or len(
+            set(defender_refs)
+        ) != len(defender_refs):
+            raise ValueError(
+                "PK targets must be unique and within the configured tier limit"
+            )
 
         async with self._state_lock:
             return await self._execute_pk(attacker_ref, defender_refs)
@@ -253,7 +262,7 @@ class GameApplication:
             attacker_state = (await self._data.get_user_states(attacker_ref))[
                 attacker_ref
             ]
-            if attacker_state.challenge_tier < 1:
+            if len(defender_refs) > pk_target_limit(attacker_state):
                 return PkOutcome(PkOutcomeType.MULTI_TARGET_UNAVAILABLE)
 
         created_users = await self._create_missing_users(
@@ -298,23 +307,24 @@ class GameApplication:
             won=settlement.won,
             attacker_change=settlement.attacker.length_change,
             attacker_status=settlement.attacker.status,
+            attacker_challenge=settlement.attacker.challenge,
             targets=tuple(
                 PkTargetOutcome(
                     length_change=participant.length_change,
                     status=participant.status,
+                    challenge=participant.challenge,
                 )
                 for participant in settlement.defenders
             ),
             attacker_probability=settlement.attacker.final.win_probability,
-            unlocked_users=tuple(
-                user
+            unlocked_users={
+                user: participant.final.challenge_tier
                 for user, participant in (
                     (attacker_ref, settlement.attacker),
                     *zip(defender_refs, settlement.defenders, strict=True),
                 )
-                if participant.before.challenge_tier < 1
-                and participant.final.challenge_tier >= 1
-            ),
+                if participant.final.challenge_tier > participant.before.challenge_tier
+            },
         )
 
     async def grow_self(
@@ -370,8 +380,12 @@ class GameApplication:
             GrowthOutcomeType.COMPLETED,
             amount=settlement.amount,
             new_length=settlement.final.length,
-            challenge_started=settlement.status == "challenge_started_low_win",
-            unlocked_users=(user_ref,) if settlement.completed_tier == 1 else (),
+            challenge=settlement.challenge
+            if settlement.status == "challenge_started_low_win"
+            else None,
+            unlocked_users={user_ref: settlement.final.challenge_tier}
+            if settlement.final.challenge_tier > state.challenge_tier
+            else {},
         )
 
     async def grow_target(
@@ -441,8 +455,12 @@ class GameApplication:
             GrowthOutcomeType.COMPLETED,
             amount=settlement.amount,
             new_length=settlement.final.length,
-            challenge_started=settlement.status == "challenge_started_low_win",
-            unlocked_users=(target_ref,) if settlement.completed_tier == 1 else (),
+            challenge=settlement.challenge
+            if settlement.status == "challenge_started_low_win"
+            else None,
+            unlocked_users={target_ref: settlement.final.challenge_tier}
+            if settlement.final.challenge_tier > target_state.challenge_tier
+            else {},
         )
 
     async def query_user(

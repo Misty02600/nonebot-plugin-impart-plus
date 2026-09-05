@@ -15,13 +15,13 @@ async def test_possession_uses_first_target_and_one_name(
 
     from nonebot_plugin_impart_plus.bot.handlers import possession
     from nonebot_plugin_impart_plus.impart.app import PossessionOutcome
-    from nonebot_plugin_impart_plus.impart.core import PossessionStatus
+    from nonebot_plugin_impart_plus.impart.core import CHALLENGE_TIERS, PossessionStatus
 
     execute = AsyncMock(
         return_value=PossessionOutcome(
             PossessionStatus.COMPLETED,
             half=24.999,
-            target_status="challenge_completed_reduce",
+            target_challenge=CHALLENGE_TIERS[0],
         )
     )
     monkeypatch.setattr(possession.game_app, "execute_possession", execute)
@@ -47,6 +47,7 @@ async def test_possession_uses_first_target_and_one_name(
     assert text.count("24.999cm") == 2
     assert "由于你的夺舍" in text
     assert "长度缩短了5cm" in text
+    assert "失去了称号「日耀の柱」" in text
     assert "变成xnn" not in text
 
     execute.reset_mock()
