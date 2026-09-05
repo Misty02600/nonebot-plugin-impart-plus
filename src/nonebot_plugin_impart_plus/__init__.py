@@ -13,7 +13,7 @@ require("nonebot_plugin_localstore")
 require("nonebot_plugin_htmlkit")
 
 __plugin_meta__ = PluginMetadata(
-    name="nonebot_plugin_impart_plus",
+    name="nonebot-plugin-impart-plus",
     usage="""impart功能说明:
 所有指令均遵循NoneBot的COMMAND_START配置
 [透|日|榨][群友|管理|群主]
@@ -44,7 +44,7 @@ __plugin_meta__ = PluginMetadata(
 """,
     description="NoneBot2 银趴插件 Plus",
     type="application",
-    homepage="https://github.com/Misty02600/nonebot_plugin_impart_plus",
+    homepage="https://github.com/Misty02600/nonebot-plugin-impart-plus",
     config=Config,
     supported_adapters=inherit_supported_adapters(
         "nonebot_plugin_alconna",

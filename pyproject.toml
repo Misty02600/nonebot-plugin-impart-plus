@@ -1,5 +1,5 @@
 [project]
-name = "nonebot_plugin_impart_plus"
+name = "nonebot-plugin-impart-plus"
 version = "0.1.0"
 readme = "README.md"
 license = "MIT"
@@ -22,9 +22,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Misty02600/nonebot_plugin_impart_plus"
-Issues = "https://github.com/Misty02600/nonebot_plugin_impart_plus/issues"
-Repository = "https://github.com/Misty02600/nonebot_plugin_impart_plus.git"
+Homepage = "https://github.com/Misty02600/nonebot-plugin-impart-plus"
+Issues = "https://github.com/Misty02600/nonebot-plugin-impart-plus/issues"
+Repository = "https://github.com/Misty02600/nonebot-plugin-impart-plus.git"
 
 [dependency-groups]
 dev = [
@@ -47,7 +47,7 @@ test = [
 type = ["basedpyright>=1.16.0,<2.0.0"]
 
 [tool.nonebot.plugins]
-"nonebot_plugin_impart_plus" = ["nonebot_plugin_impart_plus"]
+"nonebot-plugin-impart-plus" = ["nonebot_plugin_impart_plus"]
 
 [tool.nonebot.adapters]
 nonebot-adapter-onebot = [

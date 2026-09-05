@@ -1,7 +1,7 @@
 <div align="center">
 
-## ✨ nonebot_plugin_impart_plus ✨
-[![LICENSE](https://img.shields.io/github/license/Misty02600/nonebot_plugin_impart_plus.svg)](./LICENSE)
+## ✨ nonebot-plugin-impart-plus ✨
+[![LICENSE](https://img.shields.io/github/license/Misty02600/nonebot-plugin-impart-plus.svg)](./LICENSE)
 [![python](https://img.shields.io/badge/python-3.11+-blue.svg?logo=python&logoColor=white)](https://www.python.org)
 ![Adapters](https://img.shields.io/badge/Adapters-OneBot%20v11-blue)
 <br/>
@@ -13,7 +13,7 @@
 
 ## 📖 介绍
 
-`nonebot_plugin_impart_plus` 是面向 NoneBot2 群聊场景的互动插件，围绕群内数值成长、PK、状态挑战和群友互动提供完整玩法
+`nonebot-plugin-impart-plus` 是面向 NoneBot2 群聊场景的互动插件，围绕群内数值成长、PK、状态挑战和群友互动提供完整玩法
 
 当前优先保证 OneBot V11 的实际实现与回归验收；其他 Adapter 仅保持通用接入设计，不提供逐平台测试承诺。
 
@@ -23,13 +23,13 @@
 <summary>使用 nb-cli 安装</summary>
 在 nonebot2 项目的根目录下打开命令行, 输入以下指令即可安装
 
-    nb plugin install nonebot_plugin_impart_plus --upgrade
+    nb plugin install nonebot-plugin-impart-plus --upgrade
 使用 **pypi** 源安装
 
-    nb plugin install nonebot_plugin_impart_plus --upgrade -i "https://pypi.org/simple"
+    nb plugin install nonebot-plugin-impart-plus --upgrade -i "https://pypi.org/simple"
 使用**清华源**安装
 
-    nb plugin install nonebot_plugin_impart_plus --upgrade -i "https://pypi.tuna.tsinghua.edu.cn/simple"
+    nb plugin install nonebot-plugin-impart-plus --upgrade -i "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 
 </details>
@@ -41,27 +41,27 @@
 <details open>
 <summary>uv</summary>
 
-    uv add nonebot_plugin_impart_plus
+    uv add nonebot-plugin-impart-plus
 安装仓库 main 分支
 
-    uv add git+https://github.com/Misty02600/nonebot_plugin_impart_plus@main
+    uv add git+https://github.com/Misty02600/nonebot-plugin-impart-plus@main
 </details>
 
 <details>
 <summary>pdm</summary>
 
-    pdm add nonebot_plugin_impart_plus
+    pdm add nonebot-plugin-impart-plus
 安装仓库 main 分支
 
-    pdm add git+https://github.com/Misty02600/nonebot_plugin_impart_plus@main
+    pdm add git+https://github.com/Misty02600/nonebot-plugin-impart-plus@main
 </details>
 <details>
 <summary>poetry</summary>
 
-    poetry add nonebot_plugin_impart_plus
+    poetry add nonebot-plugin-impart-plus
 安装仓库 main 分支
 
-    poetry add git+https://github.com/Misty02600/nonebot_plugin_impart_plus@main
+    poetry add git+https://github.com/Misty02600/nonebot-plugin-impart-plus@main
 </details>
 
 打开 nonebot2 项目根目录下的 `pyproject.toml` 文件, 在 `[tool.nonebot]` 部分追加写入
@@ -75,13 +75,13 @@
 
 [nbr](https://github.com/fllesser/nbr) 是一个基于 uv 的 nb-cli，可以方便地管理 nonebot2
 
-    nbr plugin install nonebot_plugin_impart_plus
+    nbr plugin install nonebot-plugin-impart-plus
 使用 **pypi** 源安装
 
-    nbr plugin install nonebot_plugin_impart_plus -i "https://pypi.org/simple"
+    nbr plugin install nonebot-plugin-impart-plus -i "https://pypi.org/simple"
 使用**清华源**安装
 
-    nbr plugin install nonebot_plugin_impart_plus -i "https://pypi.tuna.tsinghua.edu.cn/simple"
+    nbr plugin install nonebot-plugin-impart-plus -i "https://pypi.tuna.tsinghua.edu.cn/simple"
 
 </details>
 
