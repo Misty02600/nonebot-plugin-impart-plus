@@ -22,6 +22,7 @@ async def test_query_merges_xnn_state_and_daily_total(
     status: str,
 ) -> None:
     from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_uninfo import Interface
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import query
@@ -56,6 +57,7 @@ async def test_query_merges_xnn_state_and_daily_total(
             make_ref_context(scene_id="12345"),
             CommandResult(result=IMPART_COMMAND.parse("银趴查询")),
             Match(At("user", "67890"), True),
+            cast(Interface, None),
         )
 
     assert calls == [
@@ -66,8 +68,13 @@ async def test_query_merges_xnn_state_and_daily_total(
     ]
 
 
+@pytest.mark.parametrize(
+    ("mentioned", "render_fails"), [(False, False), (True, False), (True, True)]
+)
 async def test_history_query_appends_total_and_chart(
     monkeypatch: pytest.MonkeyPatch,
+    mentioned: bool,
+    render_fails: bool,
 ) -> None:
     from nonebot_plugin_alconna import (
         AUTO,
@@ -78,6 +85,7 @@ async def test_history_query_appends_total_and_chart(
         Text,
         UniMessage,
     )
+    from nonebot_plugin_uninfo import Interface, User
     from nonebot_plugin_uniref import SceneRef, UserRef
 
     from nonebot_plugin_impart_plus.bot.handlers import query
@@ -102,11 +110,28 @@ async def test_history_query_appends_total_and_chart(
             history={"2026-08-30": 3.0, "2026-08-31": 5.5},
         )
 
-    async def draw_line(_: dict[str, float]) -> bytes:
+    user_calls: list[str] = []
+
+    class InterfaceStub:
+        async def get_user(self, user_id: str) -> User:
+            user_calls.append(user_id)
+            return User(
+                id=user_id, nick="六个汉字昵称", avatar="https://example.com/avatar.png"
+            )
+
+    async def draw_line(
+        data: dict[str, float], *, name: str, avatar_url: str | None, total: float
+    ) -> bytes:
+        assert data == {"2026-08-30": 3.0, "2026-08-31": 5.5}
+        assert name == "六个汉字昵称"
+        assert avatar_url == "https://example.com/avatar.png"
+        assert total == 8.5
+        if render_fails:
+            raise RuntimeError("渲染失败")
         return b"png"
 
     monkeypatch.setattr(query.game_app, "query_user", query_user)
-    monkeypatch.setattr(query.draw_bar_chart, "draw_line_chart", draw_line)
+    monkeypatch.setattr(query.chart_renderer, "render_history", draw_line)
     matcher = FinishingMatcherStub()
 
     with pytest.raises(FinishedException):
@@ -114,15 +139,21 @@ async def test_history_query_appends_total_and_chart(
             cast(Matcher, matcher),
             make_ref_context(scene_id="12345"),
             CommandResult(result=IMPART_COMMAND.parse("银趴查询历史")),
-            Match(At("user", "unused"), False),
+            Match(At("user", "67890"), mentioned),
+            cast(Interface, InterfaceStub()),
         )
 
+    assert user_calls == ["67890" if mentioned else "10001"]
+    pronoun = "TA" if mentioned else "你"
+    assert f"{pronoun}的小学目前深度为2.5cm喵" in matcher.messages[0]
+    assert f"{pronoun}当日总注入量为5.5ml" in matcher.messages[0]
+    assert f"{pronoun}历史总注入量为8.5ml" in matcher.messages[0]
+    if render_fails:
+        assert matcher.messages[0].endswith("\n图表生成失败")
+        return
     assert isinstance(matcher.raw_messages[0], UniMessage)
     assert isinstance(matcher.raw_messages[0][0], Text)
     assert isinstance(matcher.raw_messages[0][1], Image)
-    assert "你的小学目前深度为2.5cm喵" in matcher.messages[0]
-    assert "你当日总注入量为5.5ml" in matcher.messages[0]
-    assert "你历史总注入量为8.5ml" in matcher.messages[0]
     assert matcher.options[0]["fallback"] is AUTO
 
 
@@ -132,6 +163,7 @@ async def test_query_uses_held_tier_for_title_in_retention_band(
     from unittest.mock import AsyncMock
 
     from nonebot_plugin_alconna import At, CommandResult, Match
+    from nonebot_plugin_uninfo import Interface
 
     from nonebot_plugin_impart_plus.bot.handlers import query
     from nonebot_plugin_impart_plus.bot.matchers import IMPART_COMMAND
@@ -160,5 +192,6 @@ async def test_query_uses_held_tier_for_title_in_retention_band(
                     make_ref_context(),
                     CommandResult(result=IMPART_COMMAND.parse("银趴查询")),
                     Match(At("user", "unused"), False),
+                    cast(Interface, None),
                 )
             assert title in matcher.messages[0]

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>历史注入量</title>
+  <style>{{ css | safe }}</style>
+</head>
+<body>
+  <div class="canvas" style="height:{{ canvas_height }}px">
+    <div class="headline">历史注入量</div>
+    <div class="profile">
+      {% if avatar %}<img class="avatar" src="{{ avatar }}" alt="">{% endif %}
+      <div class="user-name">{% for line in user_name_lines %}<div>{{ line }}</div>{% endfor %}</div>
+    </div>
+    <div class="total">累计 {{ total }} <span>mL</span></div>
+
+    <div class="records">
+      {% for record in records %}
+      <div class="record" style="top:{{ loop.index0 * row_height }}px">
+        {% if record is none %}
+        <div class="record-date">···</div>
+        {% else %}
+        <div class="record-date">{{ record.date }}</div>
+        <div class="record-value">{{ record.volume }}</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="empty">暂无记录</div>
+      {% endfor %}
+    </div>
+
+    <div class="chart" role="img" aria-label="按日期排列的个人每日注入量折线图">
+      <div class="axis-unit" style="left:{{ axis_left - 22 }}px;top:{{ plot_top - 35 }}px">mL</div>
+      <div class="y-axis" style="left:{{ axis_left }}px;top:{{ plot_top }}px;height:{{ plot_height }}px"></div>
+      <div class="x-axis" style="left:{{ axis_left }}px;top:{{ baseline }}px;width:{{ plot_width }}px"></div>
+      {% for tick in y_ticks %}
+      <div class="axis-label" style="top:{{ tick.y - 13 }}px;width:{{ axis_left - 13 }}px">{{ tick.label }}</div>
+      <div class="axis-tick" style="left:{{ axis_left }}px;top:{{ tick.y }}px"></div>
+      {% endfor %}
+      {% for tick in x_ticks %}
+      <div class="date-tick" style="left:{{ tick.x }}px;top:{{ baseline - 5 }}px"></div>
+      <div class="date-label" style="left:{{ tick.label_left }}px;top:{{ baseline + 24 }}px;width:{{ date_label_width }}px;text-align:{{ tick.align }}">{{ tick.label }}</div>
+      {% endfor %}
+      {% for segment in segments %}
+      <div class="line-segment" style="left:{{ segment.left }}px;top:{{ segment.top }}px;width:{{ segment.width }}px;height:{{ segment.height }}px;background:linear-gradient({{ segment.angle }}deg,transparent {{ segment.outer_start }}%,#86a6c6 {{ segment.inner_start }}%,#86a6c6 {{ segment.inner_end }}%,transparent {{ segment.outer_end }}%)"></div>
+      {% endfor %}
+      {% for point in points %}
+      <div class="point" style="left:{{ point.x - 5 }}px;top:{{ point.y - 5 }}px"></div>
+      {% endfor %}
+    </div>
+  </div>
+</body>
+</html>

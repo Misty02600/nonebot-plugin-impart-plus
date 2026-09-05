@@ -12,8 +12,15 @@ from .bot_test_utils import (
 )
 
 
+@pytest.mark.parametrize(
+    ("total", "self_index", "render_fails"),
+    [(32, 11, False), (7, 3, False), (32, 11, True)],
+)
 async def test_rank_uses_uninfo_user_directory(
     monkeypatch: pytest.MonkeyPatch,
+    total: int,
+    self_index: int,
+    render_fails: bool,
 ):
     from nonebot_plugin_uninfo import Interface, User
     from nonebot_plugin_uniref import SceneRef, UserRef
@@ -24,14 +31,15 @@ async def test_rank_uses_uninfo_user_directory(
         RankingOutcome,
         RankingOutcomeType,
     )
+    from nonebot_plugin_impart_plus.infra.chart_layout import RankEntry, select_indices
 
     ranking = [
-        RankingEntry(make_user_ref(str(user_id)), float(user_id))
-        for user_id in range(1, 11)
+        RankingEntry(make_user_ref(str(user_id)), float(total - user_id - 2))
+        for user_id in range(1, total + 1)
     ]
     app_calls: list[tuple[SceneRef, UserRef]] = []
     user_calls: list[str] = []
-    chart_data: list[dict[str, float]] = []
+    chart_data: list[list[RankEntry]] = []
 
     async def query_ranking(
         scene_ref: SceneRef,
@@ -41,20 +49,26 @@ async def test_rank_uses_uninfo_user_directory(
         return RankingOutcome(
             RankingOutcomeType.COMPLETED,
             ranking=ranking,
-            index=3,
+            index=self_index,
         )
 
     class InterfaceStub:
         async def get_user(self, user_id: str) -> User:
             user_calls.append(user_id)
-            return User(id=user_id, nick=f"用户{user_id}")
+            if user_id == "2":
+                raise RuntimeError("用户目录暂不可用")
+            return User(
+                id=user_id, nick="同名用户", avatar=f"https://example.com/{user_id}.png"
+            )
 
-    async def draw_bar(data: dict[str, float]) -> bytes:
+    async def draw_bar(data: list[RankEntry]) -> bytes:
         chart_data.append(data)
+        if render_fails:
+            raise RuntimeError("渲染失败")
         return b"png"
 
     monkeypatch.setattr(records.game_app, "query_ranking", query_ranking)
-    monkeypatch.setattr(records.draw_bar_chart, "draw_bar_chart", draw_bar)
+    monkeypatch.setattr(records.chart_renderer, "render_ranking", draw_bar)
     matcher = FinishingMatcherStub()
 
     with pytest.raises(FinishedException):
@@ -65,10 +79,19 @@ async def test_rank_uses_uninfo_user_directory(
         )
 
     assert app_calls == [(make_scene_ref("12345"), make_user_ref())]
-    assert user_calls == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
-    assert chart_data[0]["用户1"] == 1.0
-    assert chart_data[0]["用户10"] == 10.0
-    assert "你的排名为4喵" in matcher.messages[0]
+    expected = [index + 1 for index in select_indices(total, self_index)]
+    assert user_calls == [str(rank) for rank in expected]
+    assert [entry.rank for entry in chart_data[0]] == expected
+    assert [entry.rank for entry in chart_data[0] if entry.is_self] == [self_index + 1]
+    assert chart_data[0][0].name == "同名用户"
+    assert chart_data[0][-1].name == "同名用户"
+    assert chart_data[0][1].name == "2"
+    assert chart_data[0][1].avatar_url is None
+    assert chart_data[0][0].avatar_url == "https://example.com/1.png"
+    assert f"你的排名为{self_index + 1}喵" in matcher.messages[0]
+    if render_fails:
+        assert matcher.messages == [f"你的排名为{self_index + 1}喵\n图表生成失败"]
+        return
     from nonebot_plugin_alconna import AUTO, Image, Text, UniMessage
 
     assert isinstance(matcher.raw_messages[0], UniMessage)

@@ -17,8 +17,8 @@
 | 同世界 PK 与正负挑战 | `pk/对决` 必须 `@` 同世界其他用户；无阶最多1人，一/二/三阶最多2/3/4人，整场共用一次胜负 | 三阶个人基础变动倍率为2/3/4，挑战区间为25→30、300→320、1000→1050，系数0.9/0.8/0.7；从开始时持有阶级决定倍率与人数，最多五人一次事务提交 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`bot/handlers/game.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/game.py) |
 | 群友互动与雌堕 | `透/日/榨` 共用一个命令头；普通男性透、女性榨，XNN 对普通男性榨、对女性透，双 XNN 自动贴贴；错误动作由目标反制一次 | 普通互动一笔收量，贴贴双方互收；共用无类型当日总量。实际接收且结算时仍是 XNN 的成员独立判定雌堕，覆盖透、榨与贴贴；所有人的累计量和转换同日、同事务提交 | [`bot/handlers/interaction.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/interaction.py)、[`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
 | 夺舍 | 持有一阶的负值用户可 `夺舍 @用户`，目标须为正值、未在挑战且长度短于自身深度；只取首个At，无别名 | 向上保留三位小数平分目标长度；发起者直接转正并按半长授予可满足的阶级、退出旧挑战不受惩罚，目标掉阶时承受一次对应称号惩罚；无额外冷却或成功率随机，双方原子提交 | [`bot/handlers/possession.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/possession.py)、[`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py) |
-| 排行榜 | 在当前 `UserRef.namespace` 内显示长度前五、后五和本人排名 | DataManager 通过 namespace 索引分榜，bot 调用 Pillow renderer 生成 PNG | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
-| `Config` | 配置四类冷却时长 | 牛牛与负值部位名称是代码内玩法常量，不属于部署配置；帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
+| 排行榜 | 在当前 `UserRef.namespace` 内显示长度前五、后五和本人；本人处于中段时追加左右各一位 | DataManager 通过 namespace 索引分榜；bot 按真实名次去重后获取 Uninfo 名称和头像，交给 HTMLKit 生成正蓝、负粉的柱状图；同名用户不合并 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py)、[`bot/handlers/records.py`](../../src/nonebot_plugin_impart_plus/bot/handlers/records.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
+| `Config` | 配置四类冷却时长与可选绘图字体名称 `IMPART_FONT_FAMILY` | 字体选择只影响本插件的两种图，不管理字体文件或共享 Fontconfig；牛牛与负值部位名称是代码内玩法常量，帮助文案属于插件元数据，机器人昵称读取 NoneBot 全局配置，可变冷却状态属于 infra | [`config.py`](../../src/nonebot_plugin_impart_plus/config.py)、[`bot/dependencies.py`](../../src/nonebot_plugin_impart_plus/bot/dependencies.py)、[`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py) |
 
 ## 逻辑组件与实现映射
 
@@ -28,9 +28,15 @@
 | 应用用例 | 依次执行场景和命令语义检查、缺失用户初始化、世界与 Ref 冷却检查、随机、core 计算和持久化，返回语义化 outcome | 身份参数只接受 `UserRef`/`SceneRef`；初始化后不继续其他副作用；一个 `asyncio.Lock` 从状态读取保护到写入完成，由 PK、成长、夺舍和互动结算共用；互动的两秒等待和资料查询位于锁外 | 持有 `CooldownManager` 与进程内用户状态结算锁 | [`impart/app.py`](../../src/nonebot_plugin_impart_plus/impart/app.py) |
 | 核心规则 | 分类长度状态和正负成长模式，计算阶级挑战、个人倍率、世界锁、统一PK、互动反制及雌堕概率 | 只依赖标准库；`is_xnn()` 是唯一 XNN 边界；PK每个参与者保留结算前、基础变化后和挑战处理后状态，并从中计算实际基础变化，同一轮只处理每位参与者一次；成长返回实际增长量、最终状态及挑战事件，互动量结算显式携带风险警告与雌堕事件 | 不持有运行状态 | [`impart/core.py`](../../src/nonebot_plugin_impart_plus/impart/core.py) |
 | 数据库与数据访问 | 三个模型继承 NoneBot ORM `Model`，由包内 Alembic migration 管理全新 v1 Ref schema；DataManager 原子提交成长、最多五人的PK、夺舍双方，以及互动总量与雌堕长度；旧库导入器负责一次性复制上游数据 | 默认 SQLite 但可切换 ORM 支持的其他默认数据库后端；单进程 application 锁负责串行化，不实现多进程重试。查询用一条 SQL 获取长度、阶级及当天或完整有序记录；导入把旧挑战标记规范化为阶级和对应胜率，并把 `0/-0.0` 规范化为 `-0.001` | UserRef 用户状态、SceneRef 开关和按用户/日期唯一的互动总量 | [`infra/database.py`](../../src/nonebot_plugin_impart_plus/infra/database.py)、[`infra/data_manager.py`](../../src/nonebot_plugin_impart_plus/infra/data_manager.py)、[`infra/legacy_import.py`](../../src/nonebot_plugin_impart_plus/infra/legacy_import.py)、[`migrations/`](../../src/nonebot_plugin_impart_plus/migrations/) |
-| 运行时与媒体基础设施 | 以 `UserRef` 保存四类冷却时间戳；使用 Pillow 和内置字体绘制图片 | 由 `bot/dependencies.py` 组装并提供给应用或 bot | 进程内 Ref 冷却字典；renderer 实例的调色板和字体路径 | [`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
+| 运行时与媒体基础设施 | 以 `UserRef` 保存四类冷却时间戳；HTMLKit 按只读模板绘制排行榜与个人历史图 | 冷却由 `bot/dependencies.py` 组装；bot 传入展示条目及查询快照，媒体层不查库。原生渲染最多并发两次，头像下载最多并发四次，图片/CSS 外部加载关闭 | 进程内 Ref 冷却字典、渲染并发额度；昵称测量与头像仅保存在本次请求内，字体发现与初始化归 HTMLKit 管理 | [`infra/cooldown.py`](../../src/nonebot_plugin_impart_plus/infra/cooldown.py)、[`infra/chart_layout.py`](../../src/nonebot_plugin_impart_plus/infra/chart_layout.py)、[`infra/chart_renderer.py`](../../src/nonebot_plugin_impart_plus/infra/chart_renderer.py) |
 
 主要代码依赖方向是 `bot → impart.app → impart.core/infra`，同时 bot 为呈现排行榜和历史记录而直接调用 `infra.chart_renderer`。`bot/dependencies.py` 是 composition root，可以同时引用配置、应用和具体基础设施。
+
+两种图均为左侧人物或明细、右侧图表，刻度朝内。长度正负共用统一线性刻度；历史图以真实日期间隔绘制完整记录，缺失日期不补零，超过十八条时明细仅保留最早、最近各九条。历史查询仍至少两天才附图；图片累计量直接使用应用层同一查询快照的总量，不为绘图重新读取或结算。
+
+HTMLKit 是唯一图片实现。资料查询失败退回用户 ID、头像获取失败留空；仅绘图阶段失败会保留原文字并提示“图表生成失败”，业务查询和发送异常不在此处捕获。字体发现与初始化交给 HTMLKit，本插件不生成 Fontconfig 配置、不修改共享配置或环境变量、不扫描额外字体目录。模板和包目录保持只读。
+
+`IMPART_FONT_FAMILY` 在 Config 中默认设为 `Noto Sans CJK SC`，正文、数字及昵称测量统一使用；可以填写一个字体名称，或以英文逗号分隔多个候选，不接受字体文件路径。自定义字体缺失或配置留空时保留 Config 中的默认回退。每个字体名称分别转义为 CSS 字符串，字宽测量与最终正文使用同一套字体候选、字号和字重。插件不分发字体文件。
 
 ## 运行时数据流
 

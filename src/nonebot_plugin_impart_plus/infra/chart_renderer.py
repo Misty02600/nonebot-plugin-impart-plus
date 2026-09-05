@@ -1,239 +1,236 @@
-"""绘画图表模块"""
+"""HTMLKit 图表渲染；模板只读，用户资料与游戏数据由 Handler 传入。"""
 
-import random
-from io import BytesIO
+import asyncio
+import base64
+import math
+import struct
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
+from html import escape as escape_html
 from pathlib import Path
+from typing import Any
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import httpx
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
+from nonebot import get_plugin_config
+from nonebot_plugin_htmlkit import html_to_pic, none_fetcher
+
+from ..config import Config
+from .chart_layout import (
+    CANVAS_HEIGHT,
+    CANVAS_WIDTH,
+    NAME_FONT_SIZE,
+    RankEntry,
+    format_volume,
+    make_history_context,
+    make_ranking_context,
+)
+
+TEMPLATES = Path(__file__).parent / "templates"
+ENV = Environment(
+    loader=FileSystemLoader(TEMPLATES), autoescape=True, undefined=StrictUndefined
+)
+RENDER_SLOTS = asyncio.Semaphore(2)
+AVATAR_SLOTS = asyncio.Semaphore(4)
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
 
 
-class DrawBarChart:
-    def __init__(self) -> None:
-        self.colors: list[tuple[int, int, int]] = [
-            (31, 119, 180),  # 蓝色
-            (44, 160, 44),  # 绿色
-            (214, 39, 40),  # 红色
-            (255, 127, 14),  # 橙色
-            (148, 103, 189),  # 紫色
-            (23, 190, 207),  # 青色
-            (188, 189, 34),  # 黄色
-            (227, 119, 194),  # 粉色
-            (255, 99, 71),  # 红橙色
-            (255, 215, 0),  # 金色
-        ]
-        self.module_path: Path = Path(__file__).parent
-        self.font = str(self.module_path / "assets" / "SIMYOU.TTF")
+def _font_family() -> str:
+    configured = get_plugin_config(Config).impart_font_family
+    # 自定义字体缺失或配置留空时，仍使用 Config 声明的默认回退。
+    names = [
+        name.strip()
+        for name in f"{configured},{Config().impart_font_family}".split(",")
+        if name.strip()
+    ]
+    families: list[str] = []
+    for name in dict.fromkeys(names):
+        if name in {"serif", "sans-serif", "monospace", "cursive", "fantasy"}:
+            families.append(name)
+            continue
+        # 每个名称单独转义，不能注入 CSS 规则或结束 HTML style 标签。
+        escaped = "".join(
+            f"\\{ord(char):x} "
+            if char in '\\"<>' or ord(char) < 32 or ord(char) == 127
+            else char
+            for char in name
+        )
+        families.append(f'"{escaped}"')
+    return ", ".join(families)
 
-    async def draw_bar_chart(self, data: dict[str, float]) -> bytes:
-        """画柱状图, 传入一个字典, key是str类型的用户名字, value是对应用户的注入量"""
-        values = list(data.values())
-        keys = list(data.keys())
-        image = Image.new("RGBA", (1920, 1080), (255, 255, 255, 255))
-        draw = ImageDraw.Draw(image)
 
-        # ------------------------ 画一个框框 ------------------------
+def _chart_css(filename: str, font_family: str) -> str:
+    return f"body {{ font-family: {font_family}; }}\n" + (
+        TEMPLATES / filename
+    ).read_text(encoding="utf-8")
 
-        image_new = Image.new("RGBA", (1920, 1080), (255, 255, 255, 0))
-        draw_new = ImageDraw.Draw(image_new)
-        draw_new.rectangle((420, 25, 1860, 1060), fill=(255, 255, 255, 220))
-        image_new = image_new.filter(ImageFilter.GaussianBlur(radius=0.1))
-        image.paste(image_new, (0, 0), image_new)
 
-        # ------------------------ 画一个坐标轴 ------------------------
+def png_dimensions(png: bytes) -> tuple[int, int]:
+    if len(png) < 24 or png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
+        raise ValueError("渲染结果缺少有效 PNG 尺寸头")
+    return struct.unpack(">II", png[16:24])
 
-        draw.line((490, 770, 1800, 770), fill="black", width=2)
-        draw.line((500, 50, 500, 1030), fill="black", width=2)
-        maxnum_scale = abs(max(values) / 9)
-        minnum_scale = abs(min(values) / 3)
 
-        # ------------------------ 画一些虚线 ------------------------
-
-        def draw_dotted_line(y):
-            x_start, x_end = 500, 1800
-            dash_length = 10
-            gap_length = 5
-            x = x_start
-            while x < x_end:
-                x_dash_end = min(x + dash_length, x_end)
-                draw.line((x, y, x_dash_end, y), fill="black", width=1)
-                x += dash_length + gap_length
-
-        for i in range(10):
-            draw_dotted_line(770 - 780 * i / 10)
-            draw_dotted_line(770 + 780 * i / 10)
-        maxnum_scale = int(maxnum_scale / 50 + 1) * 50
-        minnum_scale = int(minnum_scale / 50 + 1) * 50
-
-        if maxnum_scale == 0:
-            maxnum_scale = 50
-        if minnum_scale == 0:
-            minnum_scale = 50
-        for i in range(10):
-            draw.text(
-                (450, 770 - 780 * i / 10 - 10),
-                str(maxnum_scale * i),
-                fill="black",
-                font=ImageFont.truetype(self.font, 20),
+async def _render_png(
+    html: str, *, width: int = CANVAS_WIDTH, refit: bool = False
+) -> bytes:
+    async with RENDER_SLOTS:
+        # 取消命令时等待本次原生任务结束，再归还并发名额。
+        task = asyncio.create_task(
+            html_to_pic(
+                html,
+                max_width=width,
+                allow_refit=refit,
+                dpi=96,
+                img_fetch_fn=none_fetcher,
+                css_fetch_fn=none_fetcher,
             )
-        for i in range(1, 4):
-            draw.text(
-                (450, 770 + 780 * i / 10 - 10),
-                f"-{minnum_scale * i!s}",
-                fill="black",
-                font=ImageFont.truetype(self.font, 20),
+        )
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            with suppress(Exception):
+                await task
+            raise
+
+
+async def _load_avatars(urls: Sequence[str | None]) -> dict[str, str]:
+    unique_urls = {url for url in urls if url}
+    if not unique_urls:
+        return {}
+    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+
+        async def load(url: str) -> tuple[str, str]:
+            async with AVATAR_SLOTS:
+                try:
+                    if httpx.URL(url).scheme not in ("http", "https"):
+                        return url, ""
+                    async with (
+                        asyncio.timeout(10),
+                        client.stream("GET", url) as response,
+                    ):
+                        response.raise_for_status()
+                        data = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            data.extend(chunk)
+                            if len(data) > MAX_AVATAR_BYTES:
+                                return url, ""
+                    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+                        mime = "image/png"
+                    elif data.startswith(b"\xff\xd8"):
+                        mime = "image/jpeg"
+                    elif data.startswith((b"GIF87a", b"GIF89a")):
+                        mime = "image/gif"
+                    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+                        mime = "image/webp"
+                    else:
+                        return url, ""
+                    return url, f"data:{mime};base64," + base64.b64encode(data).decode(
+                        "ascii"
+                    )
+                except (httpx.HTTPError, httpx.InvalidURL, TimeoutError):
+                    return url, ""
+
+        return dict(await asyncio.gather(*(load(url) for url in unique_urls)))
+
+
+class NicknameLayout:
+    """用当前 HTMLKit 字体的实际宽度排两行昵称，并缓存重复测量结果。"""
+
+    def __init__(self, font_family: str) -> None:
+        self.font_family = font_family
+        self.widths: dict[tuple[str, bool], int] = {}
+
+    async def measure(self, text: str, bold: bool) -> int:
+        if not text:
+            return 0
+        key = text, bold
+        if key not in self.widths:
+            html = (
+                "<html><head><style>*{margin:0;padding:0;}"
+                f"span{{font-family:{self.font_family};"
+                f"font-size:{NAME_FONT_SIZE}px;font-weight:{600 if bold else 400};"
+                "white-space:nowrap;}</style></head><body>"
+                f"<span>{escape_html(text)}</span></body></html>"
             )
+            png = await _render_png(html, width=2048, refit=True)
+            self.widths[key] = png_dimensions(png)[0]
+        return self.widths[key]
 
-        # ------------------------ 画柱状图 ------------------------
+    async def fit(self, text: str, width: int, bold: bool) -> list[str]:
+        if await self.measure(text, bold) <= width:
+            return [text]
 
-        columns = Image.new("RGBA", (1920, 1080), (255, 255, 255, 0))
-        draw = ImageDraw.Draw(columns)
-        random.shuffle(self.colors)
-        for i, value in enumerate(values):
-            color = self.colors[i]
-            draw.rectangle((50, 50 + 70 * i, 100, 100 + 70 * i), fill=(*color, 250))
-            draw.text(
-                (120, 60 + 70 * i),
-                keys[i] if len(keys[i]) < 8 else f"{keys[i][:8]}...",
-                fill="black",
-                font=ImageFont.truetype(self.font, 28),
+        async def prefix(value: str, suffix: str = "") -> int:
+            left, right = 0, len(value)
+            while left < right:
+                middle = (left + right + 1) // 2
+                if await self.measure(value[:middle].rstrip() + suffix, bold) <= width:
+                    left = middle
+                else:
+                    right = middle - 1
+            return left
+
+        first_end = await prefix(text)
+        if not first_end:
+            return ["…"]
+        first, rest = text[:first_end].rstrip(), text[first_end:].lstrip()
+        if await self.measure(rest, bold) <= width:
+            return [first, rest]
+        second_end = await prefix(rest, "…")
+        return [first, rest[:second_end].rstrip() + "…"]
+
+    async def apply(self, context: dict[str, Any]) -> None:
+        for entry in context["entries"]:
+            lines = await self.fit(
+                entry["full_name"], context["name_width"], entry["is_self"]
             )
-            if value > 0:
-                draw.rectangle(
-                    (
-                        540 + 120 * i,
-                        770 - 78 * (value / maxnum_scale),
-                        635 + 120 * i,
-                        770,
-                    ),
-                    fill=(*color, 200),
-                )
-                draw.text(
-                    (540 + 120 * i, 770 - 78 * (value / maxnum_scale) - 30),
-                    str(value),
-                    fill="black",
-                    font=ImageFont.truetype(self.font, 26),
-                )
-            else:
-                draw.rectangle(
-                    (
-                        540 + 120 * i,
-                        770,
-                        635 + 120 * i,
-                        770 - 78 * (value / minnum_scale),
-                    ),
-                    fill=(*color, 200),
-                )
-                draw.text(
-                    (540 + 120 * i, 770 - 78 * (value / minnum_scale) + 10),
-                    str(value),
-                    fill="black",
-                    font=ImageFont.truetype(self.font, 26),
-                )
-
-        # ------------------------ 粘贴上来 ------------------------
-        image.paste(columns, (0, 0), columns)
-        img_byte = BytesIO()
-        image.save(img_byte, format="PNG")
-        return img_byte.getvalue()
-
-    async def draw_line_chart(self, data: dict[str, float]):
-        """画折线图, 传入一个字典, key是str类型的用户名字, value是对应用户的注入量"""
-        values = list(data.values())
-        keys = list(data.keys())
-        image = Image.new("RGBA", (1920, 1080), (255, 255, 255, 255))
-        draw = ImageDraw.Draw(image)
-
-        # ------------------------ 画一个框框 ------------------------
-
-        image_new = Image.new("RGBA", (1920, 1080), (255, 255, 255, 0))
-        draw_new = ImageDraw.Draw(image_new)
-        draw_new.rectangle((420, 25, 1860, 1060), fill=(255, 255, 255, 220))
-        image_new = image_new.filter(ImageFilter.GaussianBlur(radius=0.1))
-        image.paste(image_new, (0, 0), image_new)
-
-        # ------------------------ 画一个坐标轴 ------------------------
-
-        draw.line((490, 1000, 1800, 1000), fill="black", width=2)
-        draw.line((500, 50, 500, 1030), fill="black", width=2)
-        maxnum_scale = max(values) / 9
-
-        # ------------------------ 画一些虚线 ------------------------
-
-        def draw_dotted_line(y):
-            x_start, x_end = 500, 1800
-            dash_length = 10
-            gap_length = 5
-            x = x_start
-            while x < x_end:
-                x_dash_end = min(x + dash_length, x_end)
-                draw.line((x, y, x_dash_end, y), fill="black", width=1)
-                x += dash_length + gap_length
-
-        for i in range(10):
-            draw_dotted_line(1000 - 950 * i / 10)
-        maxnum_scale = int((maxnum_scale / 20 + 1) * 20)
-        if maxnum_scale == 0:
-            maxnum_scale = 20
-
-        for i in range(10):
-            draw.text(
-                (450, 1000 - 950 * i / 10 - 10),
-                str(maxnum_scale * i),
-                fill="black",
-                font=ImageFont.truetype(self.font, 20),
-            )
-
-        # ------------------------ 画折线图 ------------------------
-
-        def draw_line_chart():
-            x_start = 540
-            x_gap = (1800 - x_start) / (len(values) - 1)
-            x = x_start
-            y = 1000 - 95 * (values[0] / maxnum_scale)
-            draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill="black", width=2)
-            draw.text(
-                (x - 20, y - 30),
-                str(values[0]),
-                fill="black",
-                font=ImageFont.truetype(self.font, 32),
-            )
-            for i in range(1, len(values)):
-                x_new = x_start + x_gap * i
-                y_new = 1000 - 95 * (values[i] / maxnum_scale)
-                draw.line((x, y, x_new, y_new), fill="black", width=2)
-                x, y = x_new, y_new
-                draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill="black", width=2)
-                draw.text(
-                    (x - 20, y - 30),
-                    str(values[i]),
-                    fill="black",
-                    font=ImageFont.truetype(self.font, 26),
-                )
-
-        draw_line_chart()
-        if len(values) > 18:
-            keys = keys[:9] + keys[-9:]
-            values = values[:9] + values[-9:]
-        position = 0
-        for i in range(len(values)):
-            position += 50
-            if i == 9:
-                draw.text(
-                    (50, position),
-                    ".........\n.........",
-                    fill="black",
-                    font=ImageFont.truetype(self.font, 34),
-                )
-                position += 100
-            draw.text(
-                (50, position),
-                f"{keys[i]}   {values[i]}ml",
-                fill="black",
-                font=ImageFont.truetype(self.font, 34),
-            )
-        bytes_io = BytesIO()
-        image.save(bytes_io, format="PNG")
-        return bytes_io.getvalue()
+            widths = [await self.measure(line, entry["is_self"]) for line in lines]
+            if len(lines) > 2 or any(width > context["name_width"] for width in widths):
+                raise RuntimeError("昵称超过了人物列表的可用宽度")
+            entry["name_lines"] = lines
+            entry["name_top"] = 13 if len(lines) == 1 else 0
 
 
-draw_bar_chart = DrawBarChart()
+async def render_ranking(entries: Sequence[RankEntry]) -> bytes:
+    context = make_ranking_context(entries)
+    avatars = await _load_avatars([entry.avatar_url for entry in entries])
+    font_family = _font_family()
+    await NicknameLayout(font_family).apply(context)
+    for source, row in zip(entries, context["entries"], strict=True):
+        row["avatar"] = avatars.get(source.avatar_url or "", "")
+    html = ENV.get_template("ranking.html.jinja").render(
+        css=_chart_css("ranking.css", font_family),
+        **context,
+    )
+    png = await _render_png(html)
+    if png_dimensions(png) != (CANVAS_WIDTH, CANVAS_HEIGHT):
+        raise RuntimeError("排行榜图片尺寸异常")
+    return png
+
+
+async def render_history(
+    history: Mapping[str, float],
+    *,
+    name: str,
+    avatar_url: str | None = None,
+    total: float,
+) -> bytes:
+    """渲染同一查询快照中的个人历史，保留应用层给出的累计值。"""
+    if not math.isfinite(total) or total < 0:
+        raise ValueError("历史累计量必须是非负有限值")
+    context = make_history_context(history)
+    context["total"] = format_volume(total)
+    avatars = await _load_avatars([avatar_url])
+    font_family = _font_family()
+    names = await NicknameLayout(font_family).fit(" ".join(name.split()), 280, True)
+    html = ENV.get_template("history.html.jinja").render(
+        css=_chart_css("history.css", font_family),
+        avatar=avatars.get(avatar_url or "", ""),
+        user_name_lines=names,
+        **context,
+    )
+    png = await _render_png(html)
+    if png_dimensions(png) != (CANVAS_WIDTH, context["canvas_height"]):
+        raise RuntimeError("历史图片尺寸异常")
+    return png

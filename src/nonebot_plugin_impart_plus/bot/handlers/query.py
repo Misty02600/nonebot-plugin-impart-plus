@@ -3,6 +3,7 @@
 from random import choice
 from typing import cast
 
+from nonebot import logger
 from nonebot.matcher import Matcher
 from nonebot_plugin_alconna import (
     AUTO,
@@ -12,11 +13,12 @@ from nonebot_plugin_alconna import (
     Match,
     UniMessage,
 )
+from nonebot_plugin_uninfo import QryItrface
 from nonebot_plugin_uniref import RefContext
 
 from ...impart.app import QueryOutcomeType
 from ...impart.core import GrowthMode, LengthState
-from ...infra.chart_renderer import draw_bar_chart
+from ...infra import chart_renderer
 from ..dependencies import game_app
 from ..matchers import history_query_matcher, query_matcher
 from .shared import (
@@ -25,7 +27,9 @@ from .shared import (
     NOT_ALLOWED_TEXT,
     challenge_title,
     created_user_message,
+    get_user_or_none,
     user_at_target,
+    user_display_name,
 )
 
 
@@ -36,6 +40,7 @@ async def query_user(
     refs: RefContext,
     command_result: CommandResult,
     target: Match[At],
+    interface: QryItrface,
 ) -> None:
     user_ref = refs.user_ref
     mentioned = user_at_target(target.result) if target.available else None
@@ -81,9 +86,20 @@ async def query_user(
     message += f"\n{pronoun}历史总注入量为{outcome.history_total}ml"
     if len(outcome.history) < 2:
         await matcher.finish(message, at_sender=True)
+    user = await get_user_or_none(interface, target_ref.id)
+    try:
+        img_bytes = await chart_renderer.render_history(
+            outcome.history,
+            name=user_display_name(user, target_ref.id),
+            avatar_url=user.avatar if user else None,
+            total=outcome.history_total,
+        )
+    except Exception:
+        logger.exception("历史图表生成失败")
+        await matcher.finish(f"{message}\n图表生成失败", at_sender=True)
     await cast(AlconnaMatcher, matcher).finish(
         UniMessage.text(message).image(
-            raw=await draw_bar_chart.draw_line_chart(outcome.history),
+            raw=img_bytes,
         ),
         fallback=AUTO,
         at_sender=True,
