@@ -1706,6 +1706,18 @@ async def test_growth_challenge_guards_precede_cooldown_and_random(
         ),
         await application.grow_target(
             scene,
+            positive_challenger,
+            negative_normal,
+            mode.DEPTH,
+        ),
+        await application.grow_target(
+            scene,
+            negative_challenger,
+            positive_normal,
+            mode.LENGTH,
+        ),
+        await application.grow_target(
+            scene,
             positive_normal,
             positive_challenger,
             mode.LENGTH,
@@ -1723,8 +1735,16 @@ async def test_growth_challenge_guards_precede_cooldown_and_random(
         GrowthOutcomeType.ACTOR_CHALLENGING,
         GrowthOutcomeType.ACTOR_CHALLENGING,
         GrowthOutcomeType.ACTOR_CHALLENGING,
+        GrowthOutcomeType.ACTOR_CHALLENGING,
+        GrowthOutcomeType.ACTOR_CHALLENGING,
         GrowthOutcomeType.TARGET_CHALLENGING,
         GrowthOutcomeType.TARGET_CHALLENGING,
+    ]
+    assert [outcome.actor_mode for outcome in outcomes[2:6]] == [
+        mode.LENGTH,
+        mode.DEPTH,
+        mode.LENGTH,
+        mode.DEPTH,
     ]
     assert generated == 0
     assert cooldown.cd_data == {}

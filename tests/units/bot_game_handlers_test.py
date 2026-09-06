@@ -631,7 +631,19 @@ async def test_target_growth_handler_uses_mode_specific_failure_copy(
         ("舔", GrowthOutcome(GrowthOutcomeType.WRONG_STATE)),
         ("舔", GrowthOutcome(GrowthOutcomeType.COOLING_DOWN, remaining=12.5)),
         ("嗦", GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)),
+        (
+            "舔",
+            GrowthOutcome(
+                GrowthOutcomeType.ACTOR_CHALLENGING, actor_mode=GrowthMode.DEPTH
+            ),
+        ),
         ("舔", GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)),
+        (
+            "嗦",
+            GrowthOutcome(
+                GrowthOutcomeType.ACTOR_CHALLENGING, actor_mode=GrowthMode.DEPTH
+            ),
+        ),
         ("嗦", GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)),
         ("舔", GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)),
     ]
@@ -653,8 +665,10 @@ async def test_target_growth_handler_uses_mode_specific_failure_copy(
     assert messages[1:] == [
         "TA没有小学喵，舔不了喵",
         "你已经舔不动了喵, 请等待12.5秒后再舔喵",
-        "你的牛牛长度在任务范围内，不允许嗦，请专心与群友pk！",
-        "你的小学深度在任务范围内，不允许舔，请专心与群友pk！",
+        "你的牛牛长度在任务范围内，不准嗦！请专心与群友pk！",
+        "你的小学深度在任务范围内，不准舔！请专心与群友pk！",
+        "你的牛牛长度在任务范围内，不准舔！请专心与群友pk！",
+        "你的小学深度在任务范围内，不准嗦！请专心与群友pk！",
         "TA的牛牛长度在任务范围内，不准嗦！请专心与群友pk！",
         "TA的小学深度在任务范围内，不准舔！请专心与群友pk！",
     ]

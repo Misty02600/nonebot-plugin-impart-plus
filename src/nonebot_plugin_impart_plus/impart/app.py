@@ -99,6 +99,7 @@ class GrowthOutcome:
     new_length: float = 0
     challenge: ChallengeTier | None = None
     unlocked_users: dict[UserRef, int] = field(default_factory=dict)
+    actor_mode: GrowthMode = GrowthMode.LENGTH
 
 
 class QueryOutcomeType(StrEnum):
@@ -438,10 +439,13 @@ class GameApplication:
         if not supports_growth_mode(target_state.length, mode):
             return GrowthOutcome(GrowthOutcomeType.WRONG_STATE)
 
-        if supports_growth_mode(actor_state.length, mode) and active_challenge(
-            actor_state
-        ):
-            return GrowthOutcome(GrowthOutcomeType.ACTOR_CHALLENGING)
+        if active_challenge(actor_state):
+            return GrowthOutcome(
+                GrowthOutcomeType.ACTOR_CHALLENGING,
+                actor_mode=GrowthMode.LENGTH
+                if actor_state.length > 0
+                else GrowthMode.DEPTH,
+            )
         if active_challenge(target_state):
             return GrowthOutcome(GrowthOutcomeType.TARGET_CHALLENGING)
 

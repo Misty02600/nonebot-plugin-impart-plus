@@ -484,12 +484,14 @@ async def grow_target(
             at_sender=True,
         )
     if outcome.type is GrowthOutcomeType.ACTOR_CHALLENGING:
-        message = (
-            f"你的{choice(JJ_NAMES)}长度在任务范围内，不允许嗦，请专心与群友pk！"
-            if mode is GrowthMode.LENGTH
-            else f"你的{HOLE_NAME}深度在任务范围内，不允许舔，请专心与群友pk！"
+        name = (
+            choice(JJ_NAMES) if outcome.actor_mode is GrowthMode.LENGTH else HOLE_NAME
         )
-        await matcher.finish(message, at_sender=True)
+        dimension = "长度" if outcome.actor_mode is GrowthMode.LENGTH else "深度"
+        await matcher.finish(
+            f"你的{name}{dimension}在任务范围内，不准{action}！请专心与群友pk！",
+            at_sender=True,
+        )
     if outcome.type is GrowthOutcomeType.TARGET_CHALLENGING:
         message = (
             f"TA的{choice(JJ_NAMES)}长度在任务范围内，不准嗦！请专心与群友pk！"
