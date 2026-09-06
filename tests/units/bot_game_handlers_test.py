@@ -59,7 +59,7 @@ async def test_growth_handler_uses_uninfo_identity(
 
     assert calls == [(make_scene_ref("12345"), make_user_ref(), GrowthMode.LENGTH)]
     assert len(matcher.messages) == 1
-    assert matcher.messages[0].startswith("开导结束喵")
+    assert matcher.messages[0].startswith("打胶结束喵")
     assert "导长了1.25cm" in matcher.messages[0]
     assert "目前长度为11.25cm" in matcher.messages[0]
 

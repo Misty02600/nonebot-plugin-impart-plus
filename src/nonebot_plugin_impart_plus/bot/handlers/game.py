@@ -412,7 +412,7 @@ async def grow_self(
             )
         await _finish_game_reply(
             matcher,
-            f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵"
+            f"打胶结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵"
             f"\n由于你无休止的打胶，触犯到了神秘的禁忌，{botname}检测到你的{choice(JJ_NAMES)}长度超过{challenge.entry:g}cm，已为你开启✨“登神长阶”✨"
             f"\n你现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“打胶”与“嗦”指令，请以将{choice(JJ_NAMES)}长度提升至{challenge.target:g}cm为目标与他人pk吧！",
             unlocked_users=outcome.unlocked_users,
@@ -427,7 +427,7 @@ async def grow_self(
         )
     await _finish_game_reply(
         matcher,
-        f"开导结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵, 目前长度为{outcome.new_length}cm喵",
+        f"打胶结束喵, 你的{choice(JJ_NAMES)}很满意喵, 导长了{outcome.amount}cm喵, 目前长度为{outcome.new_length}cm喵",
         unlocked_users=outcome.unlocked_users,
         mode=mode,
     )
