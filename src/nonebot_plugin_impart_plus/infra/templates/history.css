@@ -1,25 +1,25 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { background: #fafafd; }
 body { color: #514e60; }
-.canvas { position: relative; width: 1600px; background: #fafafd; }
-.headline { position: absolute; left: 56px; top: 30px; font-size: 32px; line-height: 45px; font-weight: 500; }
-.profile { position: absolute; left: 56px; top: 110px; width: 392px; height: 54px; }
-.avatar { position: absolute; left: 0; top: 0; width: 46px; height: 46px; border-radius: 23px; }
-.user-name { position: absolute; left: 62px; top: 7px; width: 280px; font-size: 22px; line-height: 27px; color: #4f769d; font-weight: 600; }
-.total { position: absolute; left: 56px; top: 180px; font-size: 22px; line-height: 30px; color: #635e71; }
-.total span { font-size: 17px; color: #93909f; }
-.records { position: absolute; left: 56px; top: 244px; width: 340px; }
-.record { position: absolute; left: 0; width: 340px; height: 32px; line-height: 32px; font-size: 21px; }
-.record-date { position: absolute; left: 0; width: 155px; color: #8c879a; }
-.record-value { position: absolute; right: 0; width: 145px; text-align: right; color: #635e71; }
-.empty { font-size: 21px; color: #93909f; }
-.chart { position: absolute; left: 480px; top: 112px; width: 1064px; height: 752px; }
-.axis-unit { position: absolute; color: #93909f; font-size: 17px; }
-.y-axis { position: absolute; width: 1px; background: #cfcbdc; }
-.x-axis { position: absolute; height: 1px; background: #cfcbdc; }
-.axis-label { position: absolute; left: 0; height: 26px; line-height: 26px; color: #93909f; font-size: 17px; text-align: right; }
-.axis-tick { position: absolute; width: 6px; height: 1px; background: #cfcbdc; }
-.date-tick { position: absolute; width: 1px; height: 6px; background: #cfcbdc; }
-.date-label { position: absolute; font-size: 18px; line-height: 26px; color: #93909f; }
+.canvas { position: relative; width: 1600rem; background: #fafafd; }
+.headline { position: absolute; left: 56rem; top: 30rem; font-size: 32rem; line-height: 45rem; font-weight: 500; }
+.profile { position: absolute; left: 56rem; top: 110rem; width: 392rem; height: 54rem; }
+.avatar { position: absolute; left: 0; top: 0; width: 46rem; height: 46rem; border-radius: 23rem; }
+.user-name { position: absolute; left: 62rem; top: 7rem; width: 280rem; font-size: 22rem; line-height: 27rem; color: #4f769d; font-weight: 600; }
+.total { position: absolute; left: 56rem; top: 180rem; font-size: 22rem; line-height: 30rem; color: #635e71; }
+.total span { font-size: 17rem; color: #93909f; }
+.records { position: absolute; left: 56rem; top: 244rem; width: 340rem; }
+.record { position: absolute; left: 0; width: 340rem; height: 32rem; line-height: 32rem; font-size: 21rem; }
+.record-date { position: absolute; left: 0; width: 155rem; color: #8c879a; }
+.record-value { position: absolute; right: 0; width: 145rem; text-align: right; color: #635e71; }
+.empty { font-size: 21rem; color: #93909f; }
+.chart { position: absolute; left: 480rem; top: 112rem; width: 1064rem; height: 752rem; }
+.axis-unit { position: absolute; color: #93909f; font-size: 17rem; }
+.y-axis { position: absolute; width: 1rem; background: #cfcbdc; }
+.x-axis { position: absolute; height: 1rem; background: #cfcbdc; }
+.axis-label { position: absolute; left: 0; height: 26rem; line-height: 26rem; color: #93909f; font-size: 17rem; text-align: right; }
+.axis-tick { position: absolute; width: 6rem; height: 1rem; background: #cfcbdc; }
+.date-tick { position: absolute; width: 1rem; height: 6rem; background: #cfcbdc; }
+.date-label { position: absolute; font-size: 18rem; line-height: 26rem; color: #93909f; }
 .line-segment { position: absolute; }
-.point { position: absolute; width: 10px; height: 10px; background: #648fba; border: 2px solid #fafafd; border-radius: 5px; }
+.point { position: absolute; width: 10rem; height: 10rem; background: #648fba; border: 2rem solid #fafafd; border-radius: 5rem; }

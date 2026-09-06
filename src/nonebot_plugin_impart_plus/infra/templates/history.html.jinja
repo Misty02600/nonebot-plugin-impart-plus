@@ -6,7 +6,7 @@
   <style>{{ css | safe }}</style>
 </head>
 <body>
-  <div class="canvas" style="height:{{ canvas_height }}px">
+  <div class="canvas" style="height:{{ canvas_height }}rem">
     <div class="headline">历史注入量</div>
     <div class="profile">
       {% if avatar %}<img class="avatar" src="{{ avatar }}" alt="">{% endif %}
@@ -16,7 +16,7 @@
 
     <div class="records">
       {% for record in records %}
-      <div class="record" style="top:{{ loop.index0 * row_height }}px">
+      <div class="record" style="top:{{ loop.index0 * row_height }}rem">
         {% if record is none %}
         <div class="record-date">···</div>
         {% else %}
@@ -30,22 +30,22 @@
     </div>
 
     <div class="chart" role="img" aria-label="按日期排列的个人每日注入量折线图">
-      <div class="axis-unit" style="left:{{ axis_left - 22 }}px;top:{{ plot_top - 35 }}px">mL</div>
-      <div class="y-axis" style="left:{{ axis_left }}px;top:{{ plot_top }}px;height:{{ plot_height }}px"></div>
-      <div class="x-axis" style="left:{{ axis_left }}px;top:{{ baseline }}px;width:{{ plot_width }}px"></div>
+      <div class="axis-unit" style="left:{{ axis_left - 22 }}rem;top:{{ plot_top - 35 }}rem">mL</div>
+      <div class="y-axis" style="left:{{ axis_left }}rem;top:{{ plot_top }}rem;height:{{ plot_height }}rem"></div>
+      <div class="x-axis" style="left:{{ axis_left }}rem;top:{{ baseline }}rem;width:{{ plot_width }}rem"></div>
       {% for tick in y_ticks %}
-      <div class="axis-label" style="top:{{ tick.y - 13 }}px;width:{{ axis_left - 13 }}px">{{ tick.label }}</div>
-      <div class="axis-tick" style="left:{{ axis_left }}px;top:{{ tick.y }}px"></div>
+      <div class="axis-label" style="top:{{ tick.y - 13 }}rem;width:{{ axis_left - 13 }}rem">{{ tick.label }}</div>
+      <div class="axis-tick" style="left:{{ axis_left }}rem;top:{{ tick.y }}rem"></div>
       {% endfor %}
       {% for tick in x_ticks %}
-      <div class="date-tick" style="left:{{ tick.x }}px;top:{{ baseline - 5 }}px"></div>
-      <div class="date-label" style="left:{{ tick.label_left }}px;top:{{ baseline + 24 }}px;width:{{ date_label_width }}px;text-align:{{ tick.align }}">{{ tick.label }}</div>
+      <div class="date-tick" style="left:{{ tick.x }}rem;top:{{ baseline - 5 }}rem"></div>
+      <div class="date-label" style="left:{{ tick.label_left }}rem;top:{{ baseline + 24 }}rem;width:{{ date_label_width }}rem;text-align:{{ tick.align }}">{{ tick.label }}</div>
       {% endfor %}
       {% for segment in segments %}
-      <div class="line-segment" style="left:{{ segment.left }}px;top:{{ segment.top }}px;width:{{ segment.width }}px;height:{{ segment.height }}px;background:linear-gradient({{ segment.angle }}deg,transparent {{ segment.outer_start }}%,#86a6c6 {{ segment.inner_start }}%,#86a6c6 {{ segment.inner_end }}%,transparent {{ segment.outer_end }}%)"></div>
+      <div class="line-segment" style="left:{{ segment.left }}rem;top:{{ segment.top }}rem;width:{{ segment.width }}rem;height:{{ segment.height }}rem;background:linear-gradient({{ segment.angle }}deg,transparent {{ segment.outer_start }}%,#86a6c6 {{ segment.inner_start }}%,#86a6c6 {{ segment.inner_end }}%,transparent {{ segment.outer_end }}%)"></div>
       {% endfor %}
       {% for point in points %}
-      <div class="point" style="left:{{ point.x - 5 }}px;top:{{ point.y - 5 }}px"></div>
+      <div class="point" style="left:{{ point.x - 5 }}rem;top:{{ point.y - 5 }}rem"></div>
       {% endfor %}
     </div>
   </div>

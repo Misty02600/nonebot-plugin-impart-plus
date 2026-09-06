@@ -22,13 +22,13 @@ async def test_chart_fonts_match_measurement_and_keep_fallbacks(
     rendered: list[str] = []
     measured: list[str] = []
 
-    async def render(html: str, *, width: int = 1600, refit: bool = False) -> bytes:
+    async def render(html: str, *, width: int = 3200, refit: bool = False) -> bytes:
         (measured if refit else rendered).append(html)
         return (
             b"\x89PNG\r\n\x1a\n"
             + struct.pack(">I", 13)
             + b"IHDR"
-            + struct.pack(">II", 100 if refit else width, 30 if refit else 940)
+            + struct.pack(">II", 100 if refit else width, 30 if refit else 1880)
         )
 
     async def avatars(_):

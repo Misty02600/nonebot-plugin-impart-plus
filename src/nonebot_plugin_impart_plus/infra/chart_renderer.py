@@ -33,6 +33,7 @@ ENV = Environment(
 RENDER_SLOTS = asyncio.Semaphore(2)
 AVATAR_SLOTS = asyncio.Semaphore(4)
 MAX_AVATAR_BYTES = 2 * 1024 * 1024
+RENDER_SCALE = 2
 
 
 def _font_family() -> str:
@@ -60,9 +61,11 @@ def _font_family() -> str:
 
 
 def _chart_css(filename: str, font_family: str) -> str:
-    return f"body {{ font-family: {font_family}; }}\n" + (
-        TEMPLATES / filename
-    ).read_text(encoding="utf-8")
+    # 模板以 rem 表示布局单位，根字号控制最终像素倍率；昵称仍按 1 倍 px 测量。
+    return (
+        f"html {{ font-size: {RENDER_SCALE}px; }}\n"
+        f"body {{ font-family: {font_family}; }}\n"
+    ) + (TEMPLATES / filename).read_text(encoding="utf-8")
 
 
 def png_dimensions(png: bytes) -> tuple[int, int]:
@@ -72,7 +75,7 @@ def png_dimensions(png: bytes) -> tuple[int, int]:
 
 
 async def _render_png(
-    html: str, *, width: int = CANVAS_WIDTH, refit: bool = False
+    html: str, *, width: int = CANVAS_WIDTH * RENDER_SCALE, refit: bool = False
 ) -> bytes:
     async with RENDER_SLOTS:
         # 取消命令时等待本次原生任务结束，再归还并发名额。
@@ -204,7 +207,10 @@ async def render_ranking(entries: Sequence[RankEntry]) -> bytes:
         **context,
     )
     png = await _render_png(html)
-    if png_dimensions(png) != (CANVAS_WIDTH, CANVAS_HEIGHT):
+    if png_dimensions(png) != (
+        CANVAS_WIDTH * RENDER_SCALE,
+        CANVAS_HEIGHT * RENDER_SCALE,
+    ):
         raise RuntimeError("排行榜图片尺寸异常")
     return png
 
@@ -231,6 +237,9 @@ async def render_history(
         **context,
     )
     png = await _render_png(html)
-    if png_dimensions(png) != (CANVAS_WIDTH, context["canvas_height"]):
+    if png_dimensions(png) != (
+        CANVAS_WIDTH * RENDER_SCALE,
+        context["canvas_height"] * RENDER_SCALE,
+    ):
         raise RuntimeError("历史图片尺寸异常")
     return png

@@ -1,35 +1,35 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { background: #fafafd; }
 body { color: #514e60; }
-.canvas { position: relative; width: 1600px; height: 940px; background: #fafafd; }
-.headline { position: absolute; left: 56px; top: 30px; font-size: 32px; line-height: 45px; font-weight: 500; }
-.axis-unit { position: absolute; color: #93909f; font-size: 17px; }
-.axis-label { position: absolute; left: 0; height: 26px; line-height: 26px; color: #93909f; font-size: 17px; text-align: right; }
-.axis-tick { position: absolute; width: 6px; height: 1px; background: #cfcbdc; }
-.y-axis { position: absolute; width: 1px; background: #cfcbdc; }
-.chart { position: absolute; left: 480px; top: 112px; width: 1064px; height: 752px; }
-.zero-line { position: absolute; height: 2px; background: #e0dfeb; }
-.gap { position: absolute; height: 38px; background: #fafafd; color: #b6b2c5; font-size: 25px; text-align: center; line-height: 34px; letter-spacing: 3px; }
-.value { position: absolute; height: 30px; line-height: 30px; text-align: center; font-size: 23px; color: #666176; }
+.canvas { position: relative; width: 1600rem; height: 940rem; background: #fafafd; }
+.headline { position: absolute; left: 56rem; top: 30rem; font-size: 32rem; line-height: 45rem; font-weight: 500; }
+.axis-unit { position: absolute; color: #93909f; font-size: 17rem; }
+.axis-label { position: absolute; left: 0; height: 26rem; line-height: 26rem; color: #93909f; font-size: 17rem; text-align: right; }
+.axis-tick { position: absolute; width: 6rem; height: 1rem; background: #cfcbdc; }
+.y-axis { position: absolute; width: 1rem; background: #cfcbdc; }
+.chart { position: absolute; left: 480rem; top: 112rem; width: 1064rem; height: 752rem; }
+.zero-line { position: absolute; height: 2rem; background: #e0dfeb; }
+.gap { position: absolute; height: 38rem; background: #fafafd; color: #b6b2c5; font-size: 25rem; text-align: center; line-height: 34rem; letter-spacing: 3rem; }
+.value { position: absolute; height: 30rem; line-height: 30rem; text-align: center; font-size: 23rem; color: #666176; }
 .value-self { color: #4f769d; font-weight: 600; }
 .value-self.negative { color: #af507b; }
 .bar { position: absolute; background: #a7bdd9; }
-.bar-positive { border-radius: 7px 7px 0 0; }
-.bar-negative { border-radius: 0 0 7px 7px; background: #e7b6c9; }
+.bar-positive { border-radius: 7rem 7rem 0 0; }
+.bar-negative { border-radius: 0 0 7rem 7rem; background: #e7b6c9; }
 .bar-positive.bar-self { background: #648fba; }
 .bar-negative.bar-self { background: #c87599; }
-.zero-mark { position: absolute; height: 3px; background: #b7bec9; }
+.zero-mark { position: absolute; height: 3rem; background: #b7bec9; }
 .zero-self { background: #727c8b; }
-.people { position: absolute; left: 56px; top: 112px; width: 392px; height: 752px; }
-.person { position: absolute; left: 0; width: 392px; height: 52px; }
-.avatar { position: absolute; left: 44px; top: 5px; width: 42px; height: 42px; border-radius: 21px; }
-.name { position: absolute; left: 100px; height: 52px; line-height: 26px; color: #635e71; overflow: hidden; }
-.name-line { height: 26px; line-height: 26px; white-space: nowrap; }
+.people { position: absolute; left: 56rem; top: 112rem; width: 392rem; height: 752rem; }
+.person { position: absolute; left: 0; width: 392rem; height: 52rem; }
+.avatar { position: absolute; left: 80rem; top: 5rem; width: 42rem; height: 42rem; border-radius: 21rem; }
+.name { position: absolute; left: 136rem; height: 52rem; line-height: 26rem; color: #635e71; overflow: hidden; }
+.name-line { height: 26rem; line-height: 26rem; white-space: nowrap; }
 .person-self .name { color: #4f769d; font-weight: 600; }
 .person-self.negative .name { color: #af507b; }
-.rank { position: absolute; left: 0; top: 0; width: 36px; height: 52px; color: #a29dab; font-size: 17px; line-height: 52px; }
+.rank { position: absolute; left: 0; top: 0; width: 72rem; height: 52rem; color: #a29dab; font-size: 17rem; line-height: 52rem; }
 .person-self .rank { color: #648fba; }
 .person-self.negative .rank { color: #c87599; }
-.chart-rank { position: absolute; height: 26px; font-size: 17px; line-height: 26px; text-align: center; color: #a29dab; }
+.chart-rank { position: absolute; height: 26rem; font-size: 17rem; line-height: 26rem; text-align: center; color: #a29dab; }
 .chart-rank-self { color: #648fba; font-weight: 600; }
 .chart-rank-self.negative { color: #c87599; }

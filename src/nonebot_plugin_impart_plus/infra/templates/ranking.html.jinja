@@ -10,37 +10,37 @@
     <div class="headline">银趴排行榜</div>
     <div class="people">
       {% for entry in entries %}
-      <div class="person{% if entry.is_self %} person-self{% endif %}{% if entry.negative %} negative{% endif %}" style="top:{{ entry.legend_top }}px">
+      <div class="person{% if entry.is_self %} person-self{% endif %}{% if entry.negative %} negative{% endif %}" style="top:{{ entry.legend_top }}rem">
         <div class="rank">{{ entry.rank_text }}</div>
         {% if entry.avatar %}<img class="avatar" src="{{ entry.avatar }}" alt="">{% endif %}
-        <div class="name" style="top:{{ entry.name_top }}px;width:{{ name_width }}px;font-size:{{ name_font_size }}px">{% for line in entry.name_lines %}<div class="name-line">{{ line }}</div>{% endfor %}</div>
+        <div class="name" style="top:{{ entry.name_top }}rem;width:{{ name_width }}rem;font-size:{{ name_font_size }}rem">{% for line in entry.name_lines %}<div class="name-line">{{ line }}</div>{% endfor %}</div>
       </div>
       {% endfor %}
     </div>
     <div class="chart" role="img" aria-label="长度排行榜，正值向上、负值向下，本人及左右相邻名次已展示">
-      <div class="y-axis" style="left:{{ axis_left }}px;top:{{ axis_top }}px;height:{{ axis_height }}px"></div>
-      <div class="axis-unit" style="left:{{ axis_left - 22 }}px;top:{{ axis_top - 35 }}px">cm</div>
+      <div class="y-axis" style="left:{{ axis_left }}rem;top:{{ axis_top }}rem;height:{{ axis_height }}rem"></div>
+      <div class="axis-unit" style="left:{{ axis_left - 22 }}rem;top:{{ axis_top - 35 }}rem">cm</div>
       {% for tick in axis_ticks %}
-      <div class="axis-label" style="top:{{ tick.y - 13 }}px;width:{{ axis_left - 13 }}px">{{ tick.label }}</div>
-      <div class="axis-tick" style="left:{{ axis_left }}px;top:{{ tick.y }}px"></div>
+      <div class="axis-label" style="top:{{ tick.y - 13 }}rem;width:{{ axis_left - 13 }}rem">{{ tick.label }}</div>
+      <div class="axis-tick" style="left:{{ axis_left }}rem;top:{{ tick.y }}rem"></div>
       {% endfor %}
-      <div class="zero-line" style="left:{{ axis_left }}px;top:{{ baseline }}px;width:{{ plot_width }}px"></div>
+      <div class="zero-line" style="left:{{ axis_left }}rem;top:{{ baseline }}rem;width:{{ plot_width }}rem"></div>
       {% for gap in gaps %}
-      <div class="gap" style="left:{{ gap.left }}px;top:{{ baseline - 19 }}px;width:{{ gap.width }}px">···</div>
+      <div class="gap" style="left:{{ gap.left }}rem;top:{{ baseline - 19 }}rem;width:{{ gap.width }}rem">···</div>
       {% endfor %}
 
       {% for entry in entries %}
       <div class="value{% if entry.is_self %} value-self{% endif %}{% if entry.negative %} negative{% endif %}"
-           style="left:{{ entry.left }}px;top:{{ entry.value_top }}px;width:{{ column_width }}px">{{ entry.value }}</div>
+           style="left:{{ entry.left }}rem;top:{{ entry.value_top }}rem;width:{{ column_width }}rem">{{ entry.value }}</div>
       {% if entry.bar_height > 0 %}
       <div class="bar {{ entry.bar_class }}{% if entry.is_self %} bar-self{% endif %}"
-           style="left:{{ entry.bar_left }}px;top:{{ entry.bar_top }}px;width:{{ bar_width }}px;height:{{ entry.bar_height }}px"></div>
+           style="left:{{ entry.bar_left }}rem;top:{{ entry.bar_top }}rem;width:{{ bar_width }}rem;height:{{ entry.bar_height }}rem"></div>
       {% else %}
       <div class="zero-mark{% if entry.is_self %} zero-self{% endif %}"
-           style="left:{{ entry.bar_left }}px;top:{{ baseline - 1 }}px;width:{{ bar_width }}px"></div>
+           style="left:{{ entry.bar_left }}rem;top:{{ baseline - 1 }}rem;width:{{ bar_width }}rem"></div>
       {% endif %}
 
-      <div class="chart-rank{% if entry.is_self %} chart-rank-self{% endif %}{% if entry.negative %} negative{% endif %}" style="left:{{ entry.left }}px;top:{{ chart_rank_top }}px;width:{{ column_width }}px">{{ entry.rank_text }}</div>
+      <div class="chart-rank{% if entry.is_self %} chart-rank-self{% endif %}{% if entry.negative %} negative{% endif %}" style="left:{{ entry.left }}rem;top:{{ chart_rank_top }}rem;width:{{ column_width }}rem">{{ entry.rank_text }}</div>
       {% endfor %}
     </div>
   </div>
