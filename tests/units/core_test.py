@@ -444,6 +444,51 @@ def test_pk_uses_one_roll_and_personal_multiplier_for_all_participants() -> None
     ) == (24.8, 19.8, 0)
 
 
+def test_xnn_pk_uses_personal_reduction_and_starting_state() -> None:
+    from nonebot_plugin_impart_plus.impart.core import (
+        UserGameState,
+        effective_pk_probability,
+        resolve_pk_settlement,
+    )
+
+    xnn = UserGameState(4.0, 0.5)
+    normal = UserGameState(10.0, 0.5)
+    won = resolve_pk_settlement(xnn, (normal,), win_roll=0.249, random_num=1.0)
+    lost = resolve_pk_settlement(xnn, (normal,), win_roll=0.25, random_num=1.0)
+    targeted = resolve_pk_settlement(normal, (xnn,), win_roll=0.3, random_num=1.0)
+    defended = resolve_pk_settlement(normal, (xnn,), win_roll=0.5, random_num=1.0)
+    assert won.won
+    assert not lost.won
+    assert (won.attacker.length_change, won.defenders[0].length_change) == (0.25, -1)
+    assert (lost.attacker.length_change, lost.defenders[0].length_change) == (-0.5, 0.5)
+    assert lost.attacker.final.win_probability == 0.51
+    assert effective_pk_probability(3.5, 0.51) == 0.255
+    assert targeted.won
+    assert (targeted.attacker.length_change, targeted.defenders[0].length_change) == (
+        0.5,
+        -0.5,
+    )
+    assert not defended.won
+    assert defended.defenders[0].length_change == 0.25
+
+    entered = resolve_pk_settlement(
+        UserGameState(5.2, 0.5), (normal,), win_roll=0.9, random_num=1.0
+    )
+    escaped = resolve_pk_settlement(
+        UserGameState(4.75, 0.5), (normal,), win_roll=0.0, random_num=1.0
+    )
+    assert entered.attacker.length_change == -1.0
+    assert entered.attacker.final.length == 4.2
+    assert escaped.attacker.length_change == 0.25
+    assert escaped.attacker.final.length == 5.0
+    assert (
+        effective_pk_probability(
+            escaped.attacker.final.length, escaped.attacker.final.win_probability
+        )
+        == 0.49
+    )
+
+
 def test_xnn_probability_and_world_boundaries() -> None:
     from nonebot_plugin_impart_plus.impart.core import (
         LengthState,

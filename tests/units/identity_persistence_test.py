@@ -1096,6 +1096,132 @@ async def test_pk_rejects_mixed_world_and_reverses_negative_deltas(
     assert win_roll_calls == growth_roll_calls == 3
 
 
+@pytest.mark.parametrize("feminize", [False, True], ids=["grow-out", "feminize"])
+async def test_xnn_penalties_restore_without_rewriting_probability(
+    game_harness, monkeypatch: pytest.MonkeyPatch, feminize: bool
+) -> None:
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.impart.core import (
+        GrowthMode,
+        InteractionAction,
+        InteractionResolution,
+        UserGameState,
+        resolve_pk_settlement,
+    )
+
+    h = game_harness
+    await h.manager.set_scene_enabled(h.scene, True)
+    for user in (h.user, h.target):
+        await h.manager.add_new_user(user)
+    await h.manager.set_jj_length(h.user, -6.0)
+    await h.manager.set_win_probability(h.user, 0.1)
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.4)
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+    assert (
+        await h.application.query_user(h.scene, h.user, h.user)
+    ).win_probability == 0.3
+    pk = await h.application.execute_pk(h.scene, h.user, (h.target,))
+    assert not pk.won
+    assert pk.attacker_change == -0.5
+    assert pk.attacker_probability == 0.305
+    assert (
+        await h.application.query_user(h.scene, h.user, h.user, history=True)
+    ).win_probability == 0.305
+    cooldown = h.cooldown.pk_cd_data.copy()
+
+    if feminize:
+        await h.manager.settle_interaction_volumes({h.user: (990.0, None)})
+        resolution = await h.application.begin_interaction(
+            h.target, h.user, InteractionAction.INJECT
+        )
+        assert isinstance(resolution, InteractionResolution)
+        monkeypatch.setattr(app_module.random, "uniform", lambda *_: 100.0)
+        monkeypatch.setattr(app_module.random, "randint", lambda *_: 1)
+        await h.application.complete_interaction(h.target, h.user, resolution)
+    else:
+        grown = await h.application.grow_target(
+            h.scene, h.target, h.user, GrowthMode.LENGTH
+        )
+        assert grown.amount == 0.5
+        assert grown.new_length == 4.0
+        monkeypatch.setattr(app_module, "get_random_num", lambda: 2.0)
+        escaped = await h.application.grow_self(h.scene, h.user, GrowthMode.LENGTH)
+        assert (escaped.amount, escaped.new_length) == (1.0, 5.0)
+
+    final = (await h.manager.get_user_states(h.user))[h.user]
+    assert final.length == (-1.5 if feminize else 5.0)
+    assert final.win_probability == 0.61
+    assert (
+        await h.application.query_user(h.scene, h.user, h.user)
+    ).win_probability == 0.61
+    assert h.cooldown.pk_cd_data == cooldown
+    next_pk = resolve_pk_settlement(
+        final,
+        (UserGameState(-10 if feminize else 10, 0.5),),
+        win_roll=0.4,
+        random_num=1.0,
+    )
+    assert next_pk.won
+    assert next_pk.attacker.length_change == 0.5
+
+
+@pytest.mark.parametrize("won", [False, True])
+async def test_pk_notifies_only_new_xnn_users_after_settlement(
+    game_harness, database_harness, monkeypatch: pytest.MonkeyPatch, won: bool
+) -> None:
+    from typing import cast
+
+    from nonebot.exception import FinishedException
+    from nonebot.matcher import Matcher
+    from nonebot_plugin_alconna import At, UniMessage
+    from nonebot_plugin_uniref import UserRef, encode_ref
+
+    from nonebot_plugin_impart_plus.bot.handlers import game
+    from nonebot_plugin_impart_plus.impart import app as app_module
+    from nonebot_plugin_impart_plus.infra.database import UserData
+
+    from .bot_test_utils import FinishingMatcherStub
+
+    h = game_harness
+    defenders = (h.target, UserRef("QQClient", "3")) if won else (h.target,)
+    values = ((30.0, 1), (5.0, 0), (5.5, 0)) if won else ((5.0, 0), (29.5, 0))
+    await h.manager.set_scene_enabled(h.scene, True)
+    async with database_harness.session_factory() as session, session.begin():
+        for user, (length, tier) in zip((h.user, *defenders), values, strict=True):
+            session.add(
+                UserData(
+                    user_ref=encode_ref(user),
+                    user_namespace=user.namespace,
+                    jj_length=length,
+                    challenge_tier=tier,
+                    win_probability=0.45,
+                )
+            )
+    monkeypatch.setattr(app_module.random, "random", lambda: 0.0 if won else 1.0)
+    monkeypatch.setattr(app_module, "get_random_num", lambda: 1.0)
+    outcome = await h.application.execute_pk(h.scene, h.user, defenders)
+    expected = defenders if won else (h.user,)
+    assert outcome.new_xnn_users == expected
+
+    matcher = FinishingMatcherStub()
+    handler = game._handle_pk_win if won else game._handle_pk_loss
+    with pytest.raises(FinishedException):
+        await handler(cast(Matcher, matcher), outcome)
+    assert "xnn" not in matcher.messages[0]
+    assert matcher.messages[0].endswith("喵")
+    notices = matcher.raw_messages[1 + len(outcome.unlocked_users) :]
+    assert len(notices) == len(expected)
+    for user, notice in zip(expected, notices, strict=True):
+        assert isinstance(notice, UniMessage)
+        assert notice[0] == At("user", user.id)
+        assert "你醒啦，你已经变成xnn了！\n" in str(notice)
+    assert all("at_sender" not in options for options in matcher.options[1:])
+
+    h.cooldown.pk_cd_data.clear()
+    again = await h.application.execute_pk(h.scene, h.user, defenders)
+    assert again.new_xnn_users == ()
+
+
 async def test_pk_settlement_rolls_back_all_users_after_flush(
     database_harness,
     monkeypatch: pytest.MonkeyPatch,

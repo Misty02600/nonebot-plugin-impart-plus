@@ -214,7 +214,11 @@ def tier_for_magnitude(
 
 
 def personal_length_multiplier(state: UserGameState) -> float:
-    return float(state.challenge_tier + 1)
+    return 0.5 if is_xnn(state.length) else float(state.challenge_tier + 1)
+
+
+def effective_pk_probability(length: float, win_probability: float) -> float:
+    return win_probability * 0.5 if is_xnn(length) else win_probability
 
 
 def pk_target_limit(state: UserGameState) -> int:
@@ -464,7 +468,7 @@ def resolve_pk_settlement(
     if any(not supports_growth_mode(defender.length, mode) for defender in defenders):
         raise ValueError("PK participants must belong to the same world")
 
-    won = win_roll < attacker.win_probability
+    won = win_roll < effective_pk_probability(attacker.length, attacker.win_probability)
     attacker_probability_delta = -0.01 if won else 0.01
     attacker_progress = (
         random_num / 2 * len(defenders) if won else -random_num * len(defenders)

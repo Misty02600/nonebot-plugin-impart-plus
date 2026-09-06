@@ -22,6 +22,7 @@ from .core import (
     PossessionStatus,
     active_challenge,
     classify_length,
+    effective_pk_probability,
     is_xnn,
     pk_target_limit,
     resolve_interaction,
@@ -66,6 +67,7 @@ class PkOutcome:
     targets: tuple[PkTargetOutcome, ...] = ()
     attacker_probability: float = 0.5
     unlocked_users: dict[UserRef, int] = field(default_factory=dict)
+    new_xnn_users: tuple[UserRef, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +304,10 @@ class GameApplication:
             win_roll=win_roll,
             random_num=random_num,
         )
+        participants = (
+            (attacker_ref, settlement.attacker),
+            *zip(defender_refs, settlement.defenders, strict=True),
+        )
         return PkOutcome(
             PkOutcomeType.COMPLETED,
             mode=settlement.mode,
@@ -317,15 +323,20 @@ class GameApplication:
                 )
                 for participant in settlement.defenders
             ),
-            attacker_probability=settlement.attacker.final.win_probability,
+            attacker_probability=effective_pk_probability(
+                settlement.attacker.final.length,
+                settlement.attacker.final.win_probability,
+            ),
             unlocked_users={
                 user: participant.final.challenge_tier
-                for user, participant in (
-                    (attacker_ref, settlement.attacker),
-                    *zip(defender_refs, settlement.defenders, strict=True),
-                )
+                for user, participant in participants
                 if participant.final.challenge_tier > participant.before.challenge_tier
             },
+            new_xnn_users=tuple(
+                user
+                for user, participant in participants
+                if participant.status == "length_near_zero"
+            ),
         )
 
     async def grow_self(
@@ -489,7 +500,7 @@ class GameApplication:
         return QueryOutcome(
             QueryOutcomeType.COMPLETED,
             length=data.length,
-            win_probability=data.win_probability,
+            win_probability=effective_pk_probability(data.length, data.win_probability),
             challenge_tier=data.challenge_tier,
             state=classify_length(data.length, challenge_tier=data.challenge_tier),
             today_total=data.today_total,

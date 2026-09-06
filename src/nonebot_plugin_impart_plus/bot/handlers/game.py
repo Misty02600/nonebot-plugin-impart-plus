@@ -46,13 +46,15 @@ async def _finish_game_reply(
     *,
     unlocked_users: dict[UserRef, int],
     mode: GrowthMode,
+    new_xnn_users: tuple[UserRef, ...] = (),
 ) -> None:
-    """先回复本局结果，再单独 At 本次解锁成员；最后一条消息结束 matcher。"""
-    if not unlocked_users:
+    """先回复本局结果，再艾特本次解锁和进入 XNN 的成员；最后一条结束 matcher。"""
+    if not unlocked_users and not new_xnn_users:
         await matcher.finish(message, at_sender=True)
         return
     await matcher.send(message, at_sender=True)
-    for index, (user, tier) in enumerate(unlocked_users.items()):
+    notifications: list[UniMessage] = []
+    for user, tier in unlocked_users.items():
         if mode is GrowthMode.DEPTH:
             text = " 你感到深渊的禁忌力量正涌入体内..."
             dimension = "深度"
@@ -65,8 +67,18 @@ async def _finish_game_reply(
         text += f"\nPK现在最多可以指定{target_count}个目标了！"
         if tier == 1 and mode is GrowthMode.DEPTH:
             text += "\n现在可以使用指令「夺舍」了！"
-        notification = UniMessage.at(user.id).text(text)
-        if index == len(unlocked_users) - 1:
+        notifications.append(UniMessage.at(user.id).text(text))
+    for user in new_xnn_users:
+        notifications.append(
+            UniMessage.at(user.id).text(
+                " 你醒啦，你已经变成xnn了！"
+                "\n你的pk胜率和长度变化均减小一半！"
+                "\n你现在可以主动使用「榨群友」了！"
+                "\n你可以努力逃脱，或就此成为大家的rbq！"
+            )
+        )
+    for index, notification in enumerate(notifications):
+        if index == len(notifications) - 1:
             await cast(AlconnaMatcher, matcher).finish(notification, fallback=AUTO)
         else:
             await cast(AlconnaMatcher, matcher).send(notification, fallback=AUTO)
@@ -280,20 +292,16 @@ async def _handle_pk_win(matcher: Matcher, outcome: PkOutcome) -> None:
             uid_msg += f"\n{_target_label(index, target_count)}：" + challenge
         else:
             uid_msg += challenge
-        if (
-            not challenge
-            and outcome.mode is GrowthMode.LENGTH
-            and "length_near_zero" in target.status
-        ):
-            subject = "TA" if target_count == 1 else _target_label(index, target_count)
-            uid_msg += f"\n由于你对决的胜利，{botname}检测到{subject}已经变成xnn了喵！"
 
-    probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
+    probability_msg = (
+        f"\n你的胜率现在为{round(outcome.attacker_probability * 100, 3):g}%喵"
+    )
     await _finish_game_reply(
         matcher,
         f"{uid_msg}{probability_msg}",
         unlocked_users=outcome.unlocked_users,
         mode=outcome.mode,
+        new_xnn_users=outcome.new_xnn_users,
     )
 
 
@@ -328,12 +336,6 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
         outcome.attacker_challenge,
     )
     uid_msg += attacker_challenge
-    if (
-        not attacker_challenge
-        and outcome.mode is GrowthMode.LENGTH
-        and "length_near_zero" in outcome.attacker_status
-    ):
-        uid_msg += "\n你醒啦, 你已经变成xnn了！"
 
     for index, target in enumerate(outcome.targets, 1):
         challenge = _opponent_challenge_progress(
@@ -344,12 +346,15 @@ async def _handle_pk_loss(matcher: Matcher, outcome: PkOutcome) -> None:
         else:
             uid_msg += challenge
 
-    probability_msg = f"\n你的胜率现在为{outcome.attacker_probability:.0%}喵"
+    probability_msg = (
+        f"\n你的胜率现在为{round(outcome.attacker_probability * 100, 3):g}%喵"
+    )
     await _finish_game_reply(
         matcher,
         f"{uid_msg}{probability_msg}",
         unlocked_users=outcome.unlocked_users,
         mode=outcome.mode,
+        new_xnn_users=outcome.new_xnn_users,
     )
 
 
