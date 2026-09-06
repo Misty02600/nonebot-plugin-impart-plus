@@ -212,7 +212,7 @@ async def yinpa(
         )
     if guard.type is InteractionGuardType.COOLING_DOWN:
         await matcher.finish(
-            f"你已经榨不出来任何东西了, 请先休息{guard.remaining}秒",
+            f"你已经{requested_action.value}不动了喵，请先休息{guard.remaining}秒",
             at_sender=True,
         )
 
@@ -243,7 +243,7 @@ async def yinpa(
     )
     if isinstance(resolution, InteractionGuard):
         await matcher.finish(
-            f"你已经榨不出来任何东西了, 请先休息{resolution.remaining}秒",
+            f"你已经{requested_action.value}不动了喵，请先休息{resolution.remaining}秒",
             at_sender=True,
         )
         return

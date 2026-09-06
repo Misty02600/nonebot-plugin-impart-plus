@@ -612,7 +612,7 @@ async def test_late_cooldown_rejection_stops_before_profile_and_animation(
             "群友",
             Match((At("user", "67890"),), True),
         )
-    assert "请先休息60秒" in matcher.messages[0]
+    assert matcher.messages == ["你已经透不动了喵，请先休息60秒"]
     complete.assert_not_awaited()
     sleep.assert_not_awaited()
     profile.assert_not_awaited()
