@@ -62,9 +62,9 @@ async def query_user(
         )
 
     if outcome.state is LengthState.GOD:
-        message = f"✨{challenge_title(outcome.challenge_tier, GrowthMode.LENGTH)}✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm"
+        message = f"\n✨{challenge_title(outcome.challenge_tier, GrowthMode.LENGTH)}✨\n{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm"
     elif outcome.state is LengthState.ABYSS_LORD:
-        message = f"🕳️{challenge_title(outcome.challenge_tier, GrowthMode.DEPTH)}🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm"
+        message = f"\n🕳️{challenge_title(outcome.challenge_tier, GrowthMode.DEPTH)}🕳️\n{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm"
     elif outcome.state is LengthState.NORMAL:
         message = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm"
     elif outcome.state is LengthState.XNN:
