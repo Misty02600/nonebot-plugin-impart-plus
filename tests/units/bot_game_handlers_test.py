@@ -119,7 +119,7 @@ async def test_depth_growth_handler_uses_depth_copy(
 
     assert calls == [(make_scene_ref("12345"), make_user_ref(), GrowthMode.DEPTH)]
     assert matcher.messages == [
-        "开扣结束喵, 你的小学很满意喵, 扣深了1.25cm喵, 目前深度为3.25cm喵"
+        "挖矿结束喵, 你的小学很满意喵, 扣深了1.25cm喵, 目前深度为3.25cm喵"
     ]
 
     async def reject_growth(
@@ -201,7 +201,7 @@ async def test_pk_handler_requires_and_uses_mention(
             Match((At("user", "unused"),), False),
         )
     assert len(calls) == 1
-    assert missing_matcher.messages == ["请at你要pk的目标"]
+    assert missing_matcher.messages == ["请艾特你要pk的目标"]
 
 
 async def test_pk_handler_selects_unlocked_window_without_backfill(
@@ -560,15 +560,16 @@ async def test_target_growth_handler_requires_target_and_uses_mode(
 
     monkeypatch.setattr(game.game_app, "grow_target", grow_target)
 
-    missing_matcher = FinishingMatcherStub()
-    with pytest.raises(FinishedException):
-        await game.grow_target(
-            cast(Matcher, missing_matcher),
-            make_ref_context(scene_id="12345"),
-            TARGET_GROW_COMMAND.parse("嗦"),
-            Match((At("user", "unused"),), False),
-        )
-    assert missing_matcher.messages == ["请at你要嗦/舔的目标"]
+    for command in ("嗦", "舔"):
+        missing_matcher = FinishingMatcherStub()
+        with pytest.raises(FinishedException):
+            await game.grow_target(
+                cast(Matcher, missing_matcher),
+                make_ref_context(scene_id="12345"),
+                TARGET_GROW_COMMAND.parse(command),
+                Match((At("user", "unused"),), False),
+            )
+        assert missing_matcher.messages == [f"请艾特你要{command}的目标"]
 
     self_messages: list[str] = []
     for command in ("嗦", "舔"):

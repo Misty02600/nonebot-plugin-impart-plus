@@ -33,7 +33,7 @@ async def possess(
     if outcome.type is PossessionStatus.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is PossessionStatus.MISSING_TARGET:
-        await matcher.finish("请at你要夺舍的目标", at_sender=True)
+        await matcher.finish("请艾特你要夺舍的目标", at_sender=True)
     if target_ref is None:
         return
     if outcome.type is PossessionStatus.USERS_CREATED:

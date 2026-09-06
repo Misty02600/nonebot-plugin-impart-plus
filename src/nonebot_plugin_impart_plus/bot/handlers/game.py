@@ -205,7 +205,7 @@ async def pk(
     if not preparation.enabled:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if not targets.available:
-        await matcher.finish("请at你要pk的目标", at_sender=True)
+        await matcher.finish("请艾特你要pk的目标", at_sender=True)
         return
 
     selected = targets.result[: preparation.max_targets]
@@ -218,7 +218,7 @@ async def pk(
     if outcome.type is PkOutcomeType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is PkOutcomeType.MISSING_TARGET:
-        await matcher.finish("请at你要pk的目标", at_sender=True)
+        await matcher.finish("请艾特你要pk的目标", at_sender=True)
     if outcome.type is PkOutcomeType.COOLING_DOWN:
         await matcher.finish(
             f"你已经pk不动了喵, 请等待{outcome.remaining}秒后再pk喵",
@@ -399,7 +399,7 @@ async def grow_self(
         if mode is GrowthMode.DEPTH:
             await _finish_game_reply(
                 matcher,
-                f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵"
+                f"挖矿结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵"
                 f"\n由于你无休止的挖矿，触犯到了神秘的禁忌，{botname}检测到你的{HOLE_NAME}深度超过{challenge.entry:g}cm，已为你开启🕳️“深渊试炼”🕳️"
                 f"\n你现在的胜率变为当前的{challenge.win_multiplier:.0%}，且无法使用“挖矿”与“舔”指令，请以将{HOLE_NAME}深度提升至{challenge.target:g}cm为目标与他人pk吧！",
                 unlocked_users=outcome.unlocked_users,
@@ -416,7 +416,7 @@ async def grow_self(
     if mode is GrowthMode.DEPTH:
         await _finish_game_reply(
             matcher,
-            f"开扣结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
+            f"挖矿结束喵, 你的{HOLE_NAME}很满意喵, 扣深了{outcome.amount}cm喵, 目前深度为{abs(outcome.new_length)}cm喵",
             unlocked_users=outcome.unlocked_users,
             mode=mode,
         )
@@ -436,6 +436,7 @@ async def grow_target(
     targets: Match[tuple[At, ...]],
 ) -> None:
     mode = _growth_mode(result, TARGET_GROW_MODES)
+    action = "嗦" if mode is GrowthMode.LENGTH else "舔"
     scene_ref = refs.scene_ref
     user_ref = refs.user_ref
     mentioned = user_at_target(targets.result[0]) if targets.available else None
@@ -450,7 +451,7 @@ async def grow_target(
     if outcome.type is GrowthOutcomeType.DISABLED:
         await matcher.finish(NOT_ALLOWED_TEXT, at_sender=True)
     if outcome.type is GrowthOutcomeType.MISSING_TARGET:
-        await matcher.finish("请at你要嗦/舔的目标", at_sender=True)
+        await matcher.finish(f"请艾特你要{action}的目标", at_sender=True)
     if outcome.type is GrowthOutcomeType.SELF_TARGET:
         message = (
             f"你嗦不到自己的{choice(JJ_NAMES)}喵"
@@ -468,7 +469,6 @@ async def grow_target(
         )
         await matcher.finish(message, at_sender=True)
     if outcome.type is GrowthOutcomeType.COOLING_DOWN:
-        action = "嗦" if mode is GrowthMode.LENGTH else "舔"
         await matcher.finish(
             f"你已经{action}不动了喵, 请等待{outcome.remaining}秒后再{action}喵",
             at_sender=True,

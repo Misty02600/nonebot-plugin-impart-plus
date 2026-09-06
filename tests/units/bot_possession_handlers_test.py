@@ -89,7 +89,7 @@ async def test_possession_missing_target_and_self_rejection_copy(
             )
         messages.extend(matcher.messages)
     assert messages == [
-        "请at你要夺舍的目标",
+        "请艾特你要夺舍的目标",
         "你不能夺舍没有牛牛的人！",
         "你尚未解锁此禁忌之术...",
     ]

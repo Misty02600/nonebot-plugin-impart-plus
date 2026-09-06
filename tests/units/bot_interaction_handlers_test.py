@@ -225,7 +225,7 @@ async def test_new_requester_stops_before_target_resolution(
 @pytest.mark.parametrize(
     ("action", "kind", "members_kind", "expected"),
     [
-        ("透", "群友", "empty", "请@指定目标"),
+        ("透", "群友", "empty", "请艾特指定目标"),
         ("透", "管理", "regular", "喵喵喵? 找不到群管理!"),
         ("透", "群主", "regular", "喵喵喵? 找不到群主!"),
         ("榨", "群友", "self", "喵喵喵? 找不到群友!"),

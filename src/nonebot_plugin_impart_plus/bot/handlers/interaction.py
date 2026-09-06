@@ -224,7 +224,9 @@ async def yinpa(
     if mentioned is None:
         members = await get_members_or_empty(interface, session)
         if not members:
-            message = "请@指定目标" if kind == "群友" else _missing_target_message(kind)
+            message = (
+                "请艾特指定目标" if kind == "群友" else _missing_target_message(kind)
+            )
             await matcher.finish(message)
 
     lucky_user = mentioned or select_interaction_target(kind, members, uid)

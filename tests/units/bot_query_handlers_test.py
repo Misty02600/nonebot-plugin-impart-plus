@@ -202,6 +202,8 @@ async def test_query_uses_held_tier_for_title_in_retention_band(
                     cast(Interface, None),
                 )
             assert title in matcher.messages[0]
-            assert "\n" not in matcher.messages[0]
+            title_line, body = matcher.messages[0].split("\n")
+            assert title in title_line
+            assert body.startswith("你的")
             assert matcher.messages[0].count("喵") == 1
             assert matcher.messages[0].endswith("喵")
