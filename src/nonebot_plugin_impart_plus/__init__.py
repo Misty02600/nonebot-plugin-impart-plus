@@ -15,7 +15,6 @@ require("nonebot_plugin_htmlkit")
 __plugin_meta__ = PluginMetadata(
     name="nonebot-plugin-impart-plus",
     usage="""impart功能说明:
-所有指令均遵循NoneBot的COMMAND_START配置
 [透|日|榨][群友|管理|群主]
 群友可随机或@指定目标，可能触发特殊事件
 [pk|对决] @用户
@@ -33,7 +32,7 @@ __plugin_meta__ = PluginMetadata(
 [舔] @用户
 增加其他非正值用户深度
 [夺舍] @用户
-完成深渊试炼后的禁忌之术
+一次性指令❗完成深渊试炼后的禁忌之术
 [银趴|impart][查询|查询历史|查询全部]
 查询@用户长度或深度及当日注入量(若未@则为自己)，查询历史/全部可查看累计记录
 [银趴|impart|jj][排行榜|排名|榜单|rank]

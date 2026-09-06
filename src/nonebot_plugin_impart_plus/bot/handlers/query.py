@@ -69,22 +69,16 @@ async def query_user(
         message = f"{pronoun}的{choice(JJ_NAMES)}目前长度为{outcome.length}cm"
     elif outcome.state is LengthState.XNN:
         status = "快要变成女孩子啦" if outcome.today_total > 200 else "已经是xnn啦"
-        message = (
-            f"{pronoun}{status}！{pronoun}的{choice(JJ_NAMES)}目前长度为"
-            f"{outcome.length}cm"
-        )
+        message = f"{pronoun}{status}！目前长度为{outcome.length}cm"
     else:
-        message = (
-            f"{pronoun}已经是女孩子啦！{pronoun}的{HOLE_NAME}目前深度为"
-            f"{abs(outcome.length)}cm"
-        )
+        message = f"{pronoun}的{HOLE_NAME}目前深度为{abs(outcome.length)}cm"
 
-    message += f"，{pronoun}目前的胜率为{round(outcome.win_probability * 100, 3):g}%"
-    message += f"，{pronoun}当日总注入量为{outcome.today_total}ml"
+    message += f"，目前胜率为{round(outcome.win_probability * 100, 3):g}%"
+    message += f"，当日总注入量为{outcome.today_total}ml"
     if outcome.history_total is None:
         await matcher.finish(f"{message}喵", at_sender=True)
 
-    message += f"，{pronoun}历史总注入量为{outcome.history_total}ml"
+    message += f"，历史总注入量为{outcome.history_total}ml"
     if len(outcome.history) < 2:
         await matcher.finish(f"{message}喵", at_sender=True)
     user = await get_user_or_none(interface, target_ref.id)

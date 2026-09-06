@@ -65,8 +65,7 @@ async def test_query_merges_xnn_state_and_daily_total(
         (make_scene_ref("12345"), make_user_ref(), make_user_ref("67890"), False)
     ]
     assert matcher.messages == [
-        f"TA{status}！TA的牛牛目前长度为4.0cm"
-        f"，TA目前的胜率为45.678%，TA当日总注入量为{total}ml喵"
+        f"TA{status}！目前长度为4.0cm，目前胜率为45.678%，当日总注入量为{total}ml喵"
     ]
 
 
@@ -149,9 +148,9 @@ async def test_history_query_appends_total_and_chart(
     assert user_calls == ["67890" if mentioned else "10001"]
     pronoun = "TA" if mentioned else "你"
     assert f"{pronoun}的小学目前深度为2.5cm" in matcher.messages[0]
-    assert f"{pronoun}目前的胜率为0%" in matcher.messages[0]
-    assert f"{pronoun}当日总注入量为5.5ml" in matcher.messages[0]
-    assert f"{pronoun}历史总注入量为8.5ml" in matcher.messages[0]
+    assert "目前胜率为0%" in matcher.messages[0]
+    assert "当日总注入量为5.5ml" in matcher.messages[0]
+    assert "历史总注入量为8.5ml" in matcher.messages[0]
     assert "\n" not in matcher.messages[0]
     assert matcher.messages[0].count("喵") == 1
     if render_fails:
