@@ -29,7 +29,7 @@ TARGET_GROW_COMMAND = Alconna(
     Args["targets?", MultiVar(At)],
 )
 
-RANK_COMMAND = Alconna("re:(?i:(银趴|impart)(排行榜|排名|榜单|rank))")
+RANK_COMMAND = Alconna("re:(?i:(银趴|impart|jj)(排行榜|排名|榜单|rank))")
 
 INTERACTION_ACTIONS = {
     "透": InteractionAction.INJECT,
